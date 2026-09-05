@@ -104,16 +104,13 @@ button {
   max-height: 0;
 }
 
+/* Map display area */
 #map-drawing-canvas {
   border: 1px solid #0f0f0f;
 }
 
 #select-map-text-input {
   margin: 5px;
-}
-
-#greet-input {
-  margin-right: 5px;
 }
 
 @media (prefers-color-scheme: dark) {

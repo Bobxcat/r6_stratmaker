@@ -81,7 +81,7 @@ function App() {
     }
   }
 
-  function MapDrawingMode() {
+  function MapDrawingLayer() {
     function updateMousePos(clientX: number, clientY: number) {
       const canvas = document.getElementById("map-drawing-canvas")! as HTMLCanvasElement;
       const rect = canvas.getBoundingClientRect();
@@ -117,40 +117,36 @@ function App() {
       }
 
       // ----Render----
-      const canvas = document.getElementById("map-drawing-canvas")! as HTMLCanvasElement;
-      const ctx = canvas.getContext("2d")!;
+      // const canvas = document.getElementById("map-drawing-canvas")! as HTMLCanvasElement;
+      // const ctx = canvas.getContext("2d")!;
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const mapImgElem = document.getElementById("fooimg")! as HTMLImageElement;
+      // renderCanvasState.paths.forEach(path => {
+      //   if (path.points.length <= 1) {
+      //     return;
+      //   }
 
-      ctx.drawImage(mapImgElem, 0, 0, currMapWidth, currMapHeight);
+      //   ctx.beginPath();
+      //   ctx.strokeStyle = "red";
+      //   ctx.lineWidth = 3;
 
-      renderCanvasState.paths.forEach(path => {
-        if (path.points.length <= 1) {
-          return;
-        }
-
-        ctx.beginPath();
-        ctx.strokeStyle = "red";
-        ctx.lineWidth = 3;
-
-        path.points.forEach((value, idx, _array) => {
-          if (idx == 0) {
-            ctx.moveTo(value.x, value.y);
-          } else {
-            ctx.lineTo(value.x, value.y);
-          }
-        });
+      //   path.points.forEach((value, idx, _array) => {
+      //     if (idx == 0) {
+      //       ctx.moveTo(value.x, value.y);
+      //     } else {
+      //       ctx.lineTo(value.x, value.y);
+      //     }
+      //   });
 
 
-        ctx.stroke();
-        ctx.closePath();
-      });
+      //   ctx.stroke();
+      //   ctx.closePath();
+      // });
 
       // ----Last----
       renderCanvasState.prevFrameTimeElapsed = timeElapsed;
-      renderCanvasState.prevMouseClicked = renderCanvasState.mouseClicked;
+      // renderCanvasState.prevMouseClicked = renderCanvasState.mouseClicked;
 
       requestAnimationFrame(renderCanvas)
     }
@@ -167,25 +163,39 @@ function App() {
     // - Select floor locally, display as layers (each floor is a separate canvas?)
 
     return (
-      <div>
-        <h1>Map Editor</h1>
-        <canvas id="map-drawing-canvas"
-          width={currMapWidth}
-          height={currMapHeight}
-          onMouseEnter={(e) => renderCanvasState.mouseClicked = false}
-          onMouseLeave={(e) => renderCanvasState.mouseClicked = false}
-          onMouseDown={(e) => renderCanvasState.mouseClicked = true}
-          onMouseUp={(e) => renderCanvasState.mouseClicked = false}
-          onMouseMove={(e) => {
-            const prevMouseX = renderCanvasState.mouseX;
-            const prevMouseY = renderCanvasState.mouseY;
-            updateMousePos(e.clientX, e.clientY);
+      <canvas id="map-drawing-canvas"
+        style={{ gridColumn: 1, gridRow: 1, zIndex: 1 }}
+        width={currMapWidth}
+        height={currMapHeight}
+        onMouseEnter={(e) => renderCanvasState.mouseClicked = false}
+        onMouseLeave={(e) => renderCanvasState.mouseClicked = false}
+        onMouseDown={(e) => renderCanvasState.mouseClicked = true}
+        onMouseUp={(e) => renderCanvasState.mouseClicked = false}
+        onMouseMove={(e) => {
+          const canvas = document.getElementById("map-drawing-canvas")! as HTMLCanvasElement;
+          const ctx = canvas.getContext("2d")!;
 
-            renderCanvasState.prevMouseClicked = renderCanvasState.mouseClicked;
-          }}
-        >
-        </canvas>
-      </div >
+          const prevMouseX = renderCanvasState.mouseX;
+          const prevMouseY = renderCanvasState.mouseY;
+          updateMousePos(e.clientX, e.clientY);
+
+          if (renderCanvasState.mouseClicked && renderCanvasState.prevMouseClicked) {
+            ctx.beginPath();
+            ctx.strokeStyle = "red";
+            ctx.lineWidth = 3;
+
+            ctx.moveTo(prevMouseX, prevMouseY);
+            ctx.lineTo(renderCanvasState.mouseX, renderCanvasState.mouseY);
+
+            ctx.stroke();
+            ctx.closePath();
+          }
+
+
+          renderCanvasState.prevMouseClicked = renderCanvasState.mouseClicked;
+        }}
+      >
+      </canvas>
     )
   }
 
@@ -230,19 +240,17 @@ function App() {
         )}
       </div>
 
-      <div className="row">
+      <div className="row" style={{ justifyItems: "left" }}>
         <div className="col" id="tool-selector-bar">
           <button>FreeDraw</button>
           <button>Arrow</button>
           <button>PlaceOperator</button>
         </div>
-        <div id="draw-area">{MapDrawingMode()}</div>
-      </div>
-
-      <div className="row">
-        <a>
-          <img id="fooimg" src={getFloorImgPath(currMap, currMapFloors[currMapSelectedFloor])} className="current floor map" />
-        </a>
+        <div id="draw-area" style={{ display: "grid", gridTemplateColumns: "1", gridTemplateRows: "1" }}>
+          <img src={getFloorImgPath(currMap, currMapFloors[currMapSelectedFloor])}
+            style={{ gridColumn: 1, gridRow: 1, zIndex: 0 }} />
+          {MapDrawingLayer()}
+        </div>
       </div>
 
       <form
@@ -259,7 +267,7 @@ function App() {
         <button type="submit">Set Current Map</button>
       </form>
 
-    </main>
+    </main >
   );
 }
 

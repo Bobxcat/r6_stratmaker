@@ -1,0 +1,14 @@
+[package]
+name = "r6_stratmaker_server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.53.1", features = ["full"] }
+tokio-websockets = { version = "0.13.3", features = [
+    "server",
+    "ring",
+    "native-tls",
+] }
+futures-util = { version = "0.3.34", features = ["sink"] }
+json = "0.12.4"

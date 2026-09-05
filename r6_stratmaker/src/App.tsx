@@ -15,9 +15,7 @@ class RenderCanvasState {
 
   private static _instance: RenderCanvasState;
 
-  private constructor() {
-    //
-  }
+  private constructor() { }
 
   public static get Instance() {
     // Do you need arguments? Make it a regular static method instead.
@@ -43,33 +41,30 @@ class Vec2 {
 }
 
 class DrawPath {
-  points: Array<Vec2>;
-  constructor() {
-    this.points = [];
-  }
+  points: Array<Vec2> = [];
 }
 
 const renderCanvasState = RenderCanvasState.Instance;
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
   const [websocket, setWebsocket] = useState<WebSocket | undefined>(undefined);
   const [currMap, setCurrMap] = useState<string>("");
-  const [currMapImg, setCurrMapImg] = useState<string>("");
+  // const [currMapImg, setCurrMapImg] = useState<string>("");
   const [currMapWidth, setCurrMapWidth] = useState<number>(1600);
   const [currMapHeight, setCurrMapHeight] = useState<number>(900);
+  const [currMapFloors, setCurrMapFloors] = useState<Array<string>>([]);
+  const [currMapSelectedFloor, setCurrMapSelectedFloor] = useState<number>(0);
 
   const [currFrameTime, setCurrFrameTime] = useState<string>("---");
   const [currFPS, setCurrFPS] = useState<string>("---");
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
   function println(msg: string) {
     invoke("console_println", { msg })
+  }
+
+  function getFloorImgPath(map: string, floor: string): string {
+    return `/maps/${map}/${floor}.jpg`
   }
 
   async function handleNetworkMessage(msgRaw: string) {
@@ -77,9 +72,9 @@ function App() {
     const msg = JSON.parse(msgRaw);
     println(msg.img_path);
     switch (msg.message_type) {
-      case "get_img_response":
+      case "set_active_map":
         setCurrMap(msg.map_name);
-        setCurrMapImg(msg.img_path);
+        setCurrMapFloors(msg.floors);
         break;
       default:
         break;
@@ -87,7 +82,6 @@ function App() {
   }
 
   function MapDrawingMode() {
-
     function updateMousePos(clientX: number, clientY: number) {
       const canvas = document.getElementById("map-drawing-canvas")! as HTMLCanvasElement;
       const rect = canvas.getBoundingClientRect();
@@ -113,7 +107,7 @@ function App() {
         }
         const currPath = renderCanvasState.paths[renderCanvasState.paths.length - 1];
         const mousePos = new Vec2(renderCanvasState.mouseX, renderCanvasState.mouseY);
-        if (currPath.points.length == 0 || currPath.points[currPath.points.length - 1].distance(mousePos) > 0.001) {
+        if (currPath.points.length == 0 || currPath.points[currPath.points.length - 1].distance(mousePos) > 0.01) {
           currPath.points.push(mousePos);
         }
       } else {
@@ -163,6 +157,15 @@ function App() {
 
     requestAnimationFrame(renderCanvas)
 
+    // TODO: Split into multiple canvas instances, so that free-drawing has managable overhead
+    // (how to sync free-draw state between clients?)
+    // - https://stackoverflow.com/questions/3008635/html5-canvas-element-multiple-layers
+    // NOTE: In the final product, free-draw is intended to be done in-game (real-time and temporary)
+    // over top of an existing strategy (possibly with free-drawing already
+    // baked in, but saved seperately and done out-of-game)
+    // * In-game features:
+    // - Select floor locally, display as layers (each floor is a separate canvas?)
+
     return (
       <div>
         <h1>Map Editor</h1>
@@ -195,7 +198,7 @@ function App() {
       ws.addListener((msg) => {
         handleNetworkMessage(msg.data!.toString());
       });
-      ws.send(JSON.stringify({ message_type: "get_img" }));
+      ws.send(JSON.stringify({ message_type: "hello" }));
 
       setWebsocket(ws);
 
@@ -215,15 +218,32 @@ function App() {
   return (
     <main className="container">
       <p>Canvas FPS: {currFPS} / Frame Time: {currFrameTime}</p>
-      {MapDrawingMode()}
 
+      <p>Current Floor: {currMapFloors[currMapSelectedFloor]}</p>
+
+      <div className="row">
+        {currMapFloors.map((floor_name, i) =>
+          <button onClick={(e) => {
+            e.preventDefault();
+            setCurrMapSelectedFloor(i);
+          }}>{floor_name}</button>
+        )}
+      </div>
+
+      <div className="row">
+        <div className="col" id="tool-selector-bar">
+          <button>FreeDraw</button>
+          <button>Arrow</button>
+          <button>PlaceOperator</button>
+        </div>
+        <div id="draw-area">{MapDrawingMode()}</div>
+      </div>
 
       <div className="row">
         <a>
-          <img id="fooimg" src={currMapImg} className="current floor map" />
+          <img id="fooimg" src={getFloorImgPath(currMap, currMapFloors[currMapSelectedFloor])} className="current floor map" />
         </a>
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
 
       <form
         className="row"
@@ -234,26 +254,11 @@ function App() {
         <input
           id="select-map-text-input"
           onChange={(e) => { }}
+          placeholder="Put the map here!"
         />
         <button type="submit">Set Current Map</button>
       </form>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-      <p>Current map: {currMapImg}</p>
     </main>
   );
 }

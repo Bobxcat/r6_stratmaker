@@ -17,15 +17,15 @@ async fn main() -> Result<(), tokio_websockets::Error> {
                     if msg.is_text() {
                         let msg = json::parse(msg.as_text().unwrap()).unwrap();
                         match msg["message_type"].as_str().unwrap() {
-                            "get_img" => {
+                            "hello" => {
                                 let response = json::object! {
-                                    message_type: "get_img_response",
+                                    message_type: "set_active_map",
                                     map_name: "chalet",
-                                    img_path: "/maps/chalet/basement.jpg",
+                                    floors: ["basement", "floor_1", "floor_2", "roof"],
                                 };
                                 ws_stream.send(Message::text(response.dump())).await?
                             }
-                            _ => (),
+                            mty => println!("Unexpected message_type: `{mty}`",),
                         }
                     }
                 }

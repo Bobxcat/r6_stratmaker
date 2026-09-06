@@ -4,16 +4,19 @@ import { invoke } from "@tauri-apps/api/core";
 import WebSocket from "@tauri-apps/plugin-websocket";
 import "./App.css";
 
+enum DrawTool {
+  FreeDraw,
+  Arrow,
+}
 
-class RenderCanvasState {
+class FreeDrawCanvasState {
   mouseX: number = 0;
   mouseY: number = 0;
   prevMouseClicked: boolean = false;
   mouseClicked: boolean = false;
-  prevFrameTimeElapsed: number = 0;
   paths: Array<DrawPath> = [];
 
-  private static _instance: RenderCanvasState;
+  private static _instance: FreeDrawCanvasState;
 
   private constructor() { }
 
@@ -44,10 +47,9 @@ class DrawPath {
   points: Array<Vec2> = [];
 }
 
-const renderCanvasState = RenderCanvasState.Instance;
+const freeDrawCanvasState = FreeDrawCanvasState.Instance;
 
 function App() {
-  const [name, setName] = useState("");
   const [websocket, setWebsocket] = useState<WebSocket | undefined>(undefined);
   const [currMap, setCurrMap] = useState<string>("");
   // const [currMapImg, setCurrMapImg] = useState<string>("");
@@ -56,8 +58,7 @@ function App() {
   const [currMapFloors, setCurrMapFloors] = useState<Array<string>>([]);
   const [currMapSelectedFloor, setCurrMapSelectedFloor] = useState<number>(0);
 
-  const [currFrameTime, setCurrFrameTime] = useState<string>("---");
-  const [currFPS, setCurrFPS] = useState<string>("---");
+  const [currDrawTool, setCurrDrawTool] = useState<DrawTool>(DrawTool.FreeDraw);
 
   function println(msg: string) {
     invoke("console_println", { msg })
@@ -81,77 +82,51 @@ function App() {
     }
   }
 
-  function MapDrawingLayer() {
-    function updateMousePos(clientX: number, clientY: number) {
-      const canvas = document.getElementById("map-drawing-canvas")! as HTMLCanvasElement;
+  function freeDrawCanvas() {
+    function mousePosForCanvas(canvasId: string, clientX: number, clientY: number): Vec2 {
+      const canvas = document.getElementById(canvasId)! as HTMLCanvasElement;
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
-      renderCanvasState.mouseX = ((clientX - rect.left) * scaleX);
-      renderCanvasState.mouseY = ((clientY - rect.top) * scaleY);
+      return new Vec2(((clientX - rect.left) * scaleX), ((clientY - rect.top) * scaleY));
     }
 
-    function renderCanvas(timeElapsed: number) {
-      // ----PreUpdate----
-      const frameDelta = timeElapsed - renderCanvasState.prevFrameTimeElapsed;
+    function redrawCanvas() {
+      const canvas = document.getElementById("map-drawing-canvas")! as HTMLCanvasElement;
+      const ctx = canvas.getContext("2d")!;
 
-      // ----Update----
-      setCurrFrameTime(frameDelta.toString());
-      // setCurrFrameTime(frameDelta.toFixed(4) + "ms");
-      setCurrFPS(frameDelta.toFixed(4));
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Drawing
-      if (renderCanvasState.mouseClicked) {
-        if (renderCanvasState.paths.length == 0 || renderCanvasState.prevMouseClicked == false) {
-          renderCanvasState.paths.push(new DrawPath());
-        }
-        const currPath = renderCanvasState.paths[renderCanvasState.paths.length - 1];
-        const mousePos = new Vec2(renderCanvasState.mouseX, renderCanvasState.mouseY);
-        if (currPath.points.length == 0 || currPath.points[currPath.points.length - 1].distance(mousePos) > 0.01) {
-          currPath.points.push(mousePos);
-        }
-      } else {
-        if (renderCanvasState.paths.length > 0 && renderCanvasState.paths[renderCanvasState.paths.length - 1].points.length <= 1) {
-          renderCanvasState.paths.pop();
-        }
+      freeDrawCanvasState.paths.forEach((path) => {
+        ctx.beginPath();
+
+        path.points.forEach((pt, idx) => {
+          if (idx == 0) {
+            ctx.moveTo(pt.x, pt.y);
+          } else {
+            ctx.lineTo(pt.x, pt.y);
+          }
+        });
+
+        ctx.stroke();
+        ctx.closePath();
+      })
+    }
+
+    function triggerUndo() {
+      if (freeDrawCanvasState.paths.length > 0) {
+        println("Undoing!!");
+        freeDrawCanvasState.paths.pop();
+        redrawCanvas();
       }
-
-      // ----Render----
-      // const canvas = document.getElementById("map-drawing-canvas")! as HTMLCanvasElement;
-      // const ctx = canvas.getContext("2d")!;
-
-      // ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // renderCanvasState.paths.forEach(path => {
-      //   if (path.points.length <= 1) {
-      //     return;
-      //   }
-
-      //   ctx.beginPath();
-      //   ctx.strokeStyle = "red";
-      //   ctx.lineWidth = 3;
-
-      //   path.points.forEach((value, idx, _array) => {
-      //     if (idx == 0) {
-      //       ctx.moveTo(value.x, value.y);
-      //     } else {
-      //       ctx.lineTo(value.x, value.y);
-      //     }
-      //   });
-
-
-      //   ctx.stroke();
-      //   ctx.closePath();
-      // });
-
-      // ----Last----
-      renderCanvasState.prevFrameTimeElapsed = timeElapsed;
-      // renderCanvasState.prevMouseClicked = renderCanvasState.mouseClicked;
-
-      requestAnimationFrame(renderCanvas)
     }
 
-    requestAnimationFrame(renderCanvas)
+    document.onkeydown = (e) => {
+      e.preventDefault();
+      if (e.ctrlKey && e.key == "z") {
+        triggerUndo();
+      }
+    };
 
     // TODO: Split into multiple canvas instances, so that free-drawing has managable overhead
     // (how to sync free-draw state between clients?)
@@ -167,32 +142,47 @@ function App() {
         style={{ gridColumn: 1, gridRow: 1, zIndex: 1 }}
         width={currMapWidth}
         height={currMapHeight}
-        onMouseEnter={(e) => renderCanvasState.mouseClicked = false}
-        onMouseLeave={(e) => renderCanvasState.mouseClicked = false}
-        onMouseDown={(e) => renderCanvasState.mouseClicked = true}
-        onMouseUp={(e) => renderCanvasState.mouseClicked = false}
+        onMouseEnter={(e) => freeDrawCanvasState.mouseClicked = false}
+        onMouseLeave={(e) => freeDrawCanvasState.mouseClicked = false}
+        onMouseDown={(e) => freeDrawCanvasState.mouseClicked = true}
+        onMouseUp={(e) => freeDrawCanvasState.mouseClicked = false}
         onMouseMove={(e) => {
           const canvas = document.getElementById("map-drawing-canvas")! as HTMLCanvasElement;
           const ctx = canvas.getContext("2d")!;
 
-          const prevMouseX = renderCanvasState.mouseX;
-          const prevMouseY = renderCanvasState.mouseY;
-          updateMousePos(e.clientX, e.clientY);
+          const prevMouseX = freeDrawCanvasState.mouseX;
+          const prevMouseY = freeDrawCanvasState.mouseY;
+          const mousePos = mousePosForCanvas("map-drawing-canvas", e.clientX, e.clientY);
 
-          if (renderCanvasState.mouseClicked && renderCanvasState.prevMouseClicked) {
-            ctx.beginPath();
-            ctx.strokeStyle = "red";
-            ctx.lineWidth = 3;
+          freeDrawCanvasState.mouseX = mousePos.x;
+          freeDrawCanvasState.mouseY = mousePos.y;
 
-            ctx.moveTo(prevMouseX, prevMouseY);
-            ctx.lineTo(renderCanvasState.mouseX, renderCanvasState.mouseY);
+          if (currDrawTool == DrawTool.FreeDraw && freeDrawCanvasState.mouseClicked) {
+            if (freeDrawCanvasState.paths.length > 0 && freeDrawCanvasState.prevMouseClicked) {
+              // Continue existing path
+              freeDrawCanvasState.paths[freeDrawCanvasState.paths.length - 1].points.push(mousePos);
+            } else {
+              // Create new path
+              var path = new DrawPath();
+              path.points.push(mousePos);
+              freeDrawCanvasState.paths.push(path);
+            }
 
-            ctx.stroke();
-            ctx.closePath();
+            if (freeDrawCanvasState.prevMouseClicked) {
+              ctx.beginPath();
+              ctx.strokeStyle = "red";
+              ctx.lineWidth = 3;
+
+              ctx.moveTo(prevMouseX, prevMouseY);
+              ctx.lineTo(freeDrawCanvasState.mouseX, freeDrawCanvasState.mouseY);
+
+              ctx.stroke();
+              ctx.closePath();
+            }
           }
 
 
-          renderCanvasState.prevMouseClicked = renderCanvasState.mouseClicked;
+          freeDrawCanvasState.prevMouseClicked = freeDrawCanvasState.mouseClicked;
         }}
       >
       </canvas>
@@ -227,8 +217,6 @@ function App() {
 
   return (
     <main className="container">
-      <p>Canvas FPS: {currFPS} / Frame Time: {currFrameTime}</p>
-
       <p>Current Floor: {currMapFloors[currMapSelectedFloor]}</p>
 
       <div className="row">
@@ -242,14 +230,14 @@ function App() {
 
       <div className="row" style={{ justifyItems: "left" }}>
         <div className="col" id="tool-selector-bar">
-          <button>FreeDraw</button>
-          <button>Arrow</button>
-          <button>PlaceOperator</button>
+          <button onClick={(e) => { setCurrDrawTool(DrawTool.FreeDraw) }}>FreeDraw</button>
+          <button onClick={(e) => { setCurrDrawTool(DrawTool.Arrow) }}>Arrow</button>
+          <button onClick={(e) => { setCurrDrawTool(DrawTool.FreeDraw) }}>PlaceOperator</button>
         </div>
         <div id="draw-area" style={{ display: "grid", gridTemplateColumns: "1", gridTemplateRows: "1" }}>
           <img src={getFloorImgPath(currMap, currMapFloors[currMapSelectedFloor])}
             style={{ gridColumn: 1, gridRow: 1, zIndex: 0 }} />
-          {MapDrawingLayer()}
+          {freeDrawCanvas()}
         </div>
       </div>
 

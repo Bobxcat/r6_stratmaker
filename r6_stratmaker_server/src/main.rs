@@ -18,12 +18,21 @@ async fn main() -> Result<(), tokio_websockets::Error> {
                         let msg = json::parse(msg.as_text().unwrap()).unwrap();
                         match msg["message_type"].as_str().unwrap() {
                             "hello" => {
-                                let response = json::object! {
-                                    message_type: "set_active_map",
-                                    map_name: "chalet",
-                                    floors: ["basement", "floor_1", "floor_2", "roof"],
-                                };
-                                ws_stream.send(Message::text(response.dump())).await?
+                                ws_stream
+                                    .send(Message::text(
+                                        json::object! {
+                                            message_type: "hello_response",
+                                        }
+                                        .dump(),
+                                    ))
+                                    .await?;
+
+                                // let response = json::object! {
+                                //     message_type: "set_active_map",
+                                //     map_name: "chalet",
+                                //     floors: ["basement", "floor_1", "floor_2", "roof"],
+                                // };
+                                // ws_stream.send(Message::text(response.dump())).await?
                             }
                             mty => println!("Unexpected message_type: `{mty}`",),
                         }

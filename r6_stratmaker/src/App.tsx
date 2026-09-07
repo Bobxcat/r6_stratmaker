@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import WebSocket from "@tauri-apps/plugin-websocket";
 import "./App.css";
@@ -66,6 +65,15 @@ function App() {
 
   const [currDrawTool, setCurrDrawTool] = useState<DrawTool>(DrawTool.FreeDraw);
 
+
+  enum ConnectionState {
+    WaitingForIP = "Waiting for IP Address (or Connection Failed)",
+    Connecting = "Connecting to Server...",
+    Connected = "Connected"
+  }
+
+  const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.WaitingForIP);
+
   function println(msg: string) {
     invoke("console_println", { msg })
   }
@@ -90,37 +98,7 @@ function App() {
     }
   }
 
-  // useEffect(() => {
-  //   setTimeout(() => {
-  //     setCurrPage(Page.ConnectToServerPage);
-  //   }, 1000);
-  // }, []);
-
-  // useEffect(() => {
-  //   // This runs twice in dev mode:
-  //   // https://react.dev/learn/lifecycle-of-reactive-effects#how-react-verifies-that-your-effect-can-re-synchronize
-  //   async function initWebsocket() {
-  //     let ws = await WebSocket.connect('ws://127.0.0.1:8080');
-
-  //     ws.addListener((msg) => {
-  //       handleNetworkMessage(msg.data!.toString());
-  //     });
-  //     ws.send(JSON.stringify({ message_type: "hello" }));
-
-  //     setWebsocket(ws);
-  //   }
-
-  //   initWebsocket();
-  // }, [])
-
   function connectToServerPageComponent() {
-    enum ConnectionState {
-      WaitingForIP = "Waiting for IP Address (or Connection Failed)",
-      Connecting = "Connecting to Server...",
-      Connected = "Connected"
-    }
-
-    const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.WaitingForIP);
 
     async function connectToServer(ipAddr: string) {
       let ws = await WebSocket.connect(`ws://${ipAddr}`);
@@ -135,12 +113,13 @@ function App() {
     }
 
     return (
-      <div>
+      <>
         <p>{connectionState}</p>
         <p>Page: {currPage}</p>
         <form
           className="row"
-          onSubmit={(_) => {
+          onSubmit={(e) => {
+            e.preventDefault();
             const ipAddrInput = document.getElementById("select-server-ip-address")! as HTMLInputElement;
             connectToServer(ipAddrInput.value);
             setConnectionState(ConnectionState.Connecting);
@@ -151,7 +130,7 @@ function App() {
           />
           <button type="submit">Connect</button>
         </form>
-      </div>
+      </ >
     );
   }
 
@@ -207,10 +186,10 @@ function App() {
           style={{ gridColumn: 1, gridRow: 1, zIndex: 1 }}
           width={currMapWidth}
           height={currMapHeight}
-          onMouseEnter={(e) => freeDrawCanvasState.mouseClicked = false}
-          onMouseLeave={(e) => freeDrawCanvasState.mouseClicked = false}
-          onMouseDown={(e) => freeDrawCanvasState.mouseClicked = true}
-          onMouseUp={(e) => freeDrawCanvasState.mouseClicked = false}
+          onMouseEnter={(_e) => freeDrawCanvasState.mouseClicked = false}
+          onMouseLeave={(_e) => freeDrawCanvasState.mouseClicked = false}
+          onMouseDown={(_e) => freeDrawCanvasState.mouseClicked = true}
+          onMouseUp={(_e) => freeDrawCanvasState.mouseClicked = false}
           onMouseMove={(e) => {
             const canvas = document.getElementById("map-drawing-canvas")! as HTMLCanvasElement;
             const ctx = canvas.getContext("2d")!;
@@ -254,7 +233,7 @@ function App() {
     }
 
     return (
-      <div>
+      <>
         <p>Current Floor: {currMapFloors[currMapSelectedFloor]}</p>
 
         <div className="row">
@@ -268,9 +247,9 @@ function App() {
 
         <div className="row" style={{ justifyItems: "left" }}>
           <div className="col" id="tool-selector-bar">
-            <button onClick={(e) => { setCurrDrawTool(DrawTool.FreeDraw) }}>FreeDraw</button>
-            <button onClick={(e) => { setCurrDrawTool(DrawTool.Arrow) }}>Arrow</button>
-            <button onClick={(e) => { setCurrDrawTool(DrawTool.FreeDraw) }}>PlaceOperator</button>
+            <button onClick={(_) => { setCurrDrawTool(DrawTool.FreeDraw) }}>FreeDraw</button>
+            <button onClick={(_) => { setCurrDrawTool(DrawTool.Arrow) }}>Arrow</button>
+            <button onClick={(_) => { setCurrDrawTool(DrawTool.FreeDraw) }}>PlaceOperator</button>
           </div>
           <div id="draw-area" style={{ display: "grid", gridTemplateColumns: "1", gridTemplateRows: "1" }}>
             <img src={getFloorImgPath(currMap, currMapFloors[currMapSelectedFloor])}
@@ -278,7 +257,7 @@ function App() {
             {freeDrawCanvas()}
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -291,12 +270,6 @@ function App() {
       default:
         return "ERROR: PAGE NOT Found"
     }
-    // return (
-    //   <div>
-    //     {currPage == Page.ConnectToServerPage && connectToServerPageComponent()}
-    //     {currPage == Page.StratEditorPage && stratEditorPageComponent()}
-    //   </div>
-    // )
   }
 
   // User Experience:
@@ -312,6 +285,7 @@ function App() {
 
   return (
     <main className="container">
+      <p>Hi there!</p>
       {currPageSelectorComponent(currPage)}
     </main >
   );

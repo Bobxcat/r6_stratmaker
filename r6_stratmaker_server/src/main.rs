@@ -6,10 +6,13 @@ use futures_util::{SinkExt, StreamExt};
 use json::JsonValue;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_websockets::{Message, ServerBuilder, WebSocketStream};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DBKeyspace {
+    /// "username" => { "strats": ["strat_uuid1", ...] }
     Users,
+    /// "strat_uuid" => { "name": "?", "map": "?", "lines": [{ "from": [1, 2], "to": [3, 4] }, ...] }
     Strategies,
 }
 
@@ -17,9 +20,7 @@ pub enum DBKeyspace {
 pub struct DatabaseHandle {
     #[allow(unused)]
     database: Database,
-    /// "username" => { "strats": ["strat_name1", ...] }
     users: Keyspace,
-    /// "strat_name" => { "map": "?", "lines": [{ "from": [1, 2], "to": [3, 4] }, ...] }
     strategies: Keyspace,
 }
 
@@ -31,11 +32,7 @@ impl DatabaseHandle {
         }
     }
 
-    pub async fn get_json(
-        &self,
-        keyspace: DBKeyspace,
-        key: &str,
-    ) -> Result<JsonValue, anyhow::Error> {
+    pub async fn get(&self, keyspace: DBKeyspace, key: &str) -> Result<JsonValue, anyhow::Error> {
         let keyspace = self.get_keyspace(keyspace).clone();
         let key = key.to_string();
 
@@ -52,7 +49,7 @@ impl DatabaseHandle {
         Ok(json::parse(&String::from_utf8(data)?)?)
     }
 
-    pub async fn get_json_or_insert(
+    pub async fn get_or_insert(
         &self,
         keyspace: DBKeyspace,
         key: &str,
@@ -69,7 +66,19 @@ impl DatabaseHandle {
         })
         .await??;
 
-        self.get_json(keyspace, key).await
+        self.get(keyspace, key).await
+    }
+
+    pub async fn insert(
+        &self,
+        keyspace: DBKeyspace,
+        key: String,
+        value: JsonValue,
+    ) -> Result<(), anyhow::Error> {
+        let keyspace = self.get_keyspace(keyspace).clone();
+        tokio::task::spawn_blocking(move || keyspace.insert(key, value.dump())).await??;
+
+        Ok(())
     }
 }
 
@@ -145,7 +154,7 @@ async fn accept_client(
         let user = msg["username"].as_str().unwrap();
 
         database
-            .get_json_or_insert(DBKeyspace::Users, user, || {
+            .get_or_insert(DBKeyspace::Users, user, || {
                 json::object! { strats: [] }
             })
             .await?;
@@ -195,25 +204,49 @@ async fn accept_client(
                 ws_stream.send(Message::text(response.dump())).await?
             }
             "get_strat_list" => {
-                let user_info = database.get_json(DBKeyspace::Users, &user).await?;
+                let user_info = database.get(DBKeyspace::Users, &user).await?;
 
                 let mut strats: Vec<JsonValue> = vec![];
 
-                for strat_name in user_info.members() {
-                    let strat_name = strat_name.as_str().unwrap();
-                    let strat_info = database
-                        .get_json(DBKeyspace::Strategies, strat_name)
-                        .await?;
+                for strat_id in user_info["strats"].members() {
+                    let strat_id = strat_id.as_str().unwrap();
+                    let strat_info = database.get(DBKeyspace::Strategies, strat_id).await?;
 
+                    let strat_name = strat_info["name"].as_str().unwrap();
                     let map = strat_info["map"].as_str().unwrap();
 
-                    strats.push(json::object! { strat_name: strat_name, map: map });
+                    strats.push(
+                        json::object! { strat_id: strat_id, strat_name: strat_name, map: map },
+                    );
                 }
 
                 ws_stream
                     .send_json(
                         json::object! { message_type: "get_strat_list_response", strats: strats },
                     )
+                    .await?;
+            }
+            "create_empty_strat" => {
+                let strat_id = format!("{}", Uuid::new_v4());
+
+                let mut user_info = database.get(DBKeyspace::Users, &user).await?;
+                user_info["strats"].push(strat_id.clone())?;
+                database
+                    .insert(DBKeyspace::Users, user.clone(), user_info)
+                    .await?;
+
+                let map = msg["map"].as_str().unwrap();
+
+                database
+                    .insert(
+                        DBKeyspace::Strategies,
+                        strat_id.clone(),
+                        json::object! { name: "unnamed", map: map, lines: [] },
+                    )
+                    .await?;
+
+                ws_stream
+                    .send_json(json::object! { message_type: "create_empty_strat_response", strat_id: strat_id })
                     .await?;
             }
             mty => println!("Unexpected message_type: `{mty}`",),

@@ -7,6 +7,7 @@ enum Page {
   ConnectToServerPage,
   LoginPage,
   StratListPage,
+  CreateNewStratMapSelectionPage,
   StratEditorPage,
 }
 
@@ -55,9 +56,11 @@ class DrawPath {
 }
 
 class StratMetadata {
+  uuid: string;
   strat_name: string;
   map: string;
-  constructor(strat_name: string, map: string) {
+  constructor(uuid: string, strat_name: string, map: string) {
+    this.uuid = uuid;
     this.strat_name = strat_name;
     this.map = map;
   }
@@ -65,10 +68,14 @@ class StratMetadata {
 
 const freeDrawCanvasState = FreeDrawCanvasState.Instance;
 
+const mapList = ["chalet", "coastline"];
+
 function App() {
   const [currPage, setCurrPage] = useState<Page>(Page.ConnectToServerPage);
 
   const [stratList, setStratList] = useState<Array<StratMetadata>>([]);
+
+  const [currStratId, setCurrStratId] = useState<string>("");
 
   const [websocket, setWebsocket] = useState<WebSocket | undefined>(undefined);
   const [currMap, setCurrMap] = useState<string>("");
@@ -78,7 +85,6 @@ function App() {
   const [currMapSelectedFloor, setCurrMapSelectedFloor] = useState<number>(0);
 
   const [currDrawTool, setCurrDrawTool] = useState<DrawTool>(DrawTool.FreeDraw);
-
 
   enum ConnectionState {
     WaitingForIP = "Waiting for IP Address (or Connection Failed)",
@@ -107,6 +113,14 @@ function App() {
         setCurrPage(Page.StratListPage);
         break;
       case "get_strat_list_response":
+        var newStratList: Array<StratMetadata> = []
+        msg.strats.forEach((strat: any) => {
+          newStratList.push(new StratMetadata(strat.strat_id, strat.strat_name, strat.map));
+        });
+        setStratList(newStratList);
+        break;
+      case "create_empty_strat_response":
+        setCurrStratId(msg.strat_id);
         break;
       case "set_active_map":
         setCurrMap(msg.map_name);
@@ -180,15 +194,33 @@ function App() {
   function stratListPageComponent() {
     return (<>
       <p>List of strats!</p>
-      <button onClick={(e) => {
-        println("Create strat!");
+      <button onClick={(_) => {
+        setCurrPage(Page.CreateNewStratMapSelectionPage);
       }}>Create New Strat</button>
-      {stratList.map((stratMeta) => {
+      {stratList.map((stratMeta) =>
         <div className="col">
           <p>{stratMeta.strat_name}</p>
           <p>{stratMeta.map}</p>
         </div>
-      })}
+      )}
+    </>)
+  }
+
+  function createNewStratMapSelectionPageComponent() {
+    async function createNewStrat(map: string) {
+      websocket?.send(JSON.stringify({ message_type: "create_empty_strat", map: map }))
+    }
+
+    return (<>
+      <p>Select a Map</p>
+      <button onClick={(_) => { setCurrPage(Page.StratListPage) }}>Cancel Create Strat</button>
+      <div className="row">
+        {mapList.map((mapName) =>
+          <div className="col">
+            <button onClick={(_) => { createNewStrat(mapName) }}>{mapName}</button>
+          </div>
+        )}
+      </div>
     </>)
   }
 
@@ -357,6 +389,8 @@ function App() {
         return loginPageComponent()
       case Page.StratListPage:
         return stratListPageComponent()
+      case Page.CreateNewStratMapSelectionPage:
+        return createNewStratMapSelectionPageComponent()
       case Page.StratEditorPage:
         return stratEditorPageComponent()
       default:

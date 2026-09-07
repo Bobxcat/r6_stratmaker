@@ -1,50 +1,252 @@
+use std::time::Duration;
+
+use anyhow::anyhow;
+use fjall::{Database, Keyspace, KeyspaceCreateOptions};
 use futures_util::{SinkExt, StreamExt};
-use tokio::net::TcpListener;
-use tokio_websockets::{Message, ServerBuilder};
+use json::JsonValue;
+use tokio::net::{TcpListener, TcpStream};
+use tokio_websockets::{Message, ServerBuilder, WebSocketStream};
+
+#[derive(Debug, Clone, Copy)]
+pub enum DBKeyspace {
+    Users,
+    Strategies,
+}
+
+#[derive(Clone)]
+pub struct DatabaseHandle {
+    #[allow(unused)]
+    database: Database,
+    /// "username" => { "strats": ["strat_name1", ...] }
+    users: Keyspace,
+    /// "strat_name" => { "map": "?", "lines": [{ "from": [1, 2], "to": [3, 4] }, ...] }
+    strategies: Keyspace,
+}
+
+impl DatabaseHandle {
+    pub fn get_keyspace(&self, keyspace: DBKeyspace) -> &Keyspace {
+        match keyspace {
+            DBKeyspace::Users => &self.users,
+            DBKeyspace::Strategies => &self.strategies,
+        }
+    }
+
+    pub async fn get_json(
+        &self,
+        keyspace: DBKeyspace,
+        key: &str,
+    ) -> Result<JsonValue, anyhow::Error> {
+        let keyspace = self.get_keyspace(keyspace).clone();
+        let key = key.to_string();
+
+        let data = tokio::task::spawn_blocking(move || {
+            Ok::<_, anyhow::Error>(
+                keyspace
+                    .get(key)?
+                    .expect("Called `get_json` but the entry didn't exist")
+                    .to_vec(),
+            )
+        })
+        .await??;
+
+        Ok(json::parse(&String::from_utf8(data)?)?)
+    }
+
+    pub async fn get_json_or_insert(
+        &self,
+        keyspace: DBKeyspace,
+        key: &str,
+        default: impl FnOnce() -> JsonValue + Send + 'static,
+    ) -> Result<JsonValue, anyhow::Error> {
+        let ksp = self.get_keyspace(keyspace).clone();
+        let key_clone = key.to_string();
+        tokio::task::spawn_blocking(move || {
+            if !ksp.contains_key(&key_clone)? {
+                let default = default();
+                ksp.insert(key_clone, default.dump())?;
+            }
+            Ok::<_, anyhow::Error>(())
+        })
+        .await??;
+
+        self.get_json(keyspace, key).await
+    }
+}
+
+pub struct ReceivedMsg {
+    message_type: String,
+    msg: JsonValue,
+}
+
+trait WsStreamExt {
+    async fn send_json(&mut self, msg: JsonValue) -> Result<(), tokio_websockets::Error>;
+
+    async fn next_json(&mut self) -> Result<ReceivedMsg, anyhow::Error>;
+}
+
+impl WsStreamExt for WebSocketStream<TcpStream> {
+    async fn send_json(&mut self, msg: JsonValue) -> Result<(), tokio_websockets::Error> {
+        self.send(Message::text(msg.dump())).await
+    }
+
+    async fn next_json(&mut self) -> Result<ReceivedMsg, anyhow::Error> {
+        let msg = self
+            .next()
+            .await
+            .ok_or(anyhow!("Websocket closed down!"))??;
+        let msg = json::parse(
+            msg.as_text()
+                .ok_or(anyhow!("Received message that wasn't JSON"))?,
+        )?;
+
+        if !msg.has_key("message_type") || !msg["message_type"].is_string() {
+            return Err(anyhow!(
+                "Received message without a `message_type: string` field!"
+            ));
+        }
+
+        Ok(ReceivedMsg {
+            message_type: msg["message_type"].as_str().unwrap().to_string(),
+            msg,
+        })
+    }
+}
+
+async fn accept_client(
+    mut ws_stream: WebSocketStream<TcpStream>,
+    database: DatabaseHandle,
+) -> Result<(), anyhow::Error> {
+    // Handshake
+    let user = {
+        // ---STEP 1: Client says "hello"
+        let ReceivedMsg {
+            message_type,
+            msg: _,
+        } = ws_stream.next_json().await?;
+        if message_type != "hello" {
+            return Err(anyhow!(
+                "Expected a `hello` message, received `{message_type}`"
+            ));
+        }
+
+        // ---STEP 2: Server says "hello_response"
+        ws_stream
+            .send_json(json::object! { message_type: "hello_response" })
+            .await?;
+
+        // ---STEP 3: Client sends a login request
+        let ReceivedMsg { message_type, msg } = ws_stream.next_json().await?;
+        if message_type != "login_request" {
+            return Err(anyhow!(
+                "Expected a `login_request` message, received `{message_type}`"
+            ));
+        }
+
+        let user = msg["username"].as_str().unwrap();
+
+        database
+            .get_json_or_insert(DBKeyspace::Users, user, || {
+                json::object! { strats: [] }
+            })
+            .await?;
+
+        // ---STEP 4: Server tells the client that the login was successful
+        ws_stream
+            .send_json(json::object! { message_type: "login_response" })
+            .await?;
+
+        user.to_string()
+    };
+
+    // Loop
+    while let Ok(ReceivedMsg { message_type, msg }) = ws_stream.next_json().await {
+        match message_type.as_str() {
+            "hello" => {
+                ws_stream
+                    .send(Message::text(
+                        json::object! {
+                            message_type: "hello_response",
+                        }
+                        .dump(),
+                    ))
+                    .await?;
+
+                tokio::time::sleep(Duration::from_millis(1000)).await;
+
+                ws_stream
+                    .send(Message::text(
+                        json::object! {
+                            message_type: "freedraw_line",
+                            from_x: 10,
+                            from_y: 10,
+                            to_x: 100,
+                            to_y: 100,
+                        }
+                        .dump(),
+                    ))
+                    .await
+                    .unwrap();
+
+                let response = json::object! {
+                    message_type: "set_active_map",
+                    map_name: "chalet",
+                    floors: ["basement", "floor_1", "floor_2", "roof"],
+                };
+                ws_stream.send(Message::text(response.dump())).await?
+            }
+            "get_strat_list" => {
+                let user_info = database.get_json(DBKeyspace::Users, &user).await?;
+
+                let mut strats: Vec<JsonValue> = vec![];
+
+                for strat_name in user_info.members() {
+                    let strat_name = strat_name.as_str().unwrap();
+                    let strat_info = database
+                        .get_json(DBKeyspace::Strategies, strat_name)
+                        .await?;
+
+                    let map = strat_info["map"].as_str().unwrap();
+
+                    strats.push(json::object! { strat_name: strat_name, map: map });
+                }
+
+                ws_stream
+                    .send_json(
+                        json::object! { message_type: "get_strat_list_response", strats: strats },
+                    )
+                    .await?;
+            }
+            mty => println!("Unexpected message_type: `{mty}`",),
+        }
+    }
+
+    Ok(())
+}
 
 #[tokio::main]
-async fn main() -> Result<(), tokio_websockets::Error> {
+async fn main() -> Result<(), anyhow::Error> {
+    let database = Database::builder(".fjall_database").open()?;
+    let database = DatabaseHandle {
+        users: database.keyspace("users", KeyspaceCreateOptions::default)?,
+        strategies: database.keyspace("strategies", KeyspaceCreateOptions::default)?,
+        database,
+    };
+
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
+
+    println!("Started!");
 
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
-            let (_request, mut ws_stream) = ServerBuilder::new().accept(stream).await?;
+            let (_request, ws_stream) = ServerBuilder::new().accept(stream).await?;
 
             println!("Client Accepted at {:?}", ws_stream.get_ref().local_addr());
 
-            tokio::spawn(async move {
-                while let Some(Ok(msg)) = ws_stream.next().await {
-                    if msg.is_text() {
-                        let msg = json::parse(msg.as_text().unwrap()).unwrap();
-                        match msg["message_type"].as_str().unwrap() {
-                            "hello" => {
-                                ws_stream
-                                    .send(Message::text(
-                                        json::object! {
-                                            message_type: "hello_response",
-                                        }
-                                        .dump(),
-                                    ))
-                                    .await?;
-
-                                // let response = json::object! {
-                                //     message_type: "set_active_map",
-                                //     map_name: "chalet",
-                                //     floors: ["basement", "floor_1", "floor_2", "roof"],
-                                // };
-                                // ws_stream.send(Message::text(response.dump())).await?
-                            }
-                            mty => println!("Unexpected message_type: `{mty}`",),
-                        }
-                    }
-                }
-
-                Ok::<_, tokio_websockets::Error>(())
-            });
-            //
+            let db_clone = database.clone();
+            tokio::spawn(async move { accept_client(ws_stream, db_clone).await });
         }
 
-        Ok::<_, tokio_websockets::Error>(())
+        Ok::<_, anyhow::Error>(())
     })
     .await
     .unwrap()?;

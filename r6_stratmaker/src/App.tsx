@@ -5,6 +5,8 @@ import "./App.css";
 
 enum Page {
   ConnectToServerPage,
+  LoginPage,
+  StratListPage,
   StratEditorPage,
 }
 
@@ -13,13 +15,14 @@ enum DrawTool {
   Arrow,
 }
 
-
 class FreeDrawCanvasState {
   mouseX: number = 0;
   mouseY: number = 0;
   prevMouseClicked: boolean = false;
   mouseClicked: boolean = false;
   paths: Array<DrawPath> = [];
+  pathsForeign: Array<DrawPath> = [];
+  networkedDrawCommandsQueue: Array<DrawPath> = [];
 
   private static _instance: FreeDrawCanvasState;
 
@@ -51,10 +54,21 @@ class DrawPath {
   points: Array<Vec2> = [];
 }
 
+class StratMetadata {
+  strat_name: string;
+  map: string;
+  constructor(strat_name: string, map: string) {
+    this.strat_name = strat_name;
+    this.map = map;
+  }
+}
+
 const freeDrawCanvasState = FreeDrawCanvasState.Instance;
 
 function App() {
   const [currPage, setCurrPage] = useState<Page>(Page.ConnectToServerPage);
+
+  const [stratList, setStratList] = useState<Array<StratMetadata>>([]);
 
   const [websocket, setWebsocket] = useState<WebSocket | undefined>(undefined);
   const [currMap, setCurrMap] = useState<string>("");
@@ -87,11 +101,19 @@ function App() {
     const msg = JSON.parse(msgRaw);
     switch (msg.message_type) {
       case "hello_response":
-        setCurrPage(Page.StratEditorPage);
+        setCurrPage(Page.LoginPage);
+        break;
+      case "login_response":
+        setCurrPage(Page.StratListPage);
+        break;
+      case "get_strat_list_response":
         break;
       case "set_active_map":
         setCurrMap(msg.map_name);
         setCurrMapFloors(msg.floors);
+        break;
+      case "freedraw_line":
+        freeDrawCanvasState.networkedDrawCommandsQueue.push({ points: [new Vec2(msg.from_x, msg.from_y), new Vec2(msg.to_x, msg.to_y)] });
         break;
       default:
         break;
@@ -99,7 +121,6 @@ function App() {
   }
 
   function connectToServerPageComponent() {
-
     async function connectToServer(ipAddr: string) {
       let ws = await WebSocket.connect(`ws://${ipAddr}`);
 
@@ -112,26 +133,63 @@ function App() {
       setConnectionState(ConnectionState.Connected);
     }
 
-    return (
-      <>
-        <p>{connectionState}</p>
-        <p>Page: {currPage}</p>
-        <form
-          className="row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const ipAddrInput = document.getElementById("select-server-ip-address")! as HTMLInputElement;
-            connectToServer(ipAddrInput.value);
-            setConnectionState(ConnectionState.Connecting);
-          }}>
-          <input
-            id="select-server-ip-address"
-            defaultValue="127.0.0.1:8080"
-          />
-          <button type="submit">Connect</button>
-        </form>
-      </ >
+    return (<>
+      <p>{connectionState}</p>
+      <form
+        className="row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const ipAddrInput = document.getElementById("select-server-ip-address")! as HTMLInputElement;
+          connectToServer(ipAddrInput.value);
+          setConnectionState(ConnectionState.Connecting);
+        }}>
+        <input
+          id="select-server-ip-address"
+          defaultValue="127.0.0.1:8080"
+        />
+        <button type="submit">Connect</button>
+      </form>
+    </ >
     );
+  }
+
+  function loginPageComponent() {
+    function commenceLogin(username: string) {
+      websocket!.send(JSON.stringify({ message_type: "login_request", username: username }))
+    }
+
+    return (<>
+      <p>Login</p>
+      <form
+        className="row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const usernameInput = document.getElementById("select-username")! as HTMLInputElement;
+          commenceLogin(usernameInput.value)
+        }}>
+        <input
+          id="select-username"
+          placeholder="username"
+          defaultValue="foo"
+        />
+        <button type="submit">Login</button>
+      </form>
+    </>)
+  }
+
+  function stratListPageComponent() {
+    return (<>
+      <p>List of strats!</p>
+      <button onClick={(e) => {
+        println("Create strat!");
+      }}>Create New Strat</button>
+      {stratList.map((stratMeta) => {
+        <div className="col">
+          <p>{stratMeta.strat_name}</p>
+          <p>{stratMeta.map}</p>
+        </div>
+      })}
+    </>)
   }
 
   function stratEditorPageComponent() {
@@ -144,6 +202,43 @@ function App() {
         return new Vec2(((clientX - rect.left) * scaleX), ((clientY - rect.top) * scaleY));
       }
 
+      function drawPathToCanvas(canvasId: string, path: DrawPath) {
+        const canvas = document.getElementById(canvasId);
+        if (canvas == null) {
+          return;
+        }
+
+        const ctx = (canvas as HTMLCanvasElement).getContext("2d");
+        if (ctx == null) {
+          return;
+        }
+
+        ctx.beginPath();
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = 3;
+
+        path.points.forEach((pt, idx) => {
+          if (idx == 0) {
+            ctx.moveTo(pt.x, pt.y);
+          } else {
+            ctx.lineTo(pt.x, pt.y);
+          }
+        });
+        ctx.stroke();
+        ctx.closePath();
+      }
+
+      function onCanvasUpdate(_timestamp: number) {
+        requestAnimationFrame(onCanvasUpdate);
+
+        freeDrawCanvasState.networkedDrawCommandsQueue.forEach((path) => {
+          drawPathToCanvas("map-drawing-canvas", path);
+          freeDrawCanvasState.pathsForeign.push(path);
+        });
+        freeDrawCanvasState.networkedDrawCommandsQueue = [];
+      }
+      requestAnimationFrame(onCanvasUpdate);
+
       function redrawCanvas() {
         const canvas = document.getElementById("map-drawing-canvas")! as HTMLCanvasElement;
         const ctx = canvas.getContext("2d")!;
@@ -151,19 +246,11 @@ function App() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         freeDrawCanvasState.paths.forEach((path) => {
-          ctx.beginPath();
-
-          path.points.forEach((pt, idx) => {
-            if (idx == 0) {
-              ctx.moveTo(pt.x, pt.y);
-            } else {
-              ctx.lineTo(pt.x, pt.y);
-            }
-          });
-
-          ctx.stroke();
-          ctx.closePath();
-        })
+          drawPathToCanvas("map-drawing-canvas", path);
+        });
+        freeDrawCanvasState.pathsForeign.forEach((path) => {
+          drawPathToCanvas("map-drawing-canvas", path);
+        });
       }
 
       function triggerUndo() {
@@ -261,10 +348,15 @@ function App() {
     );
   }
 
+
   function currPageSelectorComponent(currPage: Page) {
     switch (currPage) {
       case Page.ConnectToServerPage:
         return connectToServerPageComponent()
+      case Page.LoginPage:
+        return loginPageComponent()
+      case Page.StratListPage:
+        return stratListPageComponent()
       case Page.StratEditorPage:
         return stratEditorPageComponent()
       default:
@@ -285,7 +377,6 @@ function App() {
 
   return (
     <main className="container">
-      <p>Hi there!</p>
       {currPageSelectorComponent(currPage)}
     </main >
   );

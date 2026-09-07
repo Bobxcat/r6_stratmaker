@@ -12,3 +12,5 @@ tokio-websockets = { version = "0.13.3", features = [
 ] }
 futures-util = { version = "0.3.34", features = ["sink"] }
 json = "0.12.4"
+anyhow = "1.0.104"
+fjall = "3.1.10"

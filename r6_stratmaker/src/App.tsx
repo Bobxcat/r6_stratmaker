@@ -70,15 +70,16 @@ const freeDrawCanvasState = FreeDrawCanvasState.Instance;
 
 const mapList = ["chalet", "coastline"];
 
+var websocket: WebSocket | null = null;
+
 function App() {
   const [currPage, setCurrPage] = useState<Page>(Page.ConnectToServerPage);
 
   const [stratList, setStratList] = useState<Array<StratMetadata>>([]);
 
   const [currStratId, setCurrStratId] = useState<string>("");
-
-  const [websocket, setWebsocket] = useState<WebSocket | undefined>(undefined);
   const [currMap, setCurrMap] = useState<string>("");
+
   const [currMapWidth, setCurrMapWidth] = useState<number>(1600);
   const [currMapHeight, setCurrMapHeight] = useState<number>(900);
   const [currMapFloors, setCurrMapFloors] = useState<Array<string>>([]);
@@ -111,6 +112,7 @@ function App() {
         break;
       case "login_response":
         setCurrPage(Page.StratListPage);
+        websocket!.send(JSON.stringify({ message_type: "get_strat_list" }));
         break;
       case "get_strat_list_response":
         var newStratList: Array<StratMetadata> = []
@@ -119,8 +121,13 @@ function App() {
         });
         setStratList(newStratList);
         break;
+      case "get_map_metadata_response":
+        setCurrMapSelectedFloor(0);
+        setCurrMapFloors(msg.floors);
+        break;
       case "create_empty_strat_response":
         setCurrStratId(msg.strat_id);
+        setCurrPage(Page.StratEditorPage);
         break;
       case "set_active_map":
         setCurrMap(msg.map_name);
@@ -137,13 +144,13 @@ function App() {
   function connectToServerPageComponent() {
     async function connectToServer(ipAddr: string) {
       let ws = await WebSocket.connect(`ws://${ipAddr}`);
+      websocket = ws;
 
       ws.addListener((msg) => {
         handleNetworkMessage(msg.data!.toString());
       });
       ws.send(JSON.stringify({ message_type: "hello" }));
 
-      setWebsocket(ws);
       setConnectionState(ConnectionState.Connected);
     }
 
@@ -198,7 +205,7 @@ function App() {
         setCurrPage(Page.CreateNewStratMapSelectionPage);
       }}>Create New Strat</button>
       {stratList.map((stratMeta) =>
-        <div className="col">
+        <div className="strat-list-strat-container">
           <p>{stratMeta.strat_name}</p>
           <p>{stratMeta.map}</p>
         </div>
@@ -208,7 +215,9 @@ function App() {
 
   function createNewStratMapSelectionPageComponent() {
     async function createNewStrat(map: string) {
-      websocket?.send(JSON.stringify({ message_type: "create_empty_strat", map: map }))
+      setCurrMap(map);
+      await websocket?.send(JSON.stringify({ message_type: "create_empty_strat", map: map }));
+      websocket?.send(JSON.stringify({ message_type: "get_map_metadata", map: map }));
     }
 
     return (<>
@@ -310,9 +319,6 @@ function App() {
           onMouseDown={(_e) => freeDrawCanvasState.mouseClicked = true}
           onMouseUp={(_e) => freeDrawCanvasState.mouseClicked = false}
           onMouseMove={(e) => {
-            const canvas = document.getElementById("map-drawing-canvas")! as HTMLCanvasElement;
-            const ctx = canvas.getContext("2d")!;
-
             const prevMouseX = freeDrawCanvasState.mouseX;
             const prevMouseY = freeDrawCanvasState.mouseY;
             const mousePos = mousePosForCanvas("map-drawing-canvas", e.clientX, e.clientY);
@@ -332,15 +338,9 @@ function App() {
               }
 
               if (freeDrawCanvasState.prevMouseClicked) {
-                ctx.beginPath();
-                ctx.strokeStyle = "red";
-                ctx.lineWidth = 3;
-
-                ctx.moveTo(prevMouseX, prevMouseY);
-                ctx.lineTo(freeDrawCanvasState.mouseX, freeDrawCanvasState.mouseY);
-
-                ctx.stroke();
-                ctx.closePath();
+                var path = new DrawPath();
+                path.points = [new Vec2(prevMouseX, prevMouseY), new Vec2(freeDrawCanvasState.mouseX, freeDrawCanvasState.mouseY)];
+                drawPathToCanvas("map-drawing-canvas", path);
               }
             }
 

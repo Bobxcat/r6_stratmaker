@@ -8,6 +8,47 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_websockets::{Message, ServerBuilder, WebSocketStream};
 use uuid::Uuid;
 
+pub struct MapMetadata {
+    pub name: &'static str,
+    pub floors: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MapId {
+    Chalet,
+    Coastline,
+}
+
+impl MapId {
+    pub fn all_maps() -> &'static [MapId] {
+        use MapId::*;
+        &[Chalet, Coastline]
+    }
+
+    pub fn from_map_name(s: &str) -> Option<Self> {
+        for map in Self::all_maps() {
+            if map.metadata().name == s {
+                return Some(*map);
+            }
+        }
+
+        None
+    }
+
+    pub fn metadata(&self) -> &'static MapMetadata {
+        match self {
+            MapId::Chalet => &MapMetadata {
+                name: "chalet",
+                floors: &["basement", "floor_1", "floor_2", "roof"],
+            },
+            MapId::Coastline => &MapMetadata {
+                name: "coastline",
+                floors: &["floor_1", "floor_2", "roof"],
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum DBKeyspace {
     /// "username" => { "strats": ["strat_uuid1", ...] }
@@ -167,6 +208,8 @@ async fn accept_client(
         user.to_string()
     };
 
+    println!("Client finished login");
+
     // Loop
     while let Ok(ReceivedMsg { message_type, msg }) = ws_stream.next_json().await {
         match message_type.as_str() {
@@ -247,6 +290,17 @@ async fn accept_client(
 
                 ws_stream
                     .send_json(json::object! { message_type: "create_empty_strat_response", strat_id: strat_id })
+                    .await?;
+            }
+            "get_map_metadata" => {
+                let map_name = msg["map"].as_str().unwrap();
+                let map_id = MapId::from_map_name(map_name).unwrap();
+                let MapMetadata { name: _, floors } = *map_id.metadata();
+
+                ws_stream
+                    .send_json(
+                        json::object! { message_type: "get_map_metadata_response", floors: floors },
+                    )
                     .await?;
             }
             mty => println!("Unexpected message_type: `{mty}`",),

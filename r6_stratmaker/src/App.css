@@ -53,6 +53,11 @@
   justify-content: center;
 }
 
+.strat-list-strat-container {
+  border: 2px solid #0f0f0f;
+  border-radius: 8px;
+}
+
 a {
   font-weight: 500;
   color: #646cff;

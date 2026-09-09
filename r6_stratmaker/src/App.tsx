@@ -351,8 +351,27 @@ function App() {
       )
     }
 
+    async function saveProgress() {
+      const paths: number[][][] = freeDrawCanvasState.paths.map((path) => path.points.map((pt) => [pt.x, pt.y]))
+      await websocket?.send(JSON.stringify({
+        message_type: "save_strat",
+        strat_id: currStratId,
+        free_draw_paths: paths,
+      }));
+    }
+
     return (
       <>
+        <button onClick={(_) => {
+          saveProgress().then((_) => {
+            setCurrPage(Page.StratListPage);
+          });
+        }}>Back to Strat list</button>
+
+        <button onClick={(_) => {
+          saveProgress()
+        }}>Save Progress</button>
+
         <p>Current Floor: {currMapFloors[currMapSelectedFloor]}</p>
 
         <div className="row">

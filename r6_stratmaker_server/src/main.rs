@@ -4,9 +4,16 @@ use anyhow::anyhow;
 use fjall::{Database, Keyspace, KeyspaceCreateOptions};
 use futures_util::{SinkExt, StreamExt};
 use json::JsonValue;
+use serde::{Deserialize, Serialize};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_websockets::{Message, ServerBuilder, WebSocketStream};
-use uuid::Uuid;
+use uuid::{Uuid, fmt::Urn};
+
+use crate::database::{
+    DatabaseHandle, StratEntry, StratId, StratsKeyspace, Username, UsersKeyspace,
+};
+
+mod database;
 
 pub struct MapMetadata {
     pub name: &'static str,
@@ -49,81 +56,118 @@ impl MapId {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum DBKeyspace {
-    /// "username" => { "strats": ["strat_uuid1", ...] }
-    Users,
-    /// "strat_uuid" => { "name": "?", "map": "?", "lines": [{ "from": [1, 2], "to": [3, 4] }, ...] }
-    Strategies,
-}
+// #[derive(Deserialize, Serialize, Debug, PartialEq)]
+// pub struct StratId(pub Uuid);
 
-#[derive(Clone)]
-pub struct DatabaseHandle {
-    #[allow(unused)]
-    database: Database,
-    users: Keyspace,
-    strategies: Keyspace,
-}
+// #[derive(Deserialize, Serialize, Debug, PartialEq)]
+// pub struct Map {
+//     //
+// }
 
-impl DatabaseHandle {
-    pub fn get_keyspace(&self, keyspace: DBKeyspace) -> &Keyspace {
-        match keyspace {
-            DBKeyspace::Users => &self.users,
-            DBKeyspace::Strategies => &self.strategies,
-        }
-    }
+// fn foo(map: Map) {
+//     //
+// }
 
-    pub async fn get(&self, keyspace: DBKeyspace, key: &str) -> Result<JsonValue, anyhow::Error> {
-        let keyspace = self.get_keyspace(keyspace).clone();
-        let key = key.to_string();
+// pub trait DBKeyspace {
+//     type Key: Serialize + for<'a> Deserialize<'a>;
+//     type Entry: Default + Serialize + for<'a> Deserialize<'a>;
 
-        let data = tokio::task::spawn_blocking(move || {
-            Ok::<_, anyhow::Error>(
-                keyspace
-                    .get(key)?
-                    .expect("Called `get_json` but the entry didn't exist")
-                    .to_vec(),
-            )
-        })
-        .await??;
+//     fn keyspace_id() -> DBKeyspaceId;
+// }
 
-        Ok(json::parse(&String::from_utf8(data)?)?)
-    }
+// pub struct UsersKeyspace;
 
-    pub async fn get_or_insert(
-        &self,
-        keyspace: DBKeyspace,
-        key: &str,
-        default: impl FnOnce() -> JsonValue + Send + 'static,
-    ) -> Result<JsonValue, anyhow::Error> {
-        let ksp = self.get_keyspace(keyspace).clone();
-        let key_clone = key.to_string();
-        tokio::task::spawn_blocking(move || {
-            if !ksp.contains_key(&key_clone)? {
-                let default = default();
-                ksp.insert(key_clone, default.dump())?;
-            }
-            Ok::<_, anyhow::Error>(())
-        })
-        .await??;
+// #[derive(Deserialize, Serialize, Debug, PartialEq)]
+// pub struct Username(pub String);
 
-        self.get(keyspace, key).await
-    }
+// #[derive(Deserialize, Serialize, Debug, PartialEq)]
+// pub struct UsersEntry {
+//     pub strats: Vec<StratId>,
+// }
 
-    pub async fn insert(
-        &self,
-        keyspace: DBKeyspace,
-        key: String,
-        value: JsonValue,
-    ) -> Result<(), anyhow::Error> {
-        let keyspace = self.get_keyspace(keyspace).clone();
-        tokio::task::spawn_blocking(move || keyspace.insert(key, value.dump())).await??;
+// // pub struct Users
 
-        Ok(())
-    }
-}
+// // impl DBKeyspaceType for UsersKeyspace {
+// //     type KeyType = Username;
+// //     type EntryType = ;
+// // }
+
+// #[derive(Debug, Clone, Copy)]
+// pub enum DBKeyspaceId {
+//     /// "username" => { "strats": ["strat_uuid1", ...] }
+//     Users,
+//     /// "strat_uuid" => { "name": "?", "map": "?", "lines": [{ "from": [1, 2], "to": [3, 4] }, ...] }
+//     Strategies,
+// }
+
+// #[derive(Clone)]
+// pub struct DatabaseHandle {
+//     #[allow(unused)]
+//     database: Database,
+//     users: Keyspace,
+//     strategies: Keyspace,
+// }
+
+// impl DatabaseHandle {
+//     fn get_keyspace(&self, keyspace: DBKeyspaceId) -> &Keyspace {
+//         match keyspace {
+//             DBKeyspaceId::Users => &self.users,
+//             DBKeyspaceId::Strategies => &self.strategies,
+//         }
+//     }
+
+//     pub async fn get(&self, keyspace: DBKeyspaceId, key: &str) -> Result<JsonValue, anyhow::Error> {
+//         let keyspace = self.get_keyspace(keyspace).clone();
+//         let key = key.to_string();
+
+//         let data = tokio::task::spawn_blocking(move || {
+//             Ok::<_, anyhow::Error>(
+//                 keyspace
+//                     .get(key)?
+//                     .expect("Called `get_json` but the entry didn't exist")
+//                     .to_vec(),
+//             )
+//         })
+//         .await??;
+
+//         Ok(json::parse(&String::from_utf8(data)?)?)
+//     }
+
+//     pub async fn get_or_insert(
+//         &self,
+//         keyspace: DBKeyspaceId,
+//         key: &str,
+//         default: impl FnOnce() -> JsonValue + Send + 'static,
+//     ) -> Result<JsonValue, anyhow::Error> {
+//         let ksp = self.get_keyspace(keyspace).clone();
+//         let key_clone = key.to_string();
+//         tokio::task::spawn_blocking(move || {
+//             if !ksp.contains_key(&key_clone)? {
+//                 let default = default();
+//                 ksp.insert(key_clone, default.dump())?;
+//             }
+//             Ok::<_, anyhow::Error>(())
+//         })
+//         .await??;
+
+//         self.get(keyspace, key).await
+//     }
+
+//     pub async fn insert(
+//         &self,
+//         keyspace: DBKeyspaceId,
+//         key: String,
+//         value: JsonValue,
+//     ) -> Result<(), anyhow::Error> {
+//         let keyspace = self.get_keyspace(keyspace).clone();
+//         tokio::task::spawn_blocking(move || keyspace.insert(key, value.dump())).await??;
+
+//         Ok(())
+//     }
+// }
 
 pub struct ReceivedMsg {
+    length: usize,
     message_type: String,
     msg: JsonValue,
 }
@@ -144,6 +188,7 @@ impl WsStreamExt for WebSocketStream<TcpStream> {
             .next()
             .await
             .ok_or(anyhow!("Websocket closed down!"))??;
+        let msg_len = msg.as_payload().len();
         let msg = json::parse(
             msg.as_text()
                 .ok_or(anyhow!("Received message that wasn't JSON"))?,
@@ -156,6 +201,7 @@ impl WsStreamExt for WebSocketStream<TcpStream> {
         }
 
         Ok(ReceivedMsg {
+            length: msg_len,
             message_type: msg["message_type"].as_str().unwrap().to_string(),
             msg,
         })
@@ -170,6 +216,7 @@ async fn accept_client(
     let user = {
         // ---STEP 1: Client says "hello"
         let ReceivedMsg {
+            length: _,
             message_type,
             msg: _,
         } = ws_stream.next_json().await?;
@@ -185,7 +232,11 @@ async fn accept_client(
             .await?;
 
         // ---STEP 3: Client sends a login request
-        let ReceivedMsg { message_type, msg } = ws_stream.next_json().await?;
+        let ReceivedMsg {
+            length: _,
+            message_type,
+            msg,
+        } = ws_stream.next_json().await?;
         if message_type != "login_request" {
             return Err(anyhow!(
                 "Expected a `login_request` message, received `{message_type}`"
@@ -193,11 +244,10 @@ async fn accept_client(
         }
 
         let user = msg["username"].as_str().unwrap();
+        let user = Username(user.to_string());
 
         database
-            .get_or_insert(DBKeyspace::Users, user, || {
-                json::object! { strats: [] }
-            })
+            .get_or_insert_default::<UsersKeyspace>(&user)
             .await?;
 
         // ---STEP 4: Server tells the client that the login was successful
@@ -205,91 +255,71 @@ async fn accept_client(
             .send_json(json::object! { message_type: "login_response" })
             .await?;
 
-        user.to_string()
+        user
     };
 
-    println!("Client finished login");
+    println!("[{user}] Client finished login");
 
     // Loop
-    while let Ok(ReceivedMsg { message_type, msg }) = ws_stream.next_json().await {
+    while let Ok(ReceivedMsg {
+        length: message_length,
+        message_type,
+        msg,
+    }) = ws_stream.next_json().await
+    {
+        println!(
+            "[{user}] received message ({}): {}",
+            bytesize::ByteSize::b(message_length as u64),
+            {
+                let mut msg_str = format!("{msg}");
+                msg_str.truncate(msg_str.floor_char_boundary(100));
+                msg_str
+            },
+        );
         match message_type.as_str() {
-            "hello" => {
-                ws_stream
-                    .send(Message::text(
-                        json::object! {
-                            message_type: "hello_response",
-                        }
-                        .dump(),
-                    ))
-                    .await?;
-
-                tokio::time::sleep(Duration::from_millis(1000)).await;
-
-                ws_stream
-                    .send(Message::text(
-                        json::object! {
-                            message_type: "freedraw_line",
-                            from_x: 10,
-                            from_y: 10,
-                            to_x: 100,
-                            to_y: 100,
-                        }
-                        .dump(),
-                    ))
-                    .await
-                    .unwrap();
-
-                let response = json::object! {
-                    message_type: "set_active_map",
-                    map_name: "chalet",
-                    floors: ["basement", "floor_1", "floor_2", "roof"],
-                };
-                ws_stream.send(Message::text(response.dump())).await?
-            }
             "get_strat_list" => {
-                let user_info = database.get(DBKeyspace::Users, &user).await?;
+                let Some(user_info) = database.get::<UsersKeyspace>(&user).await? else {
+                    continue;
+                };
 
-                let mut strats: Vec<JsonValue> = vec![];
+                let mut strats_response: Vec<JsonValue> = vec![];
 
-                for strat_id in user_info["strats"].members() {
-                    let strat_id = strat_id.as_str().unwrap();
-                    let strat_info = database.get(DBKeyspace::Strategies, strat_id).await?;
+                for strat_id in &user_info.strats {
+                    let strat_info = database.get::<StratsKeyspace>(strat_id).await?.unwrap();
 
-                    let strat_name = strat_info["name"].as_str().unwrap();
-                    let map = strat_info["map"].as_str().unwrap();
-
-                    strats.push(
-                        json::object! { strat_id: strat_id, strat_name: strat_name, map: map },
+                    strats_response.push(
+                        json::object! { strat_id: strat_id.to_string(), strat_name: strat_info.name, map: strat_info.map },
                     );
                 }
 
                 ws_stream
                     .send_json(
-                        json::object! { message_type: "get_strat_list_response", strats: strats },
+                        json::object! { message_type: "get_strat_list_response", strats: strats_response },
                     )
                     .await?;
             }
             "create_empty_strat" => {
-                let strat_id = format!("{}", Uuid::new_v4());
+                let strat_id = StratId::new();
 
-                let mut user_info = database.get(DBKeyspace::Users, &user).await?;
-                user_info["strats"].push(strat_id.clone())?;
-                database
-                    .insert(DBKeyspace::Users, user.clone(), user_info)
-                    .await?;
+                let mut user_info = database.get::<UsersKeyspace>(&user).await?.unwrap();
+                user_info.strats.push(strat_id.clone());
+                database.insert::<UsersKeyspace>(&user, &user_info).await?;
 
                 let map = msg["map"].as_str().unwrap();
 
                 database
-                    .insert(
-                        DBKeyspace::Strategies,
-                        strat_id.clone(),
-                        json::object! { name: "unnamed", map: map, lines: [] },
+                    .insert::<StratsKeyspace>(
+                        &strat_id,
+                        &StratEntry {
+                            name: "unnamed".into(),
+                            map: map.into(),
+                            paths: vec![],
+                        },
                     )
                     .await?;
 
                 ws_stream
-                    .send_json(json::object! { message_type: "create_empty_strat_response", strat_id: strat_id })
+                    .send_json(json::object! { message_type: "create_empty_strat_response", strat_id: strat_id.to_string() })
                     .await?;
             }
             "get_map_metadata" => {
@@ -303,6 +333,21 @@ async fn accept_client(
                     )
                     .await?;
             }
+            "save_strat" => {
+                let strat_id = msg["strat_id"].as_str().unwrap();
+                let strat_id = StratId(Uuid::try_parse(strat_id)?);
+                let free_draw_paths = msg["free_draw_paths"]
+                    .members()
+                    .map(|path| path)
+                    .collect::<Vec<_>>();
+
+                let Some(mut strat) = database.get::<StratsKeyspace>(&strat_id).await? else {
+                    continue;
+                };
+                // Update strat entry...
+                // ...
+                database.insert::<StratsKeyspace>(&strat_id, &strat).await?;
+            }
             mty => println!("Unexpected message_type: `{mty}`",),
         }
     }
@@ -312,14 +357,8 @@ async fn accept_client(
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let database = Database::builder(".fjall_database").open()?;
-    let database = DatabaseHandle {
-        users: database.keyspace("users", KeyspaceCreateOptions::default)?,
-        strategies: database.keyspace("strategies", KeyspaceCreateOptions::default)?,
-        database,
-    };
-
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    let database = DatabaseHandle::initialize().await?;
 
     println!("Started!");
 

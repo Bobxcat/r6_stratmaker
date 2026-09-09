@@ -14,4 +14,8 @@ futures-util = { version = "0.3.34", features = ["sink"] }
 json = "0.12.4"
 anyhow = "1.0.104"
 fjall = "3.1.10"
-uuid = { version = "1.26.0", features = ["v4"] }
+uuid = { version = "1.26.0", features = ["v4", "serde"] }
+serde_json = "1.0.151"
+serde = { version = "1.0.229", features = ["derive"] }
+bytesize = "2.7.0"
+# rkyv = { version = "0.8.18", features = ["unaligned"] }

@@ -208,6 +208,10 @@ function App() {
         <div className="strat-list-strat-container">
           <p>{stratMeta.strat_name}</p>
           <p>{stratMeta.map}</p>
+          <button onClick={(_) => {
+            setCurrPage(Page.CreateNewStratMapSelectionPage);
+            println("TODO: GET STRAT INFO FROM SERVER AND LOAD!");
+          }}>Edit</button>
         </div>
       )}
     </>)

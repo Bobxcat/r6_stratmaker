@@ -59,10 +59,29 @@ impl StratId {
 }
 
 #[derive(Deserialize, Serialize, Default, Debug)]
+pub struct StratPlacedIcon {
+    pub img: String,
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Deserialize, Serialize, Default, Debug)]
+pub struct StratPhaseFloor {
+    pub draw_paths: Vec<Vec<[f64; 2]>>,
+    pub placed_icons: Vec<StratPlacedIcon>,
+}
+
+#[derive(Deserialize, Serialize, Default, Debug)]
+pub struct StratPhase {
+    pub phase_name: String,
+    pub floors: Vec<StratPhaseFloor>,
+}
+
+#[derive(Deserialize, Serialize, Default, Debug)]
 pub struct StratEntry {
-    pub name: String,
+    pub strat_name: String,
     pub map: String,
-    pub paths: Vec<Vec<[f64; 2]>>,
+    pub phases: Vec<StratPhase>,
 }
 
 impl DBKeyspace for StratsKeyspace {
@@ -77,9 +96,7 @@ impl DBKeyspace for StratsKeyspace {
 
 #[derive(Debug, Clone, Copy)]
 pub enum DBKeyspaceId {
-    /// "username" => { "strats": ["strat_uuid1", ...] }
     Users,
-    /// "strat_uuid" => { "name": "?", "map": "?", "lines": [{ "from": [1, 2], "to": [3, 4] }, ...] }
     Strats,
 }
 

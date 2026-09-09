@@ -288,7 +288,7 @@ async fn accept_client(
                     let strat_info = database.get::<StratsKeyspace>(strat_id).await?.unwrap();
 
                     strats_response.push(
-                        json::object! { strat_id: strat_id.to_string(), strat_name: strat_info.name, map: strat_info.map },
+                        json::object! { strat_id: strat_id.to_string(), strat_name: strat_info.strat_name, map: strat_info.map },
                     );
                 }
 
@@ -311,9 +311,9 @@ async fn accept_client(
                     .insert::<StratsKeyspace>(
                         &strat_id,
                         &StratEntry {
-                            name: "unnamed".into(),
+                            strat_name: "unnamed".into(),
                             map: map.into(),
-                            paths: vec![],
+                            phases: vec![],
                         },
                     )
                     .await?;
@@ -332,6 +332,9 @@ async fn accept_client(
                         json::object! { message_type: "get_map_metadata_response", floors: floors },
                     )
                     .await?;
+            }
+            "get_strat_info" => {
+                //
             }
             "save_strat" => {
                 let strat_id = msg["strat_id"].as_str().unwrap();

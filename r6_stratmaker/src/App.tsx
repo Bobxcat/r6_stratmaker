@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useReducer, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import WebSocket from "@tauri-apps/plugin-websocket";
+import MessageKind from "@tauri-apps/plugin-websocket";
 import "./App.css";
+import * as protos from "./generated_protos/primary"
 
 enum Page {
   ConnectToServerPage,
@@ -66,24 +68,57 @@ class StratMetadata {
   }
 }
 
+class StratEditingPhase {
+  phaseName: string = "---";
+}
+
+class StratEditingState {
+  stratId: string = "";
+  stratName: string = "";
+  map: string = "";
+  mapFloors: string[] = [];
+  mapImgWidth: number = 1600;
+  mapImgHeight: number = 900;
+  selectedFloor: number = 0;
+
+  phases: StratEditingPhase[] = [];
+  selectedPhase: number = 0;
+}
+
+class StratEditingDisplayPhase {
+  phaseName: string = "";
+}
+
+/** This contains a subset of `StratEditingState` to be used as reactive state for the UI.
+ * In order to modify this state, always edit `StratEditingState` and call `updateStratEditingStateDisplay()`
+ */
+class StratEditingStateDisplay {
+  stratName: string = "";
+  map: string = "";
+  mapFloors: string[] = [];
+  mapImgWidth: number = 1600;
+  mapImgHeight: number = 900;
+  activeFloor: number = 0;
+
+  phases: StratEditingDisplayPhase[] = [];
+  selectedPhase: number = 0;
+}
+
+const stratEditingState = new StratEditingState();
+
 const freeDrawCanvasState = FreeDrawCanvasState.Instance;
+
 
 const mapList = ["chalet", "coastline"];
 
 var websocket: WebSocket | null = null;
 
 function App() {
+  const [stratEditingStateDisplay, setStratEditingStateDisplay] = useState<StratEditingStateDisplay>(new StratEditingStateDisplay());
+
   const [currPage, setCurrPage] = useState<Page>(Page.ConnectToServerPage);
 
   const [stratList, setStratList] = useState<Array<StratMetadata>>([]);
-
-  const [currStratId, setCurrStratId] = useState<string>("");
-  const [currMap, setCurrMap] = useState<string>("");
-
-  const [currMapWidth, setCurrMapWidth] = useState<number>(1600);
-  const [currMapHeight, setCurrMapHeight] = useState<number>(900);
-  const [currMapFloors, setCurrMapFloors] = useState<Array<string>>([]);
-  const [currMapSelectedFloor, setCurrMapSelectedFloor] = useState<number>(0);
 
   const [currDrawTool, setCurrDrawTool] = useState<DrawTool>(DrawTool.FreeDraw);
 
@@ -103,41 +138,54 @@ function App() {
     return `/maps/${map}/${floor}.jpg`
   }
 
-  async function handleNetworkMessage(msgRaw: string) {
-    println(msgRaw);
-    const msg = JSON.parse(msgRaw);
-    switch (msg.message_type) {
-      case "hello_response":
-        setCurrPage(Page.LoginPage);
-        break;
-      case "login_response":
-        setCurrPage(Page.StratListPage);
-        websocket!.send(JSON.stringify({ message_type: "get_strat_list" }));
-        break;
-      case "get_strat_list_response":
-        var newStratList: Array<StratMetadata> = []
-        msg.strats.forEach((strat: any) => {
-          newStratList.push(new StratMetadata(strat.strat_id, strat.strat_name, strat.map));
-        });
-        setStratList(newStratList);
-        break;
-      case "get_map_metadata_response":
-        setCurrMapSelectedFloor(0);
-        setCurrMapFloors(msg.floors);
-        break;
-      case "create_empty_strat_response":
-        setCurrStratId(msg.strat_id);
-        setCurrPage(Page.StratEditorPage);
-        break;
-      case "set_active_map":
-        setCurrMap(msg.map_name);
-        setCurrMapFloors(msg.floors);
-        break;
-      case "freedraw_line":
-        freeDrawCanvasState.networkedDrawCommandsQueue.push({ points: [new Vec2(msg.from_x, msg.from_y), new Vec2(msg.to_x, msg.to_y)] });
-        break;
-      default:
-        break;
+  function updateStratEditingStateDisplay() {
+    const newDisplayState: StratEditingStateDisplay = {
+      stratName: stratEditingState.stratName,
+      map: stratEditingState.map,
+      mapFloors: stratEditingState.mapFloors,
+      activeFloor: stratEditingState.selectedFloor,
+      mapImgWidth: stratEditingState.mapImgWidth,
+      mapImgHeight: stratEditingState.mapImgHeight,
+      phases: stratEditingState.phases.map((phase) => { return { phaseName: phase.phaseName } }),
+      selectedPhase: stratEditingState.selectedPhase,
+    };
+    setStratEditingStateDisplay(newDisplayState);
+  }
+
+  async function sendNetworkMessage(msg: protos.Client2Server) {
+    const msgRaw = protos.Client2Server.encode(msg).finish();
+    await websocket?.send(Array.from(msgRaw));
+  }
+
+  async function handleNetworkMessage(msgRaw: Uint8Array) {
+    const msg = protos.Server2Client.decode(msgRaw);
+
+    println(`Received Message: ${JSON.stringify(msg)}`);
+
+    if (msg.helloResponse) {
+      setCurrPage(Page.LoginPage);
+    } else if (msg.loginResponse) {
+      setCurrPage(Page.StratListPage);
+      sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
+    } else if (msg.getStratListResponse) {
+      var newStratList: Array<StratMetadata> = [];
+      msg.getStratListResponse.strats.forEach((strat) => {
+        newStratList.push(new StratMetadata(strat.stratId, strat.stratName, strat.map));
+      });
+      setStratList(newStratList);
+    } else if (msg.createEmptyStratResponse) {
+      stratEditingState.stratId = msg.createEmptyStratResponse.stratId;
+      setCurrPage(Page.StratEditorPage);
+    } else if (msg.getMapMetadataResponse) {
+      stratEditingState.selectedFloor = 0;
+      stratEditingState.mapFloors = msg.getMapMetadataResponse.floors;
+      updateStratEditingStateDisplay();
+    } else if (msg.getStratInfoResponse) {
+      //
+    } else if (msg.saveStratResponse) {
+      //
+    } else {
+      println(`  Unhandled message!!!`);
     }
   }
 
@@ -147,9 +195,22 @@ function App() {
       websocket = ws;
 
       ws.addListener((msg) => {
-        handleNetworkMessage(msg.data!.toString());
+        switch (msg.type) {
+          case "Text":
+            println("Network messages must be in binary!");
+            break;
+          case "Binary":
+            handleNetworkMessage(Uint8Array.from(msg.data));
+            break;
+          case "Ping":
+            break;
+          case "Pong":
+            break;
+          case "Close":
+            break;
+        }
       });
-      ws.send(JSON.stringify({ message_type: "hello" }));
+      await sendNetworkMessage(protos.Client2Server.create({ hello: {} }));
 
       setConnectionState(ConnectionState.Connected);
     }
@@ -176,7 +237,7 @@ function App() {
 
   function loginPageComponent() {
     function commenceLogin(username: string) {
-      websocket!.send(JSON.stringify({ message_type: "login_request", username: username }))
+      sendNetworkMessage(protos.Client2Server.create({ loginRequest: { username } }))
     }
 
     return (<>
@@ -199,6 +260,13 @@ function App() {
   }
 
   function stratListPageComponent() {
+    async function loadStrat(stratMeta: StratMetadata) {
+      stratEditingState.map = stratMeta.map;
+      updateStratEditingStateDisplay();
+      await sendNetworkMessage(protos.Client2Server.create({ getStratInfo: { stratId: stratMeta.uuid } }));
+      await sendNetworkMessage(protos.Client2Server.create({ getMapMetadata: { map: stratMeta.map } }));
+    }
+
     return (<>
       <p>List of strats!</p>
       <button onClick={(_) => {
@@ -209,7 +277,7 @@ function App() {
           <p>{stratMeta.strat_name}</p>
           <p>{stratMeta.map}</p>
           <button onClick={(_) => {
-            setCurrPage(Page.CreateNewStratMapSelectionPage);
+            loadStrat(stratMeta);
             println("TODO: GET STRAT INFO FROM SERVER AND LOAD!");
           }}>Edit</button>
         </div>
@@ -219,9 +287,10 @@ function App() {
 
   function createNewStratMapSelectionPageComponent() {
     async function createNewStrat(map: string) {
-      setCurrMap(map);
-      await websocket?.send(JSON.stringify({ message_type: "create_empty_strat", map: map }));
-      websocket?.send(JSON.stringify({ message_type: "get_map_metadata", map: map }));
+      stratEditingState.map = map;
+      updateStratEditingStateDisplay();
+      await sendNetworkMessage(protos.Client2Server.create({ createEmptyStrat: { map } }));
+      await sendNetworkMessage(protos.Client2Server.create({ getMapMetadata: { map } }));
     }
 
     return (<>
@@ -316,8 +385,8 @@ function App() {
       return (
         <canvas id="map-drawing-canvas"
           style={{ gridColumn: 1, gridRow: 1, zIndex: 1 }}
-          width={currMapWidth}
-          height={currMapHeight}
+          width={stratEditingStateDisplay.mapImgWidth}
+          height={stratEditingStateDisplay.mapImgHeight}
           onMouseEnter={(_e) => freeDrawCanvasState.mouseClicked = false}
           onMouseLeave={(_e) => freeDrawCanvasState.mouseClicked = false}
           onMouseDown={(_e) => freeDrawCanvasState.mouseClicked = true}
@@ -356,12 +425,17 @@ function App() {
     }
 
     async function saveProgress() {
-      const paths: number[][][] = freeDrawCanvasState.paths.map((path) => path.points.map((pt) => [pt.x, pt.y]))
-      await websocket?.send(JSON.stringify({
-        message_type: "save_strat",
-        strat_id: currStratId,
-        free_draw_paths: paths,
-      }));
+      const paths: protos.FreeDrawPath[] = freeDrawCanvasState.paths.map((path) =>
+        protos.FreeDrawPath.create({
+          points:
+            path.points.map((pt) =>
+              protos.Point.create({ x: pt.x, y: pt.y })
+            )
+        })
+      );
+      println("TODO SAVE!");
+      // const state: protos.StratState = { stratName: "My cool strat!", phases: {} }
+      // await sendNetworkMessage(protos.Client2Server.create({ saveStrat: { stratId: currStratId, state: state } }));
     }
 
     return (
@@ -376,13 +450,29 @@ function App() {
           saveProgress()
         }}>Save Progress</button>
 
-        <p>Current Floor: {currMapFloors[currMapSelectedFloor]}</p>
-
+        <p>Current Phase: {stratEditingStateDisplay.phases[stratEditingStateDisplay.selectedPhase]?.phaseName}</p>
         <div className="row">
-          {currMapFloors.map((floor_name, i) =>
+          {stratEditingStateDisplay.phases.map((phase, i) =>
             <button onClick={(e) => {
               e.preventDefault();
-              setCurrMapSelectedFloor(i);
+              stratEditingState.selectedPhase = i;
+              updateStratEditingStateDisplay();
+            }}>{phase.phaseName}</button>
+          )}
+          <button onClick={(e) => {
+            e.preventDefault();
+            stratEditingState.phases.push(new StratEditingPhase());
+            updateStratEditingStateDisplay();
+          }}>Create new phase</button>
+        </div>
+
+        <p>Current Floor: {stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.activeFloor]}</p>
+        <div className="row">
+          {stratEditingStateDisplay.mapFloors.map((floor_name, i) =>
+            <button onClick={(e) => {
+              e.preventDefault();
+              stratEditingState.selectedFloor = i;
+              updateStratEditingStateDisplay();
             }}>{floor_name}</button>
           )}
         </div>
@@ -394,7 +484,7 @@ function App() {
             <button onClick={(_) => { setCurrDrawTool(DrawTool.FreeDraw) }}>PlaceOperator</button>
           </div>
           <div id="draw-area" style={{ display: "grid", gridTemplateColumns: "1", gridTemplateRows: "1" }}>
-            <img src={getFloorImgPath(currMap, currMapFloors[currMapSelectedFloor])}
+            <img src={getFloorImgPath(stratEditingStateDisplay.map, stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.activeFloor])}
               style={{ gridColumn: 1, gridRow: 1, zIndex: 0 }} />
             {freeDrawCanvas()}
           </div>

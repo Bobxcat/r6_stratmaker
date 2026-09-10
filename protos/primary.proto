@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+// Shared types
+message Point {
+    float x = 1;
+    float y = 2;
+}
+
+message FreeDrawPath {
+    repeated Point points = 1;
+}
+
+message StratFloor {
+    repeated FreeDrawPath freeDrawPaths = 1;
+}
+
+message StratPhase {
+    string phase_name = 1;
+    repeated StratFloor floors = 2;
+}
+
+message StratState {
+    string strat_name = 1;
+    repeated StratPhase phases = 2;
+}
+
+// Hello
+message Hello {}
+
+message HelloResponse {}
+
+// LoginRequest
+message LoginRequest {
+    string username = 1;
+}
+message LoginResponse {}
+
+// GetStratList
+message GetStratList {}
+
+message GetStratListResponseEntry {
+    string strat_id = 1;
+    string strat_name = 2;
+    string map = 3;
+}
+
+message GetStratListResponse {
+    repeated GetStratListResponseEntry strats = 1;
+}
+
+// CreateEmptyStrat
+message CreateEmptyStrat {
+    string map = 1;
+}
+
+message CreateEmptyStratResponse {
+    string strat_id = 1;
+}
+
+// GetMapMetadata
+message GetMapMetadata {
+    string map = 1;
+}
+
+message GetMapMetadataResponse {
+    repeated string floors = 1;
+}
+
+// GetStratInfo
+message GetStratInfo {
+    string strat_id = 1;
+}
+
+message GetStratInfoResponse {
+    StratState state = 1; 
+}
+
+// SaveStrat
+message SaveStrat {
+    string strat_id = 1;
+    StratState state = 2;
+}
+
+message SaveStratResponse {}
+
+message Client2Server {
+    oneof C2SInner {
+        Hello hello = 1;
+        LoginRequest loginRequest = 2;
+        GetStratList getStratList = 3;
+        CreateEmptyStrat createEmptyStrat = 4;
+        GetMapMetadata getMapMetadata = 5;
+        GetStratInfo getStratInfo = 6;
+        SaveStrat saveStrat = 7;
+    }
+}
+
+message Server2Client {
+    oneof S2CInner {
+        HelloResponse helloResponse = 1;
+        LoginResponse loginResponse = 2;
+        GetStratListResponse getStratListResponse = 3;
+        CreateEmptyStratResponse createEmptyStratResponse = 4;
+        GetMapMetadataResponse getMapMetadataResponse = 5;
+        GetStratInfoResponse getStratInfoResponse = 6;
+        SaveStratResponse saveStratResponse = 7;
+    }
+}

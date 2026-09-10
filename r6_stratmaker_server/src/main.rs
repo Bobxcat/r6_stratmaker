@@ -1,19 +1,27 @@
 use std::time::Duration;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use fjall::{Database, Keyspace, KeyspaceCreateOptions};
 use futures_util::{SinkExt, StreamExt};
 use json::JsonValue;
+use protobuf::{Message, SpecialFields};
 use serde::{Deserialize, Serialize};
 use tokio::net::{TcpListener, TcpStream};
-use tokio_websockets::{Message, ServerBuilder, WebSocketStream};
-use uuid::{Uuid, fmt::Urn};
+use tokio_websockets::{ServerBuilder, WebSocketStream};
+use uuid::Uuid;
 
-use crate::database::{
-    DatabaseHandle, StratEntry, StratId, StratsKeyspace, Username, UsersKeyspace,
+use crate::{
+    database::{
+        DatabaseHandle, StratEntry, StratId, StratPhase, StratPhaseFloor, StratsKeyspace, Username,
+        UsersKeyspace,
+    },
+    protos::primary::{
+        self, Client2Server, Server2Client, client2server::C2SInner, server2client::S2CInner,
+    },
 };
 
 mod database;
+mod protos;
 
 pub struct MapMetadata {
     pub name: &'static str,
@@ -56,155 +64,51 @@ impl MapId {
     }
 }
 
-// #[derive(Deserialize, Serialize, Debug, PartialEq)]
-// pub struct StratId(pub Uuid);
-
-// #[derive(Deserialize, Serialize, Debug, PartialEq)]
-// pub struct Map {
-//     //
-// }
-
-// fn foo(map: Map) {
-//     //
-// }
-
-// pub trait DBKeyspace {
-//     type Key: Serialize + for<'a> Deserialize<'a>;
-//     type Entry: Default + Serialize + for<'a> Deserialize<'a>;
-
-//     fn keyspace_id() -> DBKeyspaceId;
-// }
-
-// pub struct UsersKeyspace;
-
-// #[derive(Deserialize, Serialize, Debug, PartialEq)]
-// pub struct Username(pub String);
-
-// #[derive(Deserialize, Serialize, Debug, PartialEq)]
-// pub struct UsersEntry {
-//     pub strats: Vec<StratId>,
-// }
-
-// // pub struct Users
-
-// // impl DBKeyspaceType for UsersKeyspace {
-// //     type KeyType = Username;
-// //     type EntryType = ;
-// // }
-
-// #[derive(Debug, Clone, Copy)]
-// pub enum DBKeyspaceId {
-//     /// "username" => { "strats": ["strat_uuid1", ...] }
-//     Users,
-//     /// "strat_uuid" => { "name": "?", "map": "?", "lines": [{ "from": [1, 2], "to": [3, 4] }, ...] }
-//     Strategies,
-// }
-
-// #[derive(Clone)]
-// pub struct DatabaseHandle {
-//     #[allow(unused)]
-//     database: Database,
-//     users: Keyspace,
-//     strategies: Keyspace,
-// }
-
-// impl DatabaseHandle {
-//     fn get_keyspace(&self, keyspace: DBKeyspaceId) -> &Keyspace {
-//         match keyspace {
-//             DBKeyspaceId::Users => &self.users,
-//             DBKeyspaceId::Strategies => &self.strategies,
-//         }
-//     }
-
-//     pub async fn get(&self, keyspace: DBKeyspaceId, key: &str) -> Result<JsonValue, anyhow::Error> {
-//         let keyspace = self.get_keyspace(keyspace).clone();
-//         let key = key.to_string();
-
-//         let data = tokio::task::spawn_blocking(move || {
-//             Ok::<_, anyhow::Error>(
-//                 keyspace
-//                     .get(key)?
-//                     .expect("Called `get_json` but the entry didn't exist")
-//                     .to_vec(),
-//             )
-//         })
-//         .await??;
-
-//         Ok(json::parse(&String::from_utf8(data)?)?)
-//     }
-
-//     pub async fn get_or_insert(
-//         &self,
-//         keyspace: DBKeyspaceId,
-//         key: &str,
-//         default: impl FnOnce() -> JsonValue + Send + 'static,
-//     ) -> Result<JsonValue, anyhow::Error> {
-//         let ksp = self.get_keyspace(keyspace).clone();
-//         let key_clone = key.to_string();
-//         tokio::task::spawn_blocking(move || {
-//             if !ksp.contains_key(&key_clone)? {
-//                 let default = default();
-//                 ksp.insert(key_clone, default.dump())?;
-//             }
-//             Ok::<_, anyhow::Error>(())
-//         })
-//         .await??;
-
-//         self.get(keyspace, key).await
-//     }
-
-//     pub async fn insert(
-//         &self,
-//         keyspace: DBKeyspaceId,
-//         key: String,
-//         value: JsonValue,
-//     ) -> Result<(), anyhow::Error> {
-//         let keyspace = self.get_keyspace(keyspace).clone();
-//         tokio::task::spawn_blocking(move || keyspace.insert(key, value.dump())).await??;
-
-//         Ok(())
-//     }
-// }
-
 pub struct ReceivedMsg {
     length: usize,
-    message_type: String,
-    msg: JsonValue,
+    msg: C2SInner,
 }
 
 trait WsStreamExt {
-    async fn send_json(&mut self, msg: JsonValue) -> Result<(), tokio_websockets::Error>;
+    async fn send_proto(&mut self, msg: S2CInner) -> Result<(), tokio_websockets::Error>;
 
-    async fn next_json(&mut self) -> Result<ReceivedMsg, anyhow::Error>;
+    async fn next_proto(&mut self) -> anyhow::Result<ReceivedMsg>;
 }
 
 impl WsStreamExt for WebSocketStream<TcpStream> {
-    async fn send_json(&mut self, msg: JsonValue) -> Result<(), tokio_websockets::Error> {
-        self.send(Message::text(msg.dump())).await
+    async fn send_proto(&mut self, msg: S2CInner) -> Result<(), tokio_websockets::Error> {
+        let msg = Server2Client {
+            S2CInner: Some(msg),
+            special_fields: SpecialFields::new(),
+        };
+        let mut buf = vec![];
+        msg.write_to_vec(&mut buf);
+        self.send(tokio_websockets::Message::binary(buf)).await?;
+        Ok(())
     }
 
-    async fn next_json(&mut self) -> Result<ReceivedMsg, anyhow::Error> {
-        let msg = self
+    async fn next_proto(&mut self) -> anyhow::Result<ReceivedMsg> {
+        let raw = self
             .next()
             .await
-            .ok_or(anyhow!("Websocket closed down!"))??;
-        let msg_len = msg.as_payload().len();
-        let msg = json::parse(
-            msg.as_text()
-                .ok_or(anyhow!("Received message that wasn't JSON"))?,
-        )?;
+            .ok_or(anyhow!("Message failed to be received"))??;
 
-        if !msg.has_key("message_type") || !msg["message_type"].is_string() {
-            return Err(anyhow!(
-                "Received message without a `message_type: string` field!"
-            ));
-        }
+        let msg = Client2Server::parse_from_bytes(&raw.as_payload())?;
+        let msg = msg.C2SInner.ok_or(anyhow!("Empty message!"))?;
 
         Ok(ReceivedMsg {
-            length: msg_len,
-            message_type: msg["message_type"].as_str().unwrap().to_string(),
+            length: raw.as_payload().len(),
             msg,
         })
+    }
+}
+
+impl Server2Client {
+    pub fn from_inner(x: S2CInner) -> Self {
+        Self {
+            S2CInner: Some(x),
+            special_fields: SpecialFields::new(),
+        }
     }
 }
 
@@ -215,36 +119,23 @@ async fn accept_client(
     // Handshake
     let user = {
         // ---STEP 1: Client says "hello"
-        let ReceivedMsg {
-            length: _,
-            message_type,
-            msg: _,
-        } = ws_stream.next_json().await?;
-        if message_type != "hello" {
-            return Err(anyhow!(
-                "Expected a `hello` message, received `{message_type}`"
-            ));
-        }
+        let ReceivedMsg { length: _, msg } = ws_stream.next_proto().await?;
+        let C2SInner::Hello(_) = msg else {
+            bail!("Expected a `hello` message, received `{msg:?}`");
+        };
 
         // ---STEP 2: Server says "hello_response"
         ws_stream
-            .send_json(json::object! { message_type: "hello_response" })
+            .send_proto(S2CInner::HelloResponse(primary::HelloResponse::new()))
             .await?;
 
         // ---STEP 3: Client sends a login request
-        let ReceivedMsg {
-            length: _,
-            message_type,
-            msg,
-        } = ws_stream.next_json().await?;
-        if message_type != "login_request" {
-            return Err(anyhow!(
-                "Expected a `login_request` message, received `{message_type}`"
-            ));
-        }
+        let ReceivedMsg { length: _, msg } = ws_stream.next_proto().await?;
+        let C2SInner::LoginRequest(login_request) = msg else {
+            bail!("Expected a `login_request` message, received `{msg:?}`");
+        };
 
-        let user = msg["username"].as_str().unwrap();
-        let user = Username(user.to_string());
+        let user = Username(login_request.username);
 
         database
             .get_or_insert_default::<UsersKeyspace>(&user)
@@ -252,7 +143,7 @@ async fn accept_client(
 
         // ---STEP 4: Server tells the client that the login was successful
         ws_stream
-            .send_json(json::object! { message_type: "login_response" })
+            .send_proto(S2CInner::LoginResponse(primary::LoginResponse::new()))
             .await?;
 
         user
@@ -263,95 +154,181 @@ async fn accept_client(
     // Loop
     while let Ok(ReceivedMsg {
         length: message_length,
-        message_type,
         msg,
-    }) = ws_stream.next_json().await
+    }) = ws_stream.next_proto().await
     {
         println!(
             "[{user}] received message ({}): {}",
             bytesize::ByteSize::b(message_length as u64),
             {
-                let mut msg_str = format!("{msg}");
+                let mut msg_str = format!("{msg:?}");
                 msg_str.truncate(msg_str.floor_char_boundary(100));
                 msg_str
             },
         );
-        match message_type.as_str() {
-            "get_strat_list" => {
+        match msg {
+            C2SInner::GetStratList(_msg) => {
                 let Some(user_info) = database.get::<UsersKeyspace>(&user).await? else {
                     continue;
                 };
 
-                let mut strats_response: Vec<JsonValue> = vec![];
+                let mut strats_response: Vec<primary::GetStratListResponseEntry> = vec![];
 
                 for strat_id in &user_info.strats {
                     let strat_info = database.get::<StratsKeyspace>(strat_id).await?.unwrap();
 
-                    strats_response.push(
-                        json::object! { strat_id: strat_id.to_string(), strat_name: strat_info.strat_name, map: strat_info.map },
-                    );
+                    strats_response.push(primary::GetStratListResponseEntry {
+                        strat_id: strat_id.to_string(),
+                        strat_name: strat_info.strat_name,
+                        map: strat_info.map,
+                        special_fields: SpecialFields::new(),
+                    });
                 }
 
                 ws_stream
-                    .send_json(
-                        json::object! { message_type: "get_strat_list_response", strats: strats_response },
-                    )
+                    .send_proto(S2CInner::GetStratListResponse(
+                        primary::GetStratListResponse {
+                            strats: strats_response,
+                            special_fields: SpecialFields::new(),
+                        },
+                    ))
                     .await?;
             }
-            "create_empty_strat" => {
+            C2SInner::CreateEmptyStrat(msg) => {
                 let strat_id = StratId::new();
 
                 let mut user_info = database.get::<UsersKeyspace>(&user).await?.unwrap();
                 user_info.strats.push(strat_id.clone());
                 database.insert::<UsersKeyspace>(&user, &user_info).await?;
 
-                let map = msg["map"].as_str().unwrap();
-
                 database
                     .insert::<StratsKeyspace>(
                         &strat_id,
                         &StratEntry {
                             strat_name: "unnamed".into(),
-                            map: map.into(),
+                            map: msg.map,
                             phases: vec![],
                         },
                     )
                     .await?;
 
                 ws_stream
-                    .send_json(json::object! { message_type: "create_empty_strat_response", strat_id: strat_id.to_string() })
+                    .send_proto(S2CInner::CreateEmptyStratResponse(
+                        primary::CreateEmptyStratResponse {
+                            strat_id: strat_id.to_string(),
+                            special_fields: SpecialFields::new(),
+                        },
+                    ))
                     .await?;
             }
-            "get_map_metadata" => {
-                let map_name = msg["map"].as_str().unwrap();
-                let map_id = MapId::from_map_name(map_name).unwrap();
+            C2SInner::GetMapMetadata(msg) => {
+                let map_id = MapId::from_map_name(&msg.map).unwrap();
                 let MapMetadata { name: _, floors } = *map_id.metadata();
 
                 ws_stream
-                    .send_json(
-                        json::object! { message_type: "get_map_metadata_response", floors: floors },
-                    )
+                    .send_proto(S2CInner::GetMapMetadataResponse(
+                        primary::GetMapMetadataResponse {
+                            floors: floors.iter().map(|&s| String::from(s)).collect(),
+                            special_fields: SpecialFields::new(),
+                        },
+                    ))
                     .await?;
             }
-            "get_strat_info" => {
-                //
+            C2SInner::GetStratInfo(msg) => {
+                println!("Get the info: strat={}", msg.strat_id);
+                let strat_id = StratId(Uuid::try_parse(&msg.strat_id)?);
+
+                let Some(strat) = database.get::<StratsKeyspace>(&strat_id).await? else {
+                    continue;
+                };
+
+                let state = primary::StratState {
+                    strat_name: strat.strat_name,
+                    phases: strat
+                        .phases
+                        .into_iter()
+                        .map(|phase| primary::StratPhase {
+                            phase_name: phase.phase_name,
+                            floors: phase
+                                .floors
+                                .into_iter()
+                                .map(|floor| primary::StratFloor {
+                                    freeDrawPaths: floor
+                                        .draw_paths
+                                        .into_iter()
+                                        .map(|path| primary::FreeDrawPath {
+                                            points: path
+                                                .into_iter()
+                                                .map(|[x, y]| primary::Point {
+                                                    x,
+                                                    y,
+                                                    special_fields: SpecialFields::new(),
+                                                })
+                                                .collect(),
+                                            special_fields: SpecialFields::new(),
+                                        })
+                                        .collect(),
+                                    special_fields: SpecialFields::new(),
+                                })
+                                .collect(),
+                            special_fields: SpecialFields::new(),
+                        })
+                        .collect(),
+                    special_fields: SpecialFields::new(),
+                };
+
+                ws_stream
+                    .send_proto(S2CInner::GetStratInfoResponse(
+                        primary::GetStratInfoResponse {
+                            state: protobuf::MessageField(Some(Box::new(state))),
+                            special_fields: SpecialFields::new(),
+                        },
+                    ))
+                    .await?;
             }
-            "save_strat" => {
-                let strat_id = msg["strat_id"].as_str().unwrap();
-                let strat_id = StratId(Uuid::try_parse(strat_id)?);
-                let free_draw_paths = msg["free_draw_paths"]
-                    .members()
-                    .map(|path| path)
-                    .collect::<Vec<_>>();
+            C2SInner::SaveStrat(msg) => {
+                let strat_id = StratId(Uuid::try_parse(&msg.strat_id)?);
+                let Some(state) = msg.state.into_option() else {
+                    continue;
+                };
 
                 let Some(mut strat) = database.get::<StratsKeyspace>(&strat_id).await? else {
                     continue;
                 };
                 // Update strat entry...
+                strat = StratEntry {
+                    strat_name: state.strat_name,
+                    map: strat.map,
+                    phases: state
+                        .phases
+                        .into_iter()
+                        .map(|state_phase| StratPhase {
+                            phase_name: state_phase.phase_name,
+                            floors: state_phase
+                                .floors
+                                .into_iter()
+                                .map(|state_floor| StratPhaseFloor {
+                                    draw_paths: state_floor
+                                        .freeDrawPaths
+                                        .into_iter()
+                                        .map(|free_draw_path| {
+                                            free_draw_path
+                                                .points
+                                                .into_iter()
+                                                .map(|pt| [pt.x, pt.y])
+                                                .collect()
+                                        })
+                                        .collect(),
+                                    placed_icons: vec![],
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                };
                 // ...
                 database.insert::<StratsKeyspace>(&strat_id, &strat).await?;
             }
-            mty => println!("Unexpected message_type: `{mty}`",),
+            msg => println!("Unexpected message: `{msg:?}`",),
         }
     }
 
@@ -372,7 +349,11 @@ async fn main() -> Result<(), anyhow::Error> {
             println!("Client Accepted at {:?}", ws_stream.get_ref().local_addr());
 
             let db_clone = database.clone();
-            tokio::spawn(async move { accept_client(ws_stream, db_clone).await });
+            tokio::spawn(async move {
+                let res = accept_client(ws_stream, db_clone).await;
+                println!("Client Exited: {res:?}");
+                res
+            });
         }
 
         Ok::<_, anyhow::Error>(())

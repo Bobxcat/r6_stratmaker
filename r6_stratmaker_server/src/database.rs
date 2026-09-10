@@ -67,7 +67,7 @@ pub struct StratPlacedIcon {
 
 #[derive(Deserialize, Serialize, Default, Debug)]
 pub struct StratPhaseFloor {
-    pub draw_paths: Vec<Vec<[f64; 2]>>,
+    pub draw_paths: Vec<Vec<[f32; 2]>>,
     pub placed_icons: Vec<StratPlacedIcon>,
 }
 
@@ -178,53 +178,4 @@ impl DatabaseHandle {
         })
         .await?
     }
-
-    // async fn _get(&self, keyspace: DBKeyspaceId, key: &str) -> anyhow::Result<JsonValue> {
-    //     let keyspace = self.get_keyspace(keyspace).clone();
-    //     let key = key.to_string();
-
-    //     let data = tokio::task::spawn_blocking(move || {
-    //         Ok::<_, anyhow::Error>(
-    //             keyspace
-    //                 .get(key)?
-    //                 .expect("Called `get_json` but the entry didn't exist")
-    //                 .to_vec(),
-    //         )
-    //     })
-    //     .await??;
-
-    //     Ok(json::parse(&String::from_utf8(data)?)?)
-    // }
-
-    // async fn _get_or_insert(
-    //     &self,
-    //     keyspace: DBKeyspaceId,
-    //     key: &str,
-    //     default: impl FnOnce() -> JsonValue + Send + 'static,
-    // ) -> anyhow::Result<JsonValue> {
-    //     let ksp = self.get_keyspace(keyspace).clone();
-    //     let key_clone = key.to_string();
-    //     tokio::task::spawn_blocking(move || {
-    //         if !ksp.contains_key(&key_clone)? {
-    //             let default = default();
-    //             ksp.insert(key_clone, default.dump())?;
-    //         }
-    //         Ok::<_, anyhow::Error>(())
-    //     })
-    //     .await??;
-
-    //     self.get(keyspace, key).await
-    // }
-
-    // pub async fn _insert(
-    //     &self,
-    //     keyspace: DBKeyspaceId,
-    //     key: String,
-    //     value: JsonValue,
-    // ) -> anyhow::Result<()> {
-    //     let keyspace = self.get_keyspace(keyspace).clone();
-    //     tokio::task::spawn_blocking(move || keyspace.insert(key, value.dump())).await??;
-
-    //     Ok(())
-    // }
 }

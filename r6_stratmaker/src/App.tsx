@@ -135,6 +135,7 @@ class StratEditingState {
 
   pushEmptyPhase() {
     var phase = new StratEditingPhase();
+    phase.phaseName = `Phase ${this.phases.length}`;
     phase.floors = this.mapFloors.map((_floorName) => new StratEditingPhaseFloor());
     this.phases.push(phase);
   }
@@ -423,9 +424,6 @@ function App() {
 
         return a;
       };
-
-      // const arrowHeadPt0 = arrow.end.sub(arrow.start).rotated(0.1).scaled(0.9).add(arrow.start);
-      // const arrowHeadPt1 = arrow.end.sub(arrow.start).rotated(-0.1).scaled(0.9).add(arrow.start);
 
       const arrowHeadPt0 = makeArrowHeadPoint(true, true, 10);
       const arrowHeadPt1 = makeArrowHeadPoint(false, true, 10);

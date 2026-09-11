@@ -16,16 +16,18 @@ enum Page {
 enum DrawTool {
   FreeDraw,
   Arrow,
+  PlaceIcon,
 }
 
 class FreeDrawCanvasState {
-  mouseX: number = 0;
-  mouseY: number = 0;
+  prevMousePos: Vec2 = new Vec2(0, 0);
+  mousePos: Vec2 = new Vec2(0, 0);
+
   prevMouseClicked: boolean = false;
   mouseClicked: boolean = false;
-  paths: Array<DrawPath> = [];
-  pathsForeign: Array<DrawPath> = [];
-  networkedDrawCommandsQueue: Array<DrawPath> = [];
+
+  arrowHasBeenStarted: boolean = false;
+  arrowStartPoint: Vec2 = new Vec2(0, 0);
 
   private static _instance: FreeDrawCanvasState;
 
@@ -44,6 +46,10 @@ class Vec2 {
     this.y = y;
   }
 
+  clone(): Vec2 {
+    return new Vec2(this.x, this.y);
+  }
+
   magnitude(): number {
     return this.x * this.x + this.y * this.y;
   }
@@ -51,10 +57,37 @@ class Vec2 {
   distance(other: Vec2): number {
     return new Vec2(other.x - this.y, other.y - this.y).magnitude();
   }
+
+  rotated(angle: number): Vec2 {
+    const cosa = Math.cos(angle);
+    const sina = Math.sin(angle);
+    return new Vec2(this.x * cosa - this.y * sina, this.x * sina + this.y * cosa);
+  }
+
+  scaled(scale: number): Vec2 {
+    return new Vec2(this.x * scale, this.y * scale);
+  }
+
+  add(rhs: Vec2): Vec2 {
+    return new Vec2(this.x + rhs.x, this.y + rhs.y);
+  }
+
+  sub(rhs: Vec2): Vec2 {
+    return new Vec2(this.x - rhs.x, this.y - rhs.y);
+  }
 }
 
 class DrawPath {
   points: Array<Vec2> = [];
+}
+
+class Arrow {
+  start: Vec2;
+  end: Vec2;
+  constructor(start: Vec2, end: Vec2) {
+    this.start = start;
+    this.end = end;
+  }
 }
 
 class StratMetadata {
@@ -68,11 +101,19 @@ class StratMetadata {
   }
 }
 
+class StratEditingPhaseFloor {
+  freeDrawPaths: DrawPath[] = [];
+  arrows: Arrow[] = [];
+}
+
 class StratEditingPhase {
   phaseName: string = "---";
+  floors: StratEditingPhaseFloor[] = [];
 }
 
 class StratEditingState {
+  selectedDrawTool: DrawTool = DrawTool.FreeDraw;
+
   stratId: string = "";
   stratName: string = "";
   map: string = "";
@@ -83,6 +124,16 @@ class StratEditingState {
 
   phases: StratEditingPhase[] = [];
   selectedPhase: number = 0;
+
+  pushEmptyPhase() {
+    var phase = new StratEditingPhase();
+    phase.floors = this.mapFloors.map((_floorName) => new StratEditingPhaseFloor());
+    this.phases.push(phase);
+  }
+
+  currentPhaseFloor(): StratEditingPhaseFloor | null {
+    return this.phases[this.selectedPhase]?.floors[this.selectedFloor];
+  }
 }
 
 class StratEditingDisplayPhase {
@@ -93,6 +144,8 @@ class StratEditingDisplayPhase {
  * In order to modify this state, always edit `StratEditingState` and call `updateStratEditingStateDisplay()`
  */
 class StratEditingStateDisplay {
+  selectedDrawTool: DrawTool = DrawTool.FreeDraw;
+
   stratName: string = "";
   map: string = "";
   mapFloors: string[] = [];
@@ -108,6 +161,7 @@ const stratEditingState = new StratEditingState();
 
 const freeDrawCanvasState = FreeDrawCanvasState.Instance;
 
+const stratEditorFreeDrawCanvasId = "strat-editor-free-draw-canvas";
 
 const mapList = ["chalet", "coastline"];
 
@@ -119,8 +173,6 @@ function App() {
   const [currPage, setCurrPage] = useState<Page>(Page.ConnectToServerPage);
 
   const [stratList, setStratList] = useState<Array<StratMetadata>>([]);
-
-  const [currDrawTool, setCurrDrawTool] = useState<DrawTool>(DrawTool.FreeDraw);
 
   enum ConnectionState {
     WaitingForIP = "Waiting for IP Address (or Connection Failed)",
@@ -140,13 +192,14 @@ function App() {
 
   function updateStratEditingStateDisplay() {
     const newDisplayState: StratEditingStateDisplay = {
+      selectedDrawTool: stratEditingState.selectedDrawTool,
       stratName: stratEditingState.stratName,
       map: stratEditingState.map,
       mapFloors: stratEditingState.mapFloors,
       activeFloor: stratEditingState.selectedFloor,
       mapImgWidth: stratEditingState.mapImgWidth,
       mapImgHeight: stratEditingState.mapImgHeight,
-      phases: stratEditingState.phases.map((phase) => { return { phaseName: phase.phaseName } }),
+      phases: stratEditingState.phases.map((phase) => { return { phaseName: phase.phaseName }; }),
       selectedPhase: stratEditingState.selectedPhase,
     };
     setStratEditingStateDisplay(newDisplayState);
@@ -273,7 +326,7 @@ function App() {
         setCurrPage(Page.CreateNewStratMapSelectionPage);
       }}>Create New Strat</button>
       {stratList.map((stratMeta) =>
-        <div className="strat-list-strat-container">
+        <div key={stratMeta.uuid} className="strat-list-strat-container">
           <p>{stratMeta.strat_name}</p>
           <p>{stratMeta.map}</p>
           <button onClick={(_) => {
@@ -298,7 +351,7 @@ function App() {
       <button onClick={(_) => { setCurrPage(Page.StratListPage) }}>Cancel Create Strat</button>
       <div className="row">
         {mapList.map((mapName) =>
-          <div className="col">
+          <div key={mapName} className="col">
             <button onClick={(_) => { createNewStrat(mapName) }}>{mapName}</button>
           </div>
         )}
@@ -307,84 +360,192 @@ function App() {
   }
 
   function stratEditorPageComponent() {
-    function freeDrawCanvas() {
-      function mousePosForCanvas(canvasId: string, clientX: number, clientY: number): Vec2 {
-        const canvas = document.getElementById(canvasId)! as HTMLCanvasElement;
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
-        return new Vec2(((clientX - rect.left) * scaleX), ((clientY - rect.top) * scaleY));
+    const arrowPlacementPreviewCanvasId = "arrow-placement-preview-canvas";
+
+    function drawPathToCanvas(canvasId: string, path: DrawPath) {
+      const canvas = document.getElementById(canvasId);
+      if (canvas == null) {
+        return;
       }
 
-      function drawPathToCanvas(canvasId: string, path: DrawPath) {
-        const canvas = document.getElementById(canvasId);
-        if (canvas == null) {
+      const ctx = (canvas as HTMLCanvasElement).getContext("2d");
+      if (ctx == null) {
+        return;
+      }
+
+      ctx.beginPath();
+      ctx.strokeStyle = "red";
+      ctx.lineWidth = 3;
+
+      path.points.forEach((pt, idx) => {
+        if (idx == 0) {
+          ctx.moveTo(pt.x, pt.y);
+        } else {
+          ctx.lineTo(pt.x, pt.y);
+        }
+      });
+      ctx.stroke();
+      ctx.closePath();
+    }
+
+    function drawArrowToCanvas(canvasId: string, arrow: Arrow) {
+      const canvas = document.getElementById(canvasId);
+      if (canvas == null) {
+        return;
+      }
+
+      const ctx = (canvas as HTMLCanvasElement).getContext("2d");
+      if (ctx == null) {
+        return;
+      }
+
+      ctx.beginPath();
+      ctx.strokeStyle = "blue";
+      ctx.lineWidth = 3;
+
+      ctx.moveTo(arrow.start.x, arrow.start.y);
+      ctx.lineTo(arrow.end.x, arrow.end.y);
+
+      const arrowHeadPt0 = arrow.end.sub(arrow.start).rotated(0.1).scaled(0.9).add(arrow.start);
+      const arrowHeadPt1 = arrow.end.sub(arrow.start).rotated(-0.1).scaled(0.9).add(arrow.start);
+
+      ctx.moveTo(arrowHeadPt0.x, arrowHeadPt0.y);
+      ctx.lineTo(arrow.end.x, arrow.end.y)
+      ctx.lineTo(arrowHeadPt1.x, arrowHeadPt1.y);
+
+      ctx.stroke();
+      ctx.closePath();
+    }
+
+    function redrawFreeDrawCanvas(canvasId: string) {
+      const canvas = document.getElementById(canvasId)! as HTMLCanvasElement;
+      const ctx = canvas.getContext("2d")!;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const phaseFloor = stratEditingState.currentPhaseFloor();
+      if (phaseFloor) {
+        phaseFloor.freeDrawPaths.forEach((path) => {
+          drawPathToCanvas(canvasId, path);
+        });
+        phaseFloor.arrows.forEach((arrow) => {
+          drawArrowToCanvas(canvasId, arrow);
+        });
+      }
+    }
+
+    function mousePosForCanvas(canvasId: string, clientX: number, clientY: number): Vec2 {
+      const canvas = document.getElementById(canvasId)! as HTMLCanvasElement;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      return new Vec2(((clientX - rect.left) * scaleX), ((clientY - rect.top) * scaleY));
+    }
+
+    function freeDrawCanvas(canvasId: string) {
+      return (
+        <canvas id={canvasId}
+          style={{ gridColumn: 1, gridRow: 1, zIndex: 1 }}
+          width={stratEditingStateDisplay.mapImgWidth}
+          height={stratEditingStateDisplay.mapImgHeight}
+        >
+        </canvas>
+      )
+    }
+
+    function inputGatheringCanvas() {
+      const inputGatheringCanvasId = "input-gathering-canvas";
+
+      function onUpdate() {
+        const phaseFloor = stratEditingState.currentPhaseFloor();
+
+        if (!phaseFloor) {
           return;
         }
 
-        const ctx = (canvas as HTMLCanvasElement).getContext("2d");
-        if (ctx == null) {
-          return;
+        switch (stratEditingState.selectedDrawTool) {
+          case DrawTool.FreeDraw:
+            if (freeDrawCanvasState.mouseClicked) {
+              if (phaseFloor.freeDrawPaths.length > 0 && freeDrawCanvasState.prevMouseClicked) {
+                // Continue existing path
+                phaseFloor.freeDrawPaths[phaseFloor.freeDrawPaths.length - 1].points.push(freeDrawCanvasState.mousePos.clone());
+              } else {
+                // Create new path
+                var path = new DrawPath();
+                path.points.push(freeDrawCanvasState.mousePos.clone());
+                phaseFloor.freeDrawPaths.push(path);
+              }
+
+              if (freeDrawCanvasState.prevMouseClicked) {
+                var path = new DrawPath();
+                path.points = [freeDrawCanvasState.prevMousePos.clone(), freeDrawCanvasState.mousePos.clone()];
+                drawPathToCanvas(stratEditorFreeDrawCanvasId, path);
+              }
+            }
+            break;
+          case DrawTool.Arrow:
+            if (freeDrawCanvasState.mouseClicked && !freeDrawCanvasState.prevMouseClicked) {
+              if (freeDrawCanvasState.arrowHasBeenStarted) {
+                const arrow = new Arrow(freeDrawCanvasState.arrowStartPoint.clone(), freeDrawCanvasState.mousePos.clone());
+                drawArrowToCanvas(stratEditorFreeDrawCanvasId, arrow);
+                phaseFloor.arrows.push(arrow);
+                freeDrawCanvasState.arrowHasBeenStarted = false;
+              } else {
+                freeDrawCanvasState.arrowStartPoint = freeDrawCanvasState.mousePos.clone();
+                freeDrawCanvasState.arrowHasBeenStarted = true;
+              }
+            }
+
+            const arrowPreviewCanvas = document.getElementById(arrowPlacementPreviewCanvasId)! as HTMLCanvasElement;
+            const arrowPreviewCtx = arrowPreviewCanvas.getContext("2d")!;
+            arrowPreviewCtx.clearRect(0, 0, arrowPreviewCanvas.width, arrowPreviewCanvas.height);
+            if (freeDrawCanvasState.arrowHasBeenStarted && !freeDrawCanvasState.mouseClicked) {
+              const arrow = new Arrow(freeDrawCanvasState.arrowStartPoint.clone(), freeDrawCanvasState.mousePos.clone());
+              drawArrowToCanvas(arrowPlacementPreviewCanvasId, arrow);
+            }
+            break;
+          case DrawTool.PlaceIcon:
+            break;
         }
 
-        ctx.beginPath();
-        ctx.strokeStyle = "red";
-        ctx.lineWidth = 3;
+        freeDrawCanvasState.prevMouseClicked = freeDrawCanvasState.mouseClicked;
+        freeDrawCanvasState.prevMousePos = freeDrawCanvasState.mousePos;
 
-        path.points.forEach((pt, idx) => {
-          if (idx == 0) {
-            ctx.moveTo(pt.x, pt.y);
-          } else {
-            ctx.lineTo(pt.x, pt.y);
-          }
-        });
-        ctx.stroke();
-        ctx.closePath();
+        requestAnimationFrame(onUpdate);
       }
-
-      function onCanvasUpdate(_timestamp: number) {
-        requestAnimationFrame(onCanvasUpdate);
-
-        freeDrawCanvasState.networkedDrawCommandsQueue.forEach((path) => {
-          drawPathToCanvas("map-drawing-canvas", path);
-          freeDrawCanvasState.pathsForeign.push(path);
-        });
-        freeDrawCanvasState.networkedDrawCommandsQueue = [];
-      }
-      requestAnimationFrame(onCanvasUpdate);
-
-      function redrawCanvas() {
-        const canvas = document.getElementById("map-drawing-canvas")! as HTMLCanvasElement;
-        const ctx = canvas.getContext("2d")!;
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        freeDrawCanvasState.paths.forEach((path) => {
-          drawPathToCanvas("map-drawing-canvas", path);
-        });
-        freeDrawCanvasState.pathsForeign.forEach((path) => {
-          drawPathToCanvas("map-drawing-canvas", path);
-        });
-      }
+      requestAnimationFrame(onUpdate);
 
       function triggerUndo() {
-        if (freeDrawCanvasState.paths.length > 0) {
-          println("Undoing!!");
-          freeDrawCanvasState.paths.pop();
-          redrawCanvas();
+        const phaseFloor = stratEditingState.currentPhaseFloor();
+        if (phaseFloor) {
+          switch (stratEditingState.selectedDrawTool) {
+            case DrawTool.FreeDraw:
+              if (phaseFloor.freeDrawPaths.length > 0) {
+                phaseFloor.freeDrawPaths.pop();
+                redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+              }
+              break;
+            case DrawTool.Arrow:
+              if (phaseFloor.arrows.length > 0) {
+                phaseFloor.arrows.pop();
+                redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+              }
+              break;
+            case DrawTool.PlaceIcon:
+              break;
+          }
         }
       }
 
       document.onkeydown = (e) => {
-        e.preventDefault();
         if (e.ctrlKey && e.key == "z") {
           triggerUndo();
         }
       };
 
-      return (
-        <canvas id="map-drawing-canvas"
-          style={{ gridColumn: 1, gridRow: 1, zIndex: 1 }}
+      return (<>
+        <canvas id={inputGatheringCanvasId}
+          style={{ gridColumn: 1, gridRow: 1, zIndex: 100 }}
           width={stratEditingStateDisplay.mapImgWidth}
           height={stratEditingStateDisplay.mapImgHeight}
           onMouseEnter={(_e) => freeDrawCanvasState.mouseClicked = false}
@@ -392,47 +553,21 @@ function App() {
           onMouseDown={(_e) => freeDrawCanvasState.mouseClicked = true}
           onMouseUp={(_e) => freeDrawCanvasState.mouseClicked = false}
           onMouseMove={(e) => {
-            const prevMouseX = freeDrawCanvasState.mouseX;
-            const prevMouseY = freeDrawCanvasState.mouseY;
-            const mousePos = mousePosForCanvas("map-drawing-canvas", e.clientX, e.clientY);
-
-            freeDrawCanvasState.mouseX = mousePos.x;
-            freeDrawCanvasState.mouseY = mousePos.y;
-
-            if (currDrawTool == DrawTool.FreeDraw && freeDrawCanvasState.mouseClicked) {
-              if (freeDrawCanvasState.paths.length > 0 && freeDrawCanvasState.prevMouseClicked) {
-                // Continue existing path
-                freeDrawCanvasState.paths[freeDrawCanvasState.paths.length - 1].points.push(mousePos);
-              } else {
-                // Create new path
-                var path = new DrawPath();
-                path.points.push(mousePos);
-                freeDrawCanvasState.paths.push(path);
-              }
-
-              if (freeDrawCanvasState.prevMouseClicked) {
-                var path = new DrawPath();
-                path.points = [new Vec2(prevMouseX, prevMouseY), new Vec2(freeDrawCanvasState.mouseX, freeDrawCanvasState.mouseY)];
-                drawPathToCanvas("map-drawing-canvas", path);
-              }
-            }
-
-            freeDrawCanvasState.prevMouseClicked = freeDrawCanvasState.mouseClicked;
-          }}
-        >
-        </canvas>
-      )
+            freeDrawCanvasState.mousePos = mousePosForCanvas(inputGatheringCanvasId, e.clientX, e.clientY);
+          }}></canvas>
+      </>)
     }
 
     async function saveProgress() {
-      const paths: protos.FreeDrawPath[] = freeDrawCanvasState.paths.map((path) =>
-        protos.FreeDrawPath.create({
-          points:
-            path.points.map((pt) =>
-              protos.Point.create({ x: pt.x, y: pt.y })
-            )
-        })
-      );
+      const phaseFloor = stratEditingState.currentPhaseFloor();
+      // const paths: protos.FreeDrawPath[] = phaseFloor.paths.map((path) =>
+      //   protos.FreeDrawPath.create({
+      //     points:
+      //       path.points.map((pt) =>
+      //         protos.Point.create({ x: pt.x, y: pt.y })
+      //       )
+      //   })
+      // );
       println("TODO SAVE!");
       // const state: protos.StratState = { stratName: "My cool strat!", phases: {} }
       // await sendNetworkMessage(protos.Client2Server.create({ saveStrat: { stratId: currStratId, state: state } }));
@@ -453,15 +588,16 @@ function App() {
         <p>Current Phase: {stratEditingStateDisplay.phases[stratEditingStateDisplay.selectedPhase]?.phaseName}</p>
         <div className="row">
           {stratEditingStateDisplay.phases.map((phase, i) =>
-            <button onClick={(e) => {
+            <button key={i} onClick={(e) => {
               e.preventDefault();
               stratEditingState.selectedPhase = i;
+              redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
               updateStratEditingStateDisplay();
             }}>{phase.phaseName}</button>
           )}
           <button onClick={(e) => {
             e.preventDefault();
-            stratEditingState.phases.push(new StratEditingPhase());
+            stratEditingState.pushEmptyPhase();
             updateStratEditingStateDisplay();
           }}>Create new phase</button>
         </div>
@@ -469,9 +605,10 @@ function App() {
         <p>Current Floor: {stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.activeFloor]}</p>
         <div className="row">
           {stratEditingStateDisplay.mapFloors.map((floor_name, i) =>
-            <button onClick={(e) => {
+            <button key={i} onClick={(e) => {
               e.preventDefault();
               stratEditingState.selectedFloor = i;
+              redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
               updateStratEditingStateDisplay();
             }}>{floor_name}</button>
           )}
@@ -479,14 +616,20 @@ function App() {
 
         <div className="row" style={{ justifyItems: "left" }}>
           <div className="col" id="tool-selector-bar">
-            <button onClick={(_) => { setCurrDrawTool(DrawTool.FreeDraw) }}>FreeDraw</button>
-            <button onClick={(_) => { setCurrDrawTool(DrawTool.Arrow) }}>Arrow</button>
-            <button onClick={(_) => { setCurrDrawTool(DrawTool.FreeDraw) }}>PlaceOperator</button>
+            <p>{DrawTool[stratEditingState.selectedDrawTool]}</p>
+            <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.FreeDraw; updateStratEditingStateDisplay(); }}>FreeDraw</button>
+            <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.Arrow; updateStratEditingStateDisplay(); }}>Arrow</button>
+            <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.PlaceIcon; updateStratEditingStateDisplay(); }}>PlaceOperator</button>
           </div>
           <div id="draw-area" style={{ display: "grid", gridTemplateColumns: "1", gridTemplateRows: "1" }}>
             <img src={getFloorImgPath(stratEditingStateDisplay.map, stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.activeFloor])}
               style={{ gridColumn: 1, gridRow: 1, zIndex: 0 }} />
-            {freeDrawCanvas()}
+            {freeDrawCanvas(stratEditorFreeDrawCanvasId)}
+            <canvas id={arrowPlacementPreviewCanvasId}
+              style={{ gridColumn: 1, gridRow: 1, zIndex: 2 }}
+              width={stratEditingStateDisplay.mapImgWidth}
+              height={stratEditingStateDisplay.mapImgHeight}></canvas>
+            {inputGatheringCanvas()}
           </div>
         </div>
       </>

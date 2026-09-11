@@ -50,12 +50,20 @@ class Vec2 {
     return new Vec2(this.x, this.y);
   }
 
-  magnitude(): number {
+  sqrMagnitude(): number {
     return this.x * this.x + this.y * this.y;
+  }
+
+  magnitude(): number {
+    return Math.sqrt(this.sqrMagnitude());
   }
 
   distance(other: Vec2): number {
     return new Vec2(other.x - this.y, other.y - this.y).magnitude();
+  }
+
+  normalized(): Vec2 {
+    return this.clone().scaled(1 / this.magnitude());
   }
 
   rotated(angle: number): Vec2 {
@@ -406,8 +414,21 @@ function App() {
       ctx.moveTo(arrow.start.x, arrow.start.y);
       ctx.lineTo(arrow.end.x, arrow.end.y);
 
-      const arrowHeadPt0 = arrow.end.sub(arrow.start).rotated(0.1).scaled(0.9).add(arrow.start);
-      const arrowHeadPt1 = arrow.end.sub(arrow.start).rotated(-0.1).scaled(0.9).add(arrow.start);
+      const makeArrowHeadPoint = (side: boolean, isFixedLength: boolean, fixedLength: number): Vec2 => {
+        var rot = side ? 0.1 : -0.1;
+        var a = arrow.end.sub(arrow.start).rotated(rot).scaled(0.9).add(arrow.start);
+        if (isFixedLength) {
+          a = a.sub(arrow.end).normalized().scaled(fixedLength).add(arrow.end);
+        }
+
+        return a;
+      };
+
+      // const arrowHeadPt0 = arrow.end.sub(arrow.start).rotated(0.1).scaled(0.9).add(arrow.start);
+      // const arrowHeadPt1 = arrow.end.sub(arrow.start).rotated(-0.1).scaled(0.9).add(arrow.start);
+
+      const arrowHeadPt0 = makeArrowHeadPoint(true, true, 10);
+      const arrowHeadPt1 = makeArrowHeadPoint(false, true, 10);
 
       ctx.moveTo(arrowHeadPt0.x, arrowHeadPt0.y);
       ctx.lineTo(arrow.end.x, arrow.end.y)

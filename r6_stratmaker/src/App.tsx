@@ -1,9 +1,14 @@
-import { useEffect, useReducer, useState } from "react";
+// Credit to https://github.com/marcopixel/r6operators for operator icons except Solid Snake
+// Credit to RoseishDesigns on Etsy (https://www.etsy.com/listing/4387393681/derpy-snake-water-bottle-sticker-shnek) for the Solid Snake icon
+// Credit to Ubisoft for map blueprints
+
+import { Fragment, useEffect, useReducer, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import WebSocket from "@tauri-apps/plugin-websocket";
 import MessageKind from "@tauri-apps/plugin-websocket";
 import "./App.css";
 import * as protos from "./generated_protos/primary"
+
 
 enum Page {
   ConnectToServerPage,
@@ -109,9 +114,28 @@ class StratMetadata {
   }
 }
 
+enum IconKind {
+  Operator,
+}
+
+class IconInfo {
+  kind: IconKind = IconKind.Operator;
+  payload: string = "";
+}
+
+class IconPlacement {
+  pos: Vec2;
+  info: IconInfo;
+  constructor(pos: Vec2, info: IconInfo) {
+    this.pos = pos;
+    this.info = info;
+  }
+}
+
 class StratEditingPhaseFloor {
   freeDrawPaths: DrawPath[] = [];
   arrows: Arrow[] = [];
+  icons: IconPlacement[] = [];
 }
 
 class StratEditingPhase {
@@ -121,6 +145,7 @@ class StratEditingPhase {
 
 class StratEditingState {
   selectedDrawTool: DrawTool = DrawTool.FreeDraw;
+  selectedIcon: IconInfo = new IconInfo();
 
   stratId: string = "";
   stratName: string = "";
@@ -132,6 +157,10 @@ class StratEditingState {
 
   phases: StratEditingPhase[] = [];
   selectedPhase: number = 0;
+
+  reset() {
+    Object.assign(this, new StratEditingState());
+  }
 
   pushEmptyPhase() {
     var phase = new StratEditingPhase();
@@ -174,7 +203,46 @@ const stratEditorFreeDrawCanvasId = "strat-editor-free-draw-canvas";
 
 const mapList = ["chalet", "coastline"];
 
+class OperatorsIndexImgPathOverride {
+  operator: string = "";
+  img_path: string = "";
+}
+
+class OperatorsIndex {
+  attackers: string[] = [];
+  defenders: string[] = [];
+  img_path_override: OperatorsIndexImgPathOverride[] = [];
+
+  imgData: Map<string, CanvasImageSource> = new Map();
+
+  allOperators(): string[] {
+    return this.attackers.concat(this.defenders);
+  }
+
+  getImgPath(operator: string): string {
+    for (const override of this.img_path_override) {
+      if (override.operator == operator) {
+        return override.img_path;
+      }
+    }
+
+    return `./operators/svg/${operator}.svg`;
+  }
+}
+
 var websocket: WebSocket | null = null;
+
+function arrayChunk<T>(array: T[], chunkSize: number): T[][] {
+  if (chunkSize == 0) {
+    return [];
+  }
+  var chunkedArray: T[][] = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunkedArray.push(array.slice(i, i + chunkSize));
+  }
+
+  return chunkedArray;
+}
 
 function App() {
   const [stratEditingStateDisplay, setStratEditingStateDisplay] = useState<StratEditingStateDisplay>(new StratEditingStateDisplay());
@@ -183,6 +251,8 @@ function App() {
 
   const [stratList, setStratList] = useState<Array<StratMetadata>>([]);
 
+  const [operatorsIndex, setOperatorsIndex] = useState<OperatorsIndex>(new OperatorsIndex());
+
   enum ConnectionState {
     WaitingForIP = "Waiting for IP Address (or Connection Failed)",
     Connecting = "Connecting to Server...",
@@ -190,6 +260,28 @@ function App() {
   }
 
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.WaitingForIP);
+
+  // Load operators
+  useEffect(() => {
+    async function loadOperatorsIndex() {
+      const ops: OperatorsIndex = await fetch("./operators/operators_index.json").then((response) => {
+        return response.json();
+      }).then((asJson) => {
+        return Object.assign(new OperatorsIndex(), asJson);
+      });
+
+      for (const opName of ops.allOperators()) {
+        // const imgFetch = await fetch(ops.getImgPath(opName));
+        const imgElem = document.createElement("img") as HTMLImageElement;
+        imgElem.setAttribute("src", ops.getImgPath(opName));
+        imgElem.decode();
+        ops.imgData.set(opName, imgElem);
+      }
+
+      setOperatorsIndex(ops);
+    }
+    loadOperatorsIndex();
+  }, []);
 
   function println(msg: string) {
     invoke("console_println", { msg })
@@ -249,6 +341,39 @@ function App() {
     } else {
       println(`  Unhandled message!!!`);
     }
+  }
+
+  function operatorTileListComponent(onClick: (opName: string) => void, includeNames: boolean, attackers: boolean, defenders: boolean, rowWidthOverride?: number, imgSizeOverride?: number) {
+    var ops: string[] = []
+
+    if (attackers && defenders) {
+      ops = operatorsIndex.allOperators();
+    } else if (attackers) {
+      ops = operatorsIndex.attackers;
+    } else if (defenders) {
+      ops = operatorsIndex.defenders;
+    }
+
+    // Note: this is a test for the "truthyness" of widthOverride, which means that `widthOverride == 0` will *also* go to `10`
+    const rowWidth = rowWidthOverride ? rowWidthOverride : 10;
+    var rows: string[][] = arrayChunk(ops, rowWidth);
+
+    var imgSize = (imgSizeOverride === undefined) ? 32 : imgSizeOverride;
+
+    return (<>
+      <div className="col">
+        {rows.map((row) =>
+          <div className="row">
+            {row.map((opName) =>
+              <button className="col" style={{ margin: 1, padding: 0, width: "fit-content", height: "fit-content" }} onClick={(_) => onClick(opName)}>
+                <img src={operatorsIndex.getImgPath(opName)} width="256" height="256" style={{ margin: 0, width: imgSize, height: imgSize }} alt="" />
+                {includeNames ? <p>{opName}</p> : undefined}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </>)
   }
 
   function connectToServerPageComponent() {
@@ -369,7 +494,7 @@ function App() {
   }
 
   function stratEditorPageComponent() {
-    const arrowPlacementPreviewCanvasId = "arrow-placement-preview-canvas";
+    const placementPreviewCanvasId = "arrow-placement-preview-canvas";
 
     function drawPathToCanvas(canvasId: string, path: DrawPath) {
       const canvas = document.getElementById(canvasId);
@@ -436,6 +561,38 @@ function App() {
       ctx.closePath();
     }
 
+    function drawIconToCanvas(canvasId: string, icon: IconPlacement) {
+      const canvas = document.getElementById(canvasId);
+      if (canvas == null) {
+        return;
+      }
+
+      const ctx = (canvas as HTMLCanvasElement).getContext("2d");
+      if (ctx == null) {
+        return;
+      }
+
+      // var imgPath = "";
+      var imgData: CanvasImageSource | undefined;
+      switch (icon.info.kind) {
+        case IconKind.Operator:
+          // imgPath = operatorsIndex.getImgPath(icon.info.payload);;
+          imgData = operatorsIndex.imgData.get(icon.info.payload);
+          break;
+      }
+
+      // const x: CanvasImageSource;
+
+      if (imgData) {
+        ctx.drawImage(imgData, icon.pos.x, icon.pos.y, 50, 50);
+      }
+
+
+      // ctx.drawImage();
+      // ctx.fillStyle = "green";
+      // ctx.fillRect(icon.pos.x, icon.pos.y, 25, 25);
+    }
+
     function redrawFreeDrawCanvas(canvasId: string) {
       const canvas = document.getElementById(canvasId)! as HTMLCanvasElement;
       const ctx = canvas.getContext("2d")!;
@@ -450,6 +607,9 @@ function App() {
         phaseFloor.arrows.forEach((arrow) => {
           drawArrowToCanvas(canvasId, arrow);
         });
+        phaseFloor.icons.forEach((icon) => {
+          drawIconToCanvas(canvasId, icon);
+        })
       }
     }
 
@@ -477,6 +637,9 @@ function App() {
 
       function onUpdate() {
         const phaseFloor = stratEditingState.currentPhaseFloor();
+        const placementPreviewCanvas = document.getElementById(placementPreviewCanvasId)! as HTMLCanvasElement;
+        const placementPreviewCtx = placementPreviewCanvas.getContext("2d")!;
+        placementPreviewCtx.clearRect(0, 0, placementPreviewCanvas.width, placementPreviewCanvas.height);
 
         if (!phaseFloor) {
           return;
@@ -515,15 +678,20 @@ function App() {
               }
             }
 
-            const arrowPreviewCanvas = document.getElementById(arrowPlacementPreviewCanvasId)! as HTMLCanvasElement;
-            const arrowPreviewCtx = arrowPreviewCanvas.getContext("2d")!;
-            arrowPreviewCtx.clearRect(0, 0, arrowPreviewCanvas.width, arrowPreviewCanvas.height);
             if (freeDrawCanvasState.arrowHasBeenStarted && !freeDrawCanvasState.mouseClicked) {
               const arrow = new Arrow(freeDrawCanvasState.arrowStartPoint.clone(), freeDrawCanvasState.mousePos.clone());
-              drawArrowToCanvas(arrowPlacementPreviewCanvasId, arrow);
+              drawArrowToCanvas(placementPreviewCanvasId, arrow);
             }
             break;
           case DrawTool.PlaceIcon:
+            const icon = new IconPlacement(freeDrawCanvasState.mousePos.clone(), stratEditingState.selectedIcon);
+
+            if (freeDrawCanvasState.mouseClicked && !freeDrawCanvasState.prevMouseClicked) {
+              drawIconToCanvas(stratEditorFreeDrawCanvasId, icon);
+              phaseFloor.icons.push(icon);
+            } else {
+              drawIconToCanvas(placementPreviewCanvasId, icon);
+            }
             break;
         }
 
@@ -551,6 +719,10 @@ function App() {
               }
               break;
             case DrawTool.PlaceIcon:
+              if (phaseFloor.icons.length > 0) {
+                phaseFloor.icons.pop();
+                redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+              }
               break;
           }
         }
@@ -596,6 +768,8 @@ function App() {
       <>
         <button onClick={(_) => {
           saveProgress().then((_) => {
+            stratEditingState.reset();
+            updateStratEditingStateDisplay();
             setCurrPage(Page.StratListPage);
           });
         }}>Back to Strat list</button>
@@ -634,17 +808,24 @@ function App() {
         </div>
 
         <div className="row" style={{ justifyItems: "left" }}>
-          <div className="col" id="tool-selector-bar">
+          <div className="col" id="tool-selector-bar" style={{ margin: 8 }}>
             <p>{DrawTool[stratEditingState.selectedDrawTool]}</p>
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.FreeDraw; updateStratEditingStateDisplay(); }}>FreeDraw</button>
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.Arrow; updateStratEditingStateDisplay(); }}>Arrow</button>
-            <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.PlaceIcon; updateStratEditingStateDisplay(); }}>PlaceOperator</button>
+            {/* <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.PlaceIcon; updateStratEditingStateDisplay(); }}>PlaceOperator</button> */}
+            <div style={{ border: "2px solid #0f0f0f" }}>
+              {operatorTileListComponent((opClicked) => {
+                stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
+                stratEditingState.selectedIcon = { kind: IconKind.Operator, payload: opClicked };
+                updateStratEditingStateDisplay();
+              }, false, true, false, 4)}
+            </div>
           </div>
-          <div id="draw-area" style={{ display: "grid", gridTemplateColumns: "1", gridTemplateRows: "1" }}>
+          <div id="draw-area" style={{ margin: 8, display: "grid", gridTemplateColumns: "1", gridTemplateRows: "1" }}>
             <img src={getFloorImgPath(stratEditingStateDisplay.map, stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.activeFloor])}
               style={{ gridColumn: 1, gridRow: 1, zIndex: 0 }} />
             {freeDrawCanvas(stratEditorFreeDrawCanvasId)}
-            <canvas id={arrowPlacementPreviewCanvasId}
+            <canvas id={placementPreviewCanvasId}
               style={{ gridColumn: 1, gridRow: 1, zIndex: 2 }}
               width={stratEditingStateDisplay.mapImgWidth}
               height={stratEditingStateDisplay.mapImgHeight}></canvas>

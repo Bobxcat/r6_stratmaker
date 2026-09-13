@@ -817,9 +817,10 @@ function App() {
       }
 
       document.onkeydown = (e) => {
-        if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() == "z") {
+        const keyLower = e.key.toLowerCase();
+        if (e.ctrlKey && e.shiftKey && keyLower == "z") {
           triggerRedo();
-        } else if (e.ctrlKey && e.key.toLowerCase() == "z") {
+        } else if (e.ctrlKey && keyLower == "z") {
           triggerUndo();
         }
       };
@@ -902,7 +903,7 @@ function App() {
             <p>{DrawTool[stratEditingState.selectedDrawTool]}</p>
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.FreeDraw; updateStratEditingStateDisplay(); }}>FreeDraw</button>
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.Arrow; updateStratEditingStateDisplay(); }}>Arrow</button>
-            {/* <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.PlaceIcon; updateStratEditingStateDisplay(); }}>PlaceOperator</button> */}
+
             <div style={{ border: "2px solid #0f0f0f" }}>
               {operatorTileListComponent((opClicked) => {
                 stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;

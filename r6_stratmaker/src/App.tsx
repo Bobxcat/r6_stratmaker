@@ -122,7 +122,7 @@ enum IconKind {
 
 class IconInfo {
   kind: IconKind = IconKind.Operator;
-  payload: string = "";
+  teammateIndex: number = 0;
 }
 
 class IconPlacement {
@@ -164,7 +164,13 @@ class StratEditingPhase {
   }
 }
 
+class StratEditingLoadout {
+  operator: string = "ace";
+}
+
 class StratEditingState {
+  teamLoadouts: StratEditingLoadout[] = newArrayOfSize(5, () => new StratEditingLoadout());
+
   selectedDrawTool: DrawTool = DrawTool.FreeDraw;
   selectedIcon: IconInfo = new IconInfo();
 
@@ -199,10 +205,15 @@ class StratEditingDisplayPhase {
   phaseName: string = "";
 }
 
+class StratEditingDisplayLoadout {
+  operator: string = "ace";
+}
+
 /** This contains a subset of `StratEditingState` to be used as reactive state for the UI.
  * In order to modify this state, always edit `StratEditingState` and call `updateStratEditingStateDisplay()`
  */
 class StratEditingStateDisplay {
+  teamLoadouts: StratEditingDisplayLoadout[] = newArrayOfSize(5, () => new StratEditingDisplayLoadout());
   selectedDrawTool: DrawTool = DrawTool.FreeDraw;
 
   stratName: string = "";
@@ -251,18 +262,26 @@ class OperatorsIndex {
   }
 }
 
-var websocket: WebSocket | null = null;
+let websocket: WebSocket | null = null;
 
 function arrayChunk<T>(array: T[], chunkSize: number): T[][] {
   if (chunkSize == 0) {
     return [];
   }
-  var chunkedArray: T[][] = [];
+  let chunkedArray: T[][] = [];
   for (let i = 0; i < array.length; i += chunkSize) {
     chunkedArray.push(array.slice(i, i + chunkSize));
   }
 
   return chunkedArray;
+}
+
+function newArrayOfSize<T>(size: number, create: (idx: number) => T): T[] {
+  const arr: T[] = [];
+  for (let idx = 0; idx < size; idx += 1) {
+    arr.push(create(idx));
+  }
+  return arr;
 }
 
 function App() {
@@ -281,6 +300,8 @@ function App() {
   }
 
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.WaitingForIP);
+
+  const [selectOperatorForTeammateActiveIdx, setSelectOperatorForTeammateActiveIdx] = useState<number | undefined>(undefined);
 
   // Load operators
   useEffect(() => {
@@ -313,6 +334,7 @@ function App() {
 
   function updateStratEditingStateDisplay() {
     const newDisplayState: StratEditingStateDisplay = {
+      teamLoadouts: stratEditingState.teamLoadouts.map((l) => { return { operator: l.operator } }),
       selectedDrawTool: stratEditingState.selectedDrawTool,
       stratName: stratEditingState.stratName,
       map: stratEditingState.map,
@@ -595,7 +617,7 @@ function App() {
       var imgData: CanvasImageSource | undefined;
       switch (icon.info.kind) {
         case IconKind.Operator:
-          imgData = operatorsIndex.imgData.get(icon.info.payload);
+          imgData = operatorsIndex.imgData.get(stratEditingState.teamLoadouts[icon.info.teammateIndex].operator);
           break;
       }
 
@@ -857,6 +879,7 @@ function App() {
 
     return (
       <>
+        {/* Menuing buttons */}
         <button onClick={(_) => {
           saveProgress().then((_) => {
             stratEditingState.reset();
@@ -869,6 +892,7 @@ function App() {
           saveProgress()
         }}>Save Progress</button>
 
+        {/* Edit current phase name & select phase */}
         <div className="row">
           <p>Current Phase: </p>
           <input
@@ -894,6 +918,7 @@ function App() {
           }}>Create new phase</button>
         </div>
 
+        {/* List of floors */}
         <p>Current Floor: {stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.activeFloor]}</p>
         <div className="row">
           {stratEditingStateDisplay.mapFloors.map((floor_name, i) =>
@@ -906,20 +931,53 @@ function App() {
           )}
         </div>
 
+        {/* Team operator selector */}
+        <p>Team</p>
+        <div className="row">
+          {stratEditingStateDisplay.teamLoadouts.map((loadout, idx) =>
+            <div key={idx} className="col" style={{ border: "2px solid #0f0f0f" }}>
+              {/* <p>Op: {loadout.operator}</p> */}
+              <button style={{ padding: 0 }} onClick={(_e) => {
+                stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
+                stratEditingState.selectedIcon = { kind: IconKind.Operator, teammateIndex: idx };
+                updateStratEditingStateDisplay();
+              }}>
+                <img src={operatorsIndex.getImgPath(loadout.operator)} style={{ width: 64, height: 64 }} />
+              </button>
+              <button onClick={(_e) => {
+                if (selectOperatorForTeammateActiveIdx == idx) {
+                  setSelectOperatorForTeammateActiveIdx(undefined);
+                } else {
+                  setSelectOperatorForTeammateActiveIdx(idx);
+                }
+              }}>Select Operator</button>
+              {selectOperatorForTeammateActiveIdx == idx && (
+                <div style={{ position: "relative", zIndex: 1000, padding: 0 }}>
+                  <div style={{ position: "absolute", zIndex: 1001, top: "32px", left: "-50%", backgroundColor: "#bababa", border: "2px solid #0f0f0f", borderRadius: "8px" }}>
+                    {operatorTileListComponent((opName) => {
+                      stratEditingState.teamLoadouts[idx].operator = opName;
+                      setSelectOperatorForTeammateActiveIdx(undefined);
+
+                      updateStratEditingStateDisplay();
+                      redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+                    }, false, true, false, 10)}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Toolbar and draw area */}
         <div className="row" style={{ justifyItems: "left" }}>
+          {/* Toolbar */}
           <div className="col" id="tool-selector-bar" style={{ margin: 8 }}>
             <p>{DrawTool[stratEditingState.selectedDrawTool]}</p>
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.FreeDraw; updateStratEditingStateDisplay(); }}>FreeDraw</button>
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.Arrow; updateStratEditingStateDisplay(); }}>Arrow</button>
-
-            <div style={{ border: "2px solid #0f0f0f" }}>
-              {operatorTileListComponent((opClicked) => {
-                stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
-                stratEditingState.selectedIcon = { kind: IconKind.Operator, payload: opClicked };
-                updateStratEditingStateDisplay();
-              }, false, true, false, 4)}
-            </div>
           </div>
+
+          {/* Draw Area */}
           <div id="draw-area" style={{ margin: 8, display: "grid", gridTemplateColumns: "1", gridTemplateRows: "1" }}>
             <img src={getFloorImgPath(stratEditingStateDisplay.map, stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.activeFloor])}
               style={{ gridColumn: 1, gridRow: 1, zIndex: 0 }} />

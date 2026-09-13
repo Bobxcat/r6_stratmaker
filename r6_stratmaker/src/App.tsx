@@ -31,6 +31,8 @@ class FreeDrawCanvasState {
   prevMouseClicked: boolean = false;
   mouseClicked: boolean = false;
 
+  freeDrawPathStarted: boolean = false;
+
   arrowHasBeenStarted: boolean = false;
   arrowStartPoint: Vec2 = new Vec2(0, 0);
 
@@ -141,6 +143,12 @@ class StratEditingPhaseFloor {
 class StratEditingPhase {
   phaseName: string = "---";
   floors: StratEditingPhaseFloor[] = [];
+  previousDrawActions: PreviousDrawAction[] = [];
+}
+
+class PreviousDrawAction {
+  floor: number = 0;
+  tool: DrawTool = DrawTool.Arrow;
 }
 
 class StratEditingState {
@@ -648,7 +656,7 @@ function App() {
         switch (stratEditingState.selectedDrawTool) {
           case DrawTool.FreeDraw:
             if (freeDrawCanvasState.mouseClicked) {
-              if (phaseFloor.freeDrawPaths.length > 0 && freeDrawCanvasState.prevMouseClicked) {
+              if (freeDrawCanvasState.freeDrawPathStarted && phaseFloor.freeDrawPaths.length > 0) {
                 // Continue existing path
                 phaseFloor.freeDrawPaths[phaseFloor.freeDrawPaths.length - 1].points.push(freeDrawCanvasState.mousePos.clone());
               } else {
@@ -656,13 +664,18 @@ function App() {
                 var path = new DrawPath();
                 path.points.push(freeDrawCanvasState.mousePos.clone());
                 phaseFloor.freeDrawPaths.push(path);
+                stratEditingState.phases[stratEditingState.selectedPhase].previousDrawActions.push({ floor: stratEditingState.selectedFloor, tool: DrawTool.FreeDraw });
+                freeDrawCanvasState.freeDrawPathStarted = true;
               }
 
+              // Draw path to canvas immediately, avoiding a rerender
               if (freeDrawCanvasState.prevMouseClicked) {
                 var path = new DrawPath();
                 path.points = [freeDrawCanvasState.prevMousePos.clone(), freeDrawCanvasState.mousePos.clone()];
                 drawPathToCanvas(stratEditorFreeDrawCanvasId, path);
               }
+            } else {
+              freeDrawCanvasState.freeDrawPathStarted = false;
             }
             break;
           case DrawTool.Arrow:
@@ -671,6 +684,8 @@ function App() {
                 const arrow = new Arrow(freeDrawCanvasState.arrowStartPoint.clone(), freeDrawCanvasState.mousePos.clone());
                 drawArrowToCanvas(stratEditorFreeDrawCanvasId, arrow);
                 phaseFloor.arrows.push(arrow);
+                stratEditingState.phases[stratEditingState.selectedPhase].previousDrawActions.push({ floor: stratEditingState.selectedFloor, tool: DrawTool.Arrow });
+
                 freeDrawCanvasState.arrowHasBeenStarted = false;
               } else {
                 freeDrawCanvasState.arrowStartPoint = freeDrawCanvasState.mousePos.clone();
@@ -689,6 +704,7 @@ function App() {
             if (freeDrawCanvasState.mouseClicked && !freeDrawCanvasState.prevMouseClicked) {
               drawIconToCanvas(stratEditorFreeDrawCanvasId, icon);
               phaseFloor.icons.push(icon);
+              stratEditingState.phases[stratEditingState.selectedPhase].previousDrawActions.push({ floor: stratEditingState.selectedFloor, tool: DrawTool.PlaceIcon });
             } else {
               drawIconToCanvas(placementPreviewCanvasId, icon);
             }
@@ -703,10 +719,23 @@ function App() {
       requestAnimationFrame(onUpdate);
 
       function triggerUndo() {
-        const phaseFloor = stratEditingState.currentPhaseFloor();
+        const previousDrawActionsList = stratEditingState.phases[stratEditingState.selectedPhase]?.previousDrawActions;
+        if (!previousDrawActionsList) {
+          return;
+
+        }
+
+        if (previousDrawActionsList.length == 0) {
+          return;
+        }
+
+        const previousDrawAction = previousDrawActionsList.pop()!;
+
+        const phaseFloor = stratEditingState.phases[stratEditingState.selectedPhase]?.floors[previousDrawAction.floor];
         if (phaseFloor) {
-          switch (stratEditingState.selectedDrawTool) {
+          switch (previousDrawAction.tool) {
             case DrawTool.FreeDraw:
+              freeDrawCanvasState.freeDrawPathStarted = false;
               if (phaseFloor.freeDrawPaths.length > 0) {
                 phaseFloor.freeDrawPaths.pop();
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);

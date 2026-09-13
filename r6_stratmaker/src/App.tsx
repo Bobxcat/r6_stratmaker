@@ -140,15 +140,28 @@ class StratEditingPhaseFloor {
   icons: IconPlacement[] = [];
 }
 
-class StratEditingPhase {
-  phaseName: string = "---";
-  floors: StratEditingPhaseFloor[] = [];
-  previousDrawActions: PreviousDrawAction[] = [];
-}
-
 class PreviousDrawAction {
   floor: number = 0;
   tool: DrawTool = DrawTool.Arrow;
+}
+
+class RedoStackState {
+  floor: number = 0;
+  data: { tool: DrawTool.FreeDraw, payload: DrawPath } | { tool: DrawTool.Arrow, payload: Arrow } | { tool: DrawTool.PlaceIcon, payload: IconPlacement }
+    = { tool: DrawTool.FreeDraw, payload: new DrawPath() };
+}
+
+class StratEditingPhase {
+  phaseName: string = "---";
+  floors: StratEditingPhaseFloor[] = [];
+
+  previousDrawActions: PreviousDrawAction[] = [];
+  redoStack: RedoStackState[] = [];
+
+  pushPreviousDrawAction(action: PreviousDrawAction) {
+    this.previousDrawActions.push(action);
+    this.redoStack = [];
+  }
 }
 
 class StratEditingState {
@@ -279,7 +292,6 @@ function App() {
       });
 
       for (const opName of ops.allOperators()) {
-        // const imgFetch = await fetch(ops.getImgPath(opName));
         const imgElem = document.createElement("img") as HTMLImageElement;
         imgElem.setAttribute("src", ops.getImgPath(opName));
         imgElem.decode();
@@ -580,25 +592,16 @@ function App() {
         return;
       }
 
-      // var imgPath = "";
       var imgData: CanvasImageSource | undefined;
       switch (icon.info.kind) {
         case IconKind.Operator:
-          // imgPath = operatorsIndex.getImgPath(icon.info.payload);;
           imgData = operatorsIndex.imgData.get(icon.info.payload);
           break;
       }
 
-      // const x: CanvasImageSource;
-
       if (imgData) {
         ctx.drawImage(imgData, icon.pos.x, icon.pos.y, 50, 50);
       }
-
-
-      // ctx.drawImage();
-      // ctx.fillStyle = "green";
-      // ctx.fillRect(icon.pos.x, icon.pos.y, 25, 25);
     }
 
     function redrawFreeDrawCanvas(canvasId: string) {
@@ -664,7 +667,7 @@ function App() {
                 var path = new DrawPath();
                 path.points.push(freeDrawCanvasState.mousePos.clone());
                 phaseFloor.freeDrawPaths.push(path);
-                stratEditingState.phases[stratEditingState.selectedPhase].previousDrawActions.push({ floor: stratEditingState.selectedFloor, tool: DrawTool.FreeDraw });
+                stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({ floor: stratEditingState.selectedFloor, tool: DrawTool.FreeDraw });
                 freeDrawCanvasState.freeDrawPathStarted = true;
               }
 
@@ -684,7 +687,7 @@ function App() {
                 const arrow = new Arrow(freeDrawCanvasState.arrowStartPoint.clone(), freeDrawCanvasState.mousePos.clone());
                 drawArrowToCanvas(stratEditorFreeDrawCanvasId, arrow);
                 phaseFloor.arrows.push(arrow);
-                stratEditingState.phases[stratEditingState.selectedPhase].previousDrawActions.push({ floor: stratEditingState.selectedFloor, tool: DrawTool.Arrow });
+                stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({ floor: stratEditingState.selectedFloor, tool: DrawTool.Arrow });
 
                 freeDrawCanvasState.arrowHasBeenStarted = false;
               } else {
@@ -704,7 +707,8 @@ function App() {
             if (freeDrawCanvasState.mouseClicked && !freeDrawCanvasState.prevMouseClicked) {
               drawIconToCanvas(stratEditorFreeDrawCanvasId, icon);
               phaseFloor.icons.push(icon);
-              stratEditingState.phases[stratEditingState.selectedPhase].previousDrawActions.push({ floor: stratEditingState.selectedFloor, tool: DrawTool.PlaceIcon });
+              stratEditingState.phases[stratEditingState.selectedPhase]
+                .pushPreviousDrawAction({ floor: stratEditingState.selectedFloor, tool: DrawTool.PlaceIcon });
             } else {
               drawIconToCanvas(placementPreviewCanvasId, icon);
             }
@@ -731,25 +735,47 @@ function App() {
 
         const previousDrawAction = previousDrawActionsList.pop()!;
 
-        const phaseFloor = stratEditingState.phases[stratEditingState.selectedPhase]?.floors[previousDrawAction.floor];
+        const phase = stratEditingState.phases[stratEditingState.selectedPhase];
+        const phaseFloor = phase?.floors[previousDrawAction.floor];
         if (phaseFloor) {
           switch (previousDrawAction.tool) {
             case DrawTool.FreeDraw:
               freeDrawCanvasState.freeDrawPathStarted = false;
               if (phaseFloor.freeDrawPaths.length > 0) {
-                phaseFloor.freeDrawPaths.pop();
+                const payload = phaseFloor.freeDrawPaths.pop()!;
+                phase.redoStack.push({
+                  floor: previousDrawAction.floor,
+                  data: {
+                    tool: DrawTool.FreeDraw,
+                    payload,
+                  }
+                });
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
               }
               break;
             case DrawTool.Arrow:
               if (phaseFloor.arrows.length > 0) {
-                phaseFloor.arrows.pop();
+                const payload = phaseFloor.arrows.pop()!;
+                phase.redoStack.push({
+                  floor: previousDrawAction.floor,
+                  data: {
+                    tool: DrawTool.Arrow,
+                    payload,
+                  }
+                });
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
               }
               break;
             case DrawTool.PlaceIcon:
               if (phaseFloor.icons.length > 0) {
-                phaseFloor.icons.pop();
+                const payload = phaseFloor.icons.pop()!;
+                phase.redoStack.push({
+                  floor: previousDrawAction.floor,
+                  data: {
+                    tool: DrawTool.PlaceIcon,
+                    payload,
+                  }
+                });
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
               }
               break;
@@ -757,8 +783,43 @@ function App() {
         }
       }
 
+      function triggerRedo() {
+        const phase = stratEditingState.phases[stratEditingState.selectedPhase];
+        if (!phase) {
+          return;
+        }
+
+        const redoAction = phase.redoStack.pop();
+        if (!redoAction) {
+          return;
+        }
+
+        const phaseFloor = phase.floors[redoAction.floor];
+        const prevDrawActions = phase.previousDrawActions;
+
+        switch (redoAction.data.tool) {
+          case DrawTool.FreeDraw:
+            phaseFloor.freeDrawPaths.push(redoAction.data.payload);
+            prevDrawActions.push({ floor: redoAction.floor, tool: DrawTool.FreeDraw });
+            drawPathToCanvas(stratEditorFreeDrawCanvasId, redoAction.data.payload);
+            break;
+          case DrawTool.Arrow:
+            phaseFloor.arrows.push(redoAction.data.payload);
+            prevDrawActions.push({ floor: redoAction.floor, tool: DrawTool.Arrow });
+            drawArrowToCanvas(stratEditorFreeDrawCanvasId, redoAction.data.payload);
+            break;
+          case DrawTool.PlaceIcon:
+            phaseFloor.icons.push(redoAction.data.payload);
+            prevDrawActions.push({ floor: redoAction.floor, tool: DrawTool.PlaceIcon });
+            drawIconToCanvas(stratEditorFreeDrawCanvasId, redoAction.data.payload);
+            break;
+        }
+      }
+
       document.onkeydown = (e) => {
-        if (e.ctrlKey && e.key == "z") {
+        if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() == "z") {
+          triggerRedo();
+        } else if (e.ctrlKey && e.key.toLowerCase() == "z") {
           triggerUndo();
         }
       };
@@ -882,17 +943,6 @@ function App() {
         return "ERROR: PAGE NOT Found"
     }
   }
-
-  // User Experience:
-  // - Open App
-  // - Input the server's IP address
-  // - Login?
-  // - A page opens displaying all current strats, as well as an option for creating a new strat
-  // - Option #1: You want to make or edit a strat
-  //   * You either click "edit" on an existing listed strat or "create" and pick a map from the dropdown menu
-  // - Option #2: You want to enter live stratmaking mode
-  //   * You click a button that says "enter live-mode lobby"
-  //   * 
 
   return (
     <main className="container">

@@ -22,21 +22,17 @@ enum DrawTool {
   FreeDraw,
   Arrow,
   PlaceIcon,
+  SelectAndEdit,
 }
 
-class FreeDrawCanvasState {
+class InputCanvasState {
   prevMousePos: Vec2 = new Vec2(0, 0);
   mousePos: Vec2 = new Vec2(0, 0);
 
   prevMouseClicked: boolean = false;
   mouseClicked: boolean = false;
 
-  freeDrawPathStarted: boolean = false;
-
-  arrowHasBeenStarted: boolean = false;
-  arrowStartPoint: Vec2 = new Vec2(0, 0);
-
-  private static _instance: FreeDrawCanvasState;
+  private static _instance: InputCanvasState;
 
   private constructor() { }
 
@@ -134,6 +130,19 @@ class IconPlacement {
   }
 }
 
+enum SelectableElementKind {
+  DrawPath,
+  Array,
+  Icon,
+}
+
+class SelectableElement {
+  kind: SelectableElementKind = SelectableElementKind.DrawPath;
+  floor: number = 0;
+  idx: number = 0;
+}
+
+
 class StratEditingPhaseFloor {
   freeDrawPaths: DrawPath[] = [];
   arrows: Arrow[] = [];
@@ -145,7 +154,7 @@ class PreviousDrawAction {
   tool: DrawTool = DrawTool.Arrow;
 }
 
-class RedoStackState {
+class RedoStackItem {
   floor: number = 0;
   data: { tool: DrawTool.FreeDraw, payload: DrawPath } | { tool: DrawTool.Arrow, payload: Arrow } | { tool: DrawTool.PlaceIcon, payload: IconPlacement }
     = { tool: DrawTool.FreeDraw, payload: new DrawPath() };
@@ -156,12 +165,36 @@ class StratEditingPhase {
   floors: StratEditingPhaseFloor[] = [];
 
   previousDrawActions: PreviousDrawAction[] = [];
-  redoStack: RedoStackState[] = [];
+  redoStack: RedoStackItem[] = [];
 
   pushPreviousDrawAction(action: PreviousDrawAction) {
     this.previousDrawActions.push(action);
     this.redoStack = [];
   }
+}
+
+class FreeDrawToolState {
+  pathStarted: boolean = false;
+}
+
+class ArrowToolState {
+  arrowHasBeenStarted: boolean = false;
+  arrowStartPoint: Vec2 = new Vec2(0, 0);
+}
+
+class PlaceIconToolState {
+  selectedIcon: IconInfo = new IconInfo();
+}
+
+class SelectAndEditToolState {
+  selected: SelectableElement | undefined = undefined;
+}
+
+class ToolStates {
+  freeDraw: FreeDrawToolState = new FreeDrawToolState();
+  arrow: ArrowToolState = new ArrowToolState();
+  placeIcon: PlaceIconToolState = new PlaceIconToolState();
+  selectAndEdit: SelectAndEditToolState = new SelectAndEditToolState();
 }
 
 class StratEditingLoadout {
@@ -171,8 +204,9 @@ class StratEditingLoadout {
 class StratEditingState {
   teamLoadouts: StratEditingLoadout[] = newArrayOfSize(5, () => new StratEditingLoadout());
 
+  prevSelectedDrawTool: DrawTool = DrawTool.FreeDraw;
   selectedDrawTool: DrawTool = DrawTool.FreeDraw;
-  selectedIcon: IconInfo = new IconInfo();
+  toolStates: ToolStates = new ToolStates();
 
   stratId: string = "";
   stratName: string = "";
@@ -229,7 +263,7 @@ class StratEditingStateDisplay {
 
 const stratEditingState = new StratEditingState();
 
-const freeDrawCanvasState = FreeDrawCanvasState.Instance;
+const inputCanvasState = InputCanvasState.Instance;
 
 const stratEditorFreeDrawCanvasId = "strat-editor-free-draw-canvas";
 
@@ -678,55 +712,84 @@ function App() {
           return;
         }
 
+        if (stratEditingState.prevSelectedDrawTool != stratEditingState.selectedDrawTool) {
+          // A common pattern is:
+          // 1. set new draw tool
+          // 2. set some part of state for new draw tool
+          // Thus, we should only clear the state of the previous draw tool
+          switch (stratEditingState.prevSelectedDrawTool) {
+            case DrawTool.FreeDraw:
+              stratEditingState.toolStates.freeDraw = new FreeDrawToolState();
+              break;
+            case DrawTool.Arrow:
+              stratEditingState.toolStates.arrow = new ArrowToolState();
+              break;
+            case DrawTool.PlaceIcon:
+              stratEditingState.toolStates.placeIcon = new PlaceIconToolState();
+              break;
+            case DrawTool.SelectAndEdit:
+              stratEditingState.toolStates.selectAndEdit = new SelectAndEditToolState();
+              break;
+          }
+        }
+
+        let toolState;
+
         switch (stratEditingState.selectedDrawTool) {
           case DrawTool.FreeDraw:
-            if (freeDrawCanvasState.mouseClicked) {
-              if (freeDrawCanvasState.freeDrawPathStarted && phaseFloor.freeDrawPaths.length > 0) {
+            toolState = stratEditingState.toolStates.freeDraw;
+
+            if (inputCanvasState.mouseClicked) {
+              if (toolState.pathStarted && phaseFloor.freeDrawPaths.length > 0) {
                 // Continue existing path
-                phaseFloor.freeDrawPaths[phaseFloor.freeDrawPaths.length - 1].points.push(freeDrawCanvasState.mousePos.clone());
+                phaseFloor.freeDrawPaths[phaseFloor.freeDrawPaths.length - 1].points.push(inputCanvasState.mousePos.clone());
               } else {
                 // Create new path
                 var path = new DrawPath();
-                path.points.push(freeDrawCanvasState.mousePos.clone());
+                path.points.push(inputCanvasState.mousePos.clone());
                 phaseFloor.freeDrawPaths.push(path);
                 stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({ floor: stratEditingState.selectedFloor, tool: DrawTool.FreeDraw });
-                freeDrawCanvasState.freeDrawPathStarted = true;
+                toolState.pathStarted = true;
               }
 
               // Draw path to canvas immediately, avoiding a rerender
-              if (freeDrawCanvasState.prevMouseClicked) {
+              if (inputCanvasState.prevMouseClicked) {
                 var path = new DrawPath();
-                path.points = [freeDrawCanvasState.prevMousePos.clone(), freeDrawCanvasState.mousePos.clone()];
+                path.points = [inputCanvasState.prevMousePos.clone(), inputCanvasState.mousePos.clone()];
                 drawPathToCanvas(stratEditorFreeDrawCanvasId, path);
               }
             } else {
-              freeDrawCanvasState.freeDrawPathStarted = false;
+              toolState.pathStarted = false;
             }
             break;
           case DrawTool.Arrow:
-            if (freeDrawCanvasState.mouseClicked && !freeDrawCanvasState.prevMouseClicked) {
-              if (freeDrawCanvasState.arrowHasBeenStarted) {
-                const arrow = new Arrow(freeDrawCanvasState.arrowStartPoint.clone(), freeDrawCanvasState.mousePos.clone());
+            toolState = stratEditingState.toolStates.arrow;
+
+            if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
+              if (toolState.arrowHasBeenStarted) {
+                const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone());
                 drawArrowToCanvas(stratEditorFreeDrawCanvasId, arrow);
                 phaseFloor.arrows.push(arrow);
                 stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({ floor: stratEditingState.selectedFloor, tool: DrawTool.Arrow });
 
-                freeDrawCanvasState.arrowHasBeenStarted = false;
+                toolState.arrowHasBeenStarted = false;
               } else {
-                freeDrawCanvasState.arrowStartPoint = freeDrawCanvasState.mousePos.clone();
-                freeDrawCanvasState.arrowHasBeenStarted = true;
+                toolState.arrowStartPoint = inputCanvasState.mousePos.clone();
+                toolState.arrowHasBeenStarted = true;
               }
             }
 
-            if (freeDrawCanvasState.arrowHasBeenStarted && !freeDrawCanvasState.mouseClicked) {
-              const arrow = new Arrow(freeDrawCanvasState.arrowStartPoint.clone(), freeDrawCanvasState.mousePos.clone());
+            if (toolState.arrowHasBeenStarted && !inputCanvasState.mouseClicked) {
+              const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone());
               drawArrowToCanvas(placementPreviewCanvasId, arrow);
             }
             break;
           case DrawTool.PlaceIcon:
-            const icon = new IconPlacement(freeDrawCanvasState.mousePos.clone(), stratEditingState.selectedIcon);
+            toolState = stratEditingState.toolStates.placeIcon;
 
-            if (freeDrawCanvasState.mouseClicked && !freeDrawCanvasState.prevMouseClicked) {
+            const icon = new IconPlacement(inputCanvasState.mousePos.clone(), toolState.selectedIcon);
+
+            if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
               drawIconToCanvas(stratEditorFreeDrawCanvasId, icon);
               phaseFloor.icons.push(icon);
               stratEditingState.phases[stratEditingState.selectedPhase]
@@ -735,10 +798,15 @@ function App() {
               drawIconToCanvas(placementPreviewCanvasId, icon);
             }
             break;
+          case DrawTool.SelectAndEdit:
+
+            break;
         }
 
-        freeDrawCanvasState.prevMouseClicked = freeDrawCanvasState.mouseClicked;
-        freeDrawCanvasState.prevMousePos = freeDrawCanvasState.mousePos;
+        inputCanvasState.prevMouseClicked = inputCanvasState.mouseClicked;
+        inputCanvasState.prevMousePos = inputCanvasState.mousePos;
+
+        stratEditingState.prevSelectedDrawTool = stratEditingState.selectedDrawTool;
 
         requestAnimationFrame(onUpdate);
       }
@@ -762,7 +830,7 @@ function App() {
         if (phaseFloor) {
           switch (previousDrawAction.tool) {
             case DrawTool.FreeDraw:
-              freeDrawCanvasState.freeDrawPathStarted = false;
+              stratEditingState.toolStates.freeDraw.pathStarted = false;
               if (phaseFloor.freeDrawPaths.length > 0) {
                 const payload = phaseFloor.freeDrawPaths.pop()!;
                 phase.redoStack.push({
@@ -852,12 +920,12 @@ function App() {
           style={{ gridColumn: 1, gridRow: 1, zIndex: 100 }}
           width={stratEditingStateDisplay.mapImgWidth}
           height={stratEditingStateDisplay.mapImgHeight}
-          onMouseEnter={(_e) => freeDrawCanvasState.mouseClicked = false}
-          onMouseLeave={(_e) => freeDrawCanvasState.mouseClicked = false}
-          onMouseDown={(_e) => freeDrawCanvasState.mouseClicked = true}
-          onMouseUp={(_e) => freeDrawCanvasState.mouseClicked = false}
+          onMouseEnter={(_e) => inputCanvasState.mouseClicked = false}
+          onMouseLeave={(_e) => inputCanvasState.mouseClicked = false}
+          onMouseDown={(_e) => inputCanvasState.mouseClicked = true}
+          onMouseUp={(_e) => inputCanvasState.mouseClicked = false}
           onMouseMove={(e) => {
-            freeDrawCanvasState.mousePos = mousePosForCanvas(inputGatheringCanvasId, e.clientX, e.clientY);
+            inputCanvasState.mousePos = mousePosForCanvas(inputGatheringCanvasId, e.clientX, e.clientY);
           }}></canvas>
       </>)
     }
@@ -939,7 +1007,7 @@ function App() {
               {/* <p>Op: {loadout.operator}</p> */}
               <button style={{ padding: 0 }} onClick={(_e) => {
                 stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
-                stratEditingState.selectedIcon = { kind: IconKind.Operator, teammateIndex: idx };
+                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.Operator, teammateIndex: idx };
                 updateStratEditingStateDisplay();
               }}>
                 <img src={operatorsIndex.getImgPath(loadout.operator)} style={{ width: 64, height: 64 }} />
@@ -973,7 +1041,8 @@ function App() {
           {/* Toolbar */}
           <div className="col" id="tool-selector-bar" style={{ margin: 8 }}>
             <p>{DrawTool[stratEditingState.selectedDrawTool]}</p>
-            <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.FreeDraw; updateStratEditingStateDisplay(); }}>FreeDraw</button>
+            <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.SelectAndEdit; updateStratEditingStateDisplay(); }}>Select and edit</button>
+            <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.FreeDraw; updateStratEditingStateDisplay(); }}>Free draw</button>
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.Arrow; updateStratEditingStateDisplay(); }}>Arrow</button>
           </div>
 

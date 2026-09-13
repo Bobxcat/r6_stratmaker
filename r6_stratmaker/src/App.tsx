@@ -869,7 +869,15 @@ function App() {
           saveProgress()
         }}>Save Progress</button>
 
-        <p>Current Phase: {stratEditingStateDisplay.phases[stratEditingStateDisplay.selectedPhase]?.phaseName}</p>
+        <div className="row">
+          <p>Current Phase: </p>
+          <input
+            value={stratEditingStateDisplay.phases[stratEditingState.selectedPhase]?.phaseName}
+            onChange={(e) => {
+              stratEditingState.phases[stratEditingState.selectedPhase].phaseName = e.target.value;
+              updateStratEditingStateDisplay();
+            }} />
+        </div>
         <div className="row">
           {stratEditingStateDisplay.phases.map((phase, i) =>
             <button key={i} onClick={(e) => {

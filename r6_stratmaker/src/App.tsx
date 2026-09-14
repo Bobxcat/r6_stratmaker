@@ -49,12 +49,20 @@ class Vec2 {
     this.y = y;
   }
 
+  toString(): string {
+    return `(${this.x.toPrecision(4)},${this.y.toPrecision(4)})`;
+  }
+
   clone(): Vec2 {
     return new Vec2(this.x, this.y);
   }
 
+  dot(other: Vec2): number {
+    return this.x * other.x + this.y * other.y;
+  }
+
   sqrMagnitude(): number {
-    return this.x * this.x + this.y * this.y;
+    return this.dot(this);
   }
 
   magnitude(): number {
@@ -62,11 +70,11 @@ class Vec2 {
   }
 
   distance(other: Vec2): number {
-    return new Vec2(other.x - this.y, other.y - this.y).magnitude();
+    return this.sub(other).magnitude();
   }
 
   normalized(): Vec2 {
-    return this.clone().scaled(1 / this.magnitude());
+    return this.clone().scaled(1.0 / this.magnitude());
   }
 
   rotated(angle: number): Vec2 {
@@ -86,6 +94,73 @@ class Vec2 {
   sub(rhs: Vec2): Vec2 {
     return new Vec2(this.x - rhs.x, this.y - rhs.y);
   }
+
+  approxEq(other: Vec2): boolean {
+    return this.distance(other) < 0.0001;
+  }
+
+  distanceToLine(lineStart: Vec2, lineEnd: Vec2, continuesForwards: boolean, continuesBackwards: boolean): DistanceToLineResult {
+    if (lineStart.approxEq(lineEnd)) {
+      return { distance: this.distance(lineStart), nearestPoint: lineStart };
+    }
+
+    const B = lineEnd.sub(lineStart);
+    const P = this.sub(lineStart);
+
+    const BOrth = new Vec2(-B.y, B.x).normalized();
+
+    const signedDistance = P.dot(BOrth);
+
+    let nearestPoint = P.sub(BOrth.scaled(signedDistance));
+
+    const t = Math.abs(B.x) > Math.abs(B.y) ? nearestPoint.x / B.x : nearestPoint.y / B.y;
+
+    if (t > 1 && !continuesForwards) {
+      nearestPoint = B;
+    } else if (t < 0 && !continuesBackwards) {
+      nearestPoint = new Vec2(0, 0);
+    }
+
+    nearestPoint = nearestPoint.add(lineStart);
+
+    return {
+      distance: this.distance(nearestPoint),
+      nearestPoint,
+    };
+  }
+}
+
+class DistanceToLineResult {
+  distance: number = 0;
+  nearestPoint: Vec2 = new Vec2(0, 0);
+}
+
+class Aabb {
+  minPt: Vec2 = new Vec2(0, 0);
+  maxPt: Vec2 = new Vec2(0, 0);
+
+  static fromPoints(pts: Vec2[]): Aabb {
+    const xs = pts.map((pt) => pt.x);
+    const ys = pts.map((pt) => pt.y);
+
+    return Object.assign(new Aabb(), {
+      minPt: new Vec2(Math.min(...xs), Math.min(...ys)),
+      maxPt: new Vec2(Math.max(...xs), Math.max(...ys)),
+    });
+  }
+
+  width(): number {
+    return this.maxPt.x - this.minPt.x;
+  }
+
+  height(): number {
+    return this.maxPt.y - this.minPt.y;
+  }
+
+  containsPoint(pt: Vec2): boolean {
+    return (this.minPt.x <= pt.x && pt.x <= this.maxPt.x) &&
+      (this.minPt.y <= pt.y && pt.y <= this.maxPt.y);
+  }
 }
 
 class DrawPath {
@@ -98,6 +173,10 @@ class Arrow {
   constructor(start: Vec2, end: Vec2) {
     this.start = start;
     this.end = end;
+  }
+
+  toString(): string {
+    return `(${this.start} -> ${this.end})`
   }
 }
 
@@ -123,16 +202,18 @@ class IconInfo {
 
 class IconPlacement {
   pos: Vec2;
+  size: number;
   info: IconInfo;
-  constructor(pos: Vec2, info: IconInfo) {
+  constructor(pos: Vec2, size: number, info: IconInfo) {
     this.pos = pos;
+    this.size = size;
     this.info = info;
   }
 }
 
 enum SelectableElementKind {
   DrawPath,
-  Array,
+  Arrow,
   Icon,
 }
 
@@ -787,7 +868,7 @@ function App() {
           case DrawTool.PlaceIcon:
             toolState = stratEditingState.toolStates.placeIcon;
 
-            const icon = new IconPlacement(inputCanvasState.mousePos.clone(), toolState.selectedIcon);
+            const icon = new IconPlacement(inputCanvasState.mousePos.clone(), 50, toolState.selectedIcon);
 
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
               drawIconToCanvas(stratEditorFreeDrawCanvasId, icon);
@@ -799,6 +880,144 @@ function App() {
             }
             break;
           case DrawTool.SelectAndEdit:
+            toolState = stratEditingState.toolStates.selectAndEdit;
+            const phase = stratEditingState.phases[stratEditingState.selectedPhase];
+
+            // Clear invalid selected item
+            if (toolState.selected) {
+              switch (toolState.selected.kind) {
+                case SelectableElementKind.DrawPath:
+                  const path = phase.floors[toolState.selected.floor].freeDrawPaths[toolState.selected.idx];
+                  if (!path) {
+                    toolState.selected = undefined;
+                  }
+                  break;
+                case SelectableElementKind.Arrow:
+                  const arrow = phase.floors[toolState.selected.floor].arrows[toolState.selected.idx];
+                  if (!arrow) {
+                    toolState.selected = undefined;
+                  }
+                  break;
+                case SelectableElementKind.Icon:
+                  const icon = phase.floors[toolState.selected.floor].icons[toolState.selected.idx];
+                  if (!icon) {
+                    toolState.selected = undefined;
+                  }
+                  break;
+              }
+            }
+
+            // Update selection
+            if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
+              function isItemHovered(selectable: SelectableElement, mousePos: Vec2): boolean {
+                let item;
+                switch (selectable.kind) {
+                  case SelectableElementKind.DrawPath:
+                    item = phase.floors[selectable.floor].freeDrawPaths[selectable.idx];
+                    for (let i = 0; i < item.points.length - 1; i += 1) {
+                      const distToLine = mousePos.distanceToLine(item.points[i], item.points[i + 1], false, false).distance;
+                      if (distToLine < 3) {
+                        return true;
+                      }
+                    }
+                    return false;
+                  case SelectableElementKind.Arrow:
+                    item = phase.floors[selectable.floor].arrows[selectable.idx];
+                    const distToArrow = mousePos.distanceToLine(item.start, item.end, false, false).distance;
+                    return distToArrow < 3;
+                  case SelectableElementKind.Icon:
+                    item = phase.floors[selectable.floor].icons[selectable.idx];
+                    const aabb = Aabb.fromPoints([item.pos, item.pos.add(new Vec2(item.size, item.size))]);
+                    return aabb.containsPoint(mousePos);
+                }
+              }
+
+              function pickFloor(floor: number): SelectableElement | undefined {
+                for (let idx = phase.floors[floor].freeDrawPaths.length - 1; idx >= 0; idx -= 1) {
+                  const item = { kind: SelectableElementKind.DrawPath, floor, idx };
+                  if (isItemHovered(item, inputCanvasState.mousePos)) {
+                    return item;
+                  }
+                }
+                for (let idx = phase.floors[floor].arrows.length - 1; idx >= 0; idx -= 1) {
+                  const item = { kind: SelectableElementKind.Arrow, floor, idx };
+                  if (isItemHovered(item, inputCanvasState.mousePos)) {
+                    return item;
+                  }
+                }
+                for (let idx = phase.floors[floor].icons.length - 1; idx >= 0; idx -= 1) {
+                  const item = { kind: SelectableElementKind.Icon, floor, idx };
+                  if (isItemHovered(item, inputCanvasState.mousePos)) {
+                    return item;
+                  }
+                }
+              }
+
+              // Prioritize picking current floor, then prioritize higher floors
+              const floorPriorityOrdering = [stratEditingState.selectedFloor];
+              for (let floorIdx = stratEditingState.mapFloors.length - 1; floorIdx >= 0; floorIdx -= 1) {
+                if (floorIdx != stratEditingState.selectedFloor) {
+                  floorPriorityOrdering.push(floorIdx);
+                }
+              }
+
+              let itemPicked: SelectableElement | undefined = undefined;
+              for (let floor of floorPriorityOrdering) {
+                const picked = pickFloor(floor);
+                if (picked) {
+                  itemPicked = picked;
+                  break;
+                }
+              }
+
+              toolState.selected = itemPicked;
+            }
+
+            if (toolState.selected) {
+              // Draw border around selection
+              let boundingBox: Aabb = new Aabb();
+
+              switch (toolState.selected.kind) {
+                case SelectableElementKind.DrawPath:
+                  const path = phase.floors[toolState.selected.floor].freeDrawPaths[toolState.selected.idx];
+                  if (path) {
+                    boundingBox = Aabb.fromPoints(path.points);
+                  }
+                  break;
+                case SelectableElementKind.Arrow:
+                  const arrow = phase.floors[toolState.selected.floor].arrows[toolState.selected.idx];
+                  if (arrow) {
+                    boundingBox = Aabb.fromPoints([arrow.start, arrow.end]);
+                  }
+                  break;
+                case SelectableElementKind.Icon:
+                  const icon = phase.floors[toolState.selected.floor].icons[toolState.selected.idx];
+                  if (icon) {
+                    boundingBox = Aabb.fromPoints([icon.pos, icon.pos.add(new Vec2(icon.size, icon.size))]);
+                  }
+                  break;
+              }
+
+              placementPreviewCtx.beginPath();
+
+              placementPreviewCtx.strokeStyle = "black";
+              placementPreviewCtx.lineWidth = 2;
+              placementPreviewCtx.setLineDash([5, 10]);
+
+              placementPreviewCtx.moveTo(boundingBox.minPt.x, boundingBox.minPt.y);
+              placementPreviewCtx.lineTo(boundingBox.minPt.x, boundingBox.maxPt.y);
+              placementPreviewCtx.lineTo(boundingBox.maxPt.x, boundingBox.maxPt.y);
+              placementPreviewCtx.lineTo(boundingBox.maxPt.x, boundingBox.minPt.y);
+              placementPreviewCtx.lineTo(boundingBox.minPt.x, boundingBox.minPt.y);
+
+              placementPreviewCtx.stroke();
+              placementPreviewCtx.closePath();
+              placementPreviewCtx.setLineDash([]);
+
+              // TODO: Drag the selection
+
+              // TODO: Delete the selection
+            }
 
             break;
         }
@@ -975,6 +1194,7 @@ function App() {
             <button key={i} onClick={(e) => {
               e.preventDefault();
               stratEditingState.selectedPhase = i;
+              stratEditingState.toolStates = new ToolStates();
               redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
               updateStratEditingStateDisplay();
             }}>{phase.phaseName}</button>
@@ -1004,7 +1224,6 @@ function App() {
         <div className="row">
           {stratEditingStateDisplay.teamLoadouts.map((loadout, idx) =>
             <div key={idx} className="col" style={{ border: "2px solid #0f0f0f" }}>
-              {/* <p>Op: {loadout.operator}</p> */}
               <button style={{ padding: 0 }} onClick={(_e) => {
                 stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
                 stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.Operator, teammateIndex: idx };

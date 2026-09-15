@@ -2,10 +2,9 @@
 // Credit to RoseishDesigns on Etsy (https://www.etsy.com/listing/4387393681/derpy-snake-water-bottle-sticker-shnek) for the Solid Snake icon
 // Credit to Ubisoft for map blueprints
 
-import { Fragment, useEffect, useReducer, useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import WebSocket from "@tauri-apps/plugin-websocket";
-import MessageKind from "@tauri-apps/plugin-websocket";
 import "./App.css";
 import * as protos from "./generated_protos/primary"
 
@@ -285,8 +284,8 @@ class PlaceIconToolState {
 
 class SelectAndEditToolState {
   selected: SelectableElement | undefined = undefined;
-  selectionChanged: boolean = false;
   isDragging: boolean = false;
+  isDeleteQueued: boolean = false;
 }
 
 class ToolStates {
@@ -837,11 +836,9 @@ function App() {
           }
         }
 
-        let toolState;
-
         switch (stratEditingState.selectedDrawTool) {
           case DrawTool.FreeDraw: {
-            toolState = stratEditingState.toolStates.freeDraw;
+            const toolState = stratEditingState.toolStates.freeDraw;
 
             if (inputCanvasState.mouseClicked) {
               if (toolState.pathStarted && phaseFloor.freeDrawPaths.length > 0) {
@@ -868,7 +865,7 @@ function App() {
             break;
           }
           case DrawTool.Arrow: {
-            toolState = stratEditingState.toolStates.arrow;
+            const toolState = stratEditingState.toolStates.arrow;
 
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
               if (toolState.arrowHasBeenStarted) {
@@ -891,7 +888,7 @@ function App() {
             break;
           }
           case DrawTool.PlaceIcon: {
-            toolState = stratEditingState.toolStates.placeIcon;
+            const toolState = stratEditingState.toolStates.placeIcon;
 
             const icon = new IconPlacement(inputCanvasState.mousePos.clone(), 50, toolState.selectedIcon);
 
@@ -906,7 +903,7 @@ function App() {
             break;
           }
           case DrawTool.SelectAndEdit: {
-            toolState = stratEditingState.toolStates.selectAndEdit;
+            const toolState = stratEditingState.toolStates.selectAndEdit;
             const phase = stratEditingState.phases[stratEditingState.selectedPhase];
 
             const prevSelected = toolState.selected?.clone();
@@ -1071,6 +1068,7 @@ function App() {
                 toolState.isDragging = false;
               }
 
+              // TODO: Enable dragging undo
               if (toolState.isDragging) {
                 const posDelta = inputCanvasState.mousePos.sub(inputCanvasState.prevMousePos);
                 switch (toolState.selected.kind) {
@@ -1091,10 +1089,31 @@ function App() {
                     break;
                   }
                 }
+                // Somehow this isn't *that* bad for performance??
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
               }
 
-              // TODO: Delete the selection
+              // TODO: Enable delete undo
+              // Delete the selection
+              if (toolState.isDeleteQueued) {
+                switch (toolState.selected.kind) {
+                  case SelectableElementKind.DrawPath: {
+                    phase.floors[toolState.selected.floor].freeDrawPaths.splice(toolState.selected.idx, 1);
+                    break;
+                  }
+                  case SelectableElementKind.Arrow: {
+                    phase.floors[toolState.selected.floor].arrows.splice(toolState.selected.idx, 1);
+                    break;
+                  }
+                  case SelectableElementKind.Icon: {
+                    phase.floors[toolState.selected.floor].icons.splice(toolState.selected.idx, 1);
+                    break;
+                  }
+                }
+                toolState.isDeleteQueued = false;
+                toolState.selected = undefined;
+                redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+              }
             }
 
             break;
@@ -1211,11 +1230,16 @@ function App() {
       }
 
       document.onkeydown = (e) => {
+        e.code;
         const keyLower = e.key.toLowerCase();
         if (e.ctrlKey && e.shiftKey && keyLower == "z") {
           triggerRedo();
         } else if (e.ctrlKey && keyLower == "z") {
           triggerUndo();
+        } else if (keyLower == "delete") {
+          if (stratEditingState.selectedDrawTool == DrawTool.SelectAndEdit) {
+            stratEditingState.toolStates.selectAndEdit.isDeleteQueued = true;
+          }
         }
       };
 

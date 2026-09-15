@@ -218,9 +218,25 @@ enum SelectableElementKind {
 }
 
 class SelectableElement {
-  kind: SelectableElementKind = SelectableElementKind.DrawPath;
-  floor: number = 0;
-  idx: number = 0;
+  kind: SelectableElementKind;
+  floor: number;
+  idx: number;
+
+  constructor(kind: SelectableElementKind, floor: number, idx: number) {
+    this.kind = kind;
+    this.floor = floor;
+    this.idx = idx;
+  }
+
+  equals(other: SelectableElement): boolean {
+    return (this.kind === other.kind)
+      && (this.floor === other.floor)
+      && (this.idx === other.idx);
+  }
+
+  clone(): SelectableElement {
+    return new SelectableElement(this.kind, this.floor, this.idx);
+  }
 }
 
 
@@ -269,6 +285,8 @@ class PlaceIconToolState {
 
 class SelectAndEditToolState {
   selected: SelectableElement | undefined = undefined;
+  selectionChanged: boolean = false;
+  isDragging: boolean = false;
 }
 
 class ToolStates {
@@ -731,9 +749,10 @@ function App() {
 
       var imgData: CanvasImageSource | undefined;
       switch (icon.info.kind) {
-        case IconKind.Operator:
+        case IconKind.Operator: {
           imgData = operatorsIndex.imgData.get(stratEditingState.teamLoadouts[icon.info.teammateIndex].operator);
           break;
+        }
       }
 
       if (imgData) {
@@ -799,25 +818,29 @@ function App() {
           // 2. set some part of state for new draw tool
           // Thus, we should only clear the state of the previous draw tool
           switch (stratEditingState.prevSelectedDrawTool) {
-            case DrawTool.FreeDraw:
+            case DrawTool.FreeDraw: {
               stratEditingState.toolStates.freeDraw = new FreeDrawToolState();
               break;
-            case DrawTool.Arrow:
+            }
+            case DrawTool.Arrow: {
               stratEditingState.toolStates.arrow = new ArrowToolState();
               break;
-            case DrawTool.PlaceIcon:
+            }
+            case DrawTool.PlaceIcon: {
               stratEditingState.toolStates.placeIcon = new PlaceIconToolState();
               break;
-            case DrawTool.SelectAndEdit:
+            }
+            case DrawTool.SelectAndEdit: {
               stratEditingState.toolStates.selectAndEdit = new SelectAndEditToolState();
               break;
+            }
           }
         }
 
         let toolState;
 
         switch (stratEditingState.selectedDrawTool) {
-          case DrawTool.FreeDraw:
+          case DrawTool.FreeDraw: {
             toolState = stratEditingState.toolStates.freeDraw;
 
             if (inputCanvasState.mouseClicked) {
@@ -843,7 +866,8 @@ function App() {
               toolState.pathStarted = false;
             }
             break;
-          case DrawTool.Arrow:
+          }
+          case DrawTool.Arrow: {
             toolState = stratEditingState.toolStates.arrow;
 
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
@@ -865,7 +889,8 @@ function App() {
               drawArrowToCanvas(placementPreviewCanvasId, arrow);
             }
             break;
-          case DrawTool.PlaceIcon:
+          }
+          case DrawTool.PlaceIcon: {
             toolState = stratEditingState.toolStates.placeIcon;
 
             const icon = new IconPlacement(inputCanvasState.mousePos.clone(), 50, toolState.selectedIcon);
@@ -879,31 +904,37 @@ function App() {
               drawIconToCanvas(placementPreviewCanvasId, icon);
             }
             break;
-          case DrawTool.SelectAndEdit:
+          }
+          case DrawTool.SelectAndEdit: {
             toolState = stratEditingState.toolStates.selectAndEdit;
             const phase = stratEditingState.phases[stratEditingState.selectedPhase];
+
+            const prevSelected = toolState.selected?.clone();
 
             // Clear invalid selected item
             if (toolState.selected) {
               switch (toolState.selected.kind) {
-                case SelectableElementKind.DrawPath:
+                case SelectableElementKind.DrawPath: {
                   const path = phase.floors[toolState.selected.floor].freeDrawPaths[toolState.selected.idx];
                   if (!path) {
                     toolState.selected = undefined;
                   }
                   break;
-                case SelectableElementKind.Arrow:
+                }
+                case SelectableElementKind.Arrow: {
                   const arrow = phase.floors[toolState.selected.floor].arrows[toolState.selected.idx];
                   if (!arrow) {
                     toolState.selected = undefined;
                   }
                   break;
-                case SelectableElementKind.Icon:
+                }
+                case SelectableElementKind.Icon: {
                   const icon = phase.floors[toolState.selected.floor].icons[toolState.selected.idx];
                   if (!icon) {
                     toolState.selected = undefined;
                   }
                   break;
+                }
               }
             }
 
@@ -912,41 +943,44 @@ function App() {
               function isItemHovered(selectable: SelectableElement, mousePos: Vec2): boolean {
                 let item;
                 switch (selectable.kind) {
-                  case SelectableElementKind.DrawPath:
+                  case SelectableElementKind.DrawPath: {
                     item = phase.floors[selectable.floor].freeDrawPaths[selectable.idx];
                     for (let i = 0; i < item.points.length - 1; i += 1) {
                       const distToLine = mousePos.distanceToLine(item.points[i], item.points[i + 1], false, false).distance;
-                      if (distToLine < 3) {
+                      if (distToLine < 5) {
                         return true;
                       }
                     }
                     return false;
-                  case SelectableElementKind.Arrow:
+                  }
+                  case SelectableElementKind.Arrow: {
                     item = phase.floors[selectable.floor].arrows[selectable.idx];
                     const distToArrow = mousePos.distanceToLine(item.start, item.end, false, false).distance;
-                    return distToArrow < 3;
-                  case SelectableElementKind.Icon:
+                    return distToArrow < 5;
+                  }
+                  case SelectableElementKind.Icon: {
                     item = phase.floors[selectable.floor].icons[selectable.idx];
                     const aabb = Aabb.fromPoints([item.pos, item.pos.add(new Vec2(item.size, item.size))]);
                     return aabb.containsPoint(mousePos);
+                  }
                 }
               }
 
               function pickFloor(floor: number): SelectableElement | undefined {
                 for (let idx = phase.floors[floor].freeDrawPaths.length - 1; idx >= 0; idx -= 1) {
-                  const item = { kind: SelectableElementKind.DrawPath, floor, idx };
+                  const item = new SelectableElement(SelectableElementKind.DrawPath, floor, idx);
                   if (isItemHovered(item, inputCanvasState.mousePos)) {
                     return item;
                   }
                 }
                 for (let idx = phase.floors[floor].arrows.length - 1; idx >= 0; idx -= 1) {
-                  const item = { kind: SelectableElementKind.Arrow, floor, idx };
+                  const item = new SelectableElement(SelectableElementKind.Arrow, floor, idx);
                   if (isItemHovered(item, inputCanvasState.mousePos)) {
                     return item;
                   }
                 }
                 for (let idx = phase.floors[floor].icons.length - 1; idx >= 0; idx -= 1) {
-                  const item = { kind: SelectableElementKind.Icon, floor, idx };
+                  const item = new SelectableElement(SelectableElementKind.Icon, floor, idx);
                   if (isItemHovered(item, inputCanvasState.mousePos)) {
                     return item;
                   }
@@ -973,29 +1007,45 @@ function App() {
               toolState.selected = itemPicked;
             }
 
+            const selectionChanged = (() => {
+              if ((prevSelected === undefined) != (toolState.selected === undefined)) {
+                // Only 1 is defined
+                return true;
+              } else if ((prevSelected !== undefined) && (toolState.selected !== undefined)) {
+                // Both are defined
+                return !prevSelected.equals(toolState.selected);
+              } else {
+                // Both are undefined
+                return false;
+              }
+            })();
+
             if (toolState.selected) {
               // Draw border around selection
               let boundingBox: Aabb = new Aabb();
 
               switch (toolState.selected.kind) {
-                case SelectableElementKind.DrawPath:
+                case SelectableElementKind.DrawPath: {
                   const path = phase.floors[toolState.selected.floor].freeDrawPaths[toolState.selected.idx];
                   if (path) {
                     boundingBox = Aabb.fromPoints(path.points);
                   }
                   break;
-                case SelectableElementKind.Arrow:
+                }
+                case SelectableElementKind.Arrow: {
                   const arrow = phase.floors[toolState.selected.floor].arrows[toolState.selected.idx];
                   if (arrow) {
                     boundingBox = Aabb.fromPoints([arrow.start, arrow.end]);
                   }
                   break;
-                case SelectableElementKind.Icon:
+                }
+                case SelectableElementKind.Icon: {
                   const icon = phase.floors[toolState.selected.floor].icons[toolState.selected.idx];
                   if (icon) {
                     boundingBox = Aabb.fromPoints([icon.pos, icon.pos.add(new Vec2(icon.size, icon.size))]);
                   }
                   break;
+                }
               }
 
               placementPreviewCtx.beginPath();
@@ -1014,12 +1064,41 @@ function App() {
               placementPreviewCtx.closePath();
               placementPreviewCtx.setLineDash([]);
 
-              // TODO: Drag the selection
+              // Enter selection dragging mode
+              if (!selectionChanged && inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
+                toolState.isDragging = true;
+              } else if (!inputCanvasState.mouseClicked) {
+                toolState.isDragging = false;
+              }
+
+              if (toolState.isDragging) {
+                const posDelta = inputCanvasState.mousePos.sub(inputCanvasState.prevMousePos);
+                switch (toolState.selected.kind) {
+                  case SelectableElementKind.DrawPath: {
+                    const item = phase.floors[toolState.selected.floor].freeDrawPaths[toolState.selected.idx];
+                    item.points = item.points.map((pt) => pt.add(posDelta));
+                    break;
+                  }
+                  case SelectableElementKind.Arrow: {
+                    const item = phase.floors[toolState.selected.floor].arrows[toolState.selected.idx];
+                    item.start = item.start.add(posDelta);
+                    item.end = item.end.add(posDelta);
+                    break;
+                  }
+                  case SelectableElementKind.Icon: {
+                    const item = phase.floors[toolState.selected.floor].icons[toolState.selected.idx];
+                    item.pos = item.pos.add(posDelta);
+                    break;
+                  }
+                }
+                redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+              }
 
               // TODO: Delete the selection
             }
 
             break;
+          }
         }
 
         inputCanvasState.prevMouseClicked = inputCanvasState.mouseClicked;
@@ -1048,7 +1127,7 @@ function App() {
         const phaseFloor = phase?.floors[previousDrawAction.floor];
         if (phaseFloor) {
           switch (previousDrawAction.tool) {
-            case DrawTool.FreeDraw:
+            case DrawTool.FreeDraw: {
               stratEditingState.toolStates.freeDraw.pathStarted = false;
               if (phaseFloor.freeDrawPaths.length > 0) {
                 const payload = phaseFloor.freeDrawPaths.pop()!;
@@ -1062,7 +1141,8 @@ function App() {
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
               }
               break;
-            case DrawTool.Arrow:
+            }
+            case DrawTool.Arrow: {
               if (phaseFloor.arrows.length > 0) {
                 const payload = phaseFloor.arrows.pop()!;
                 phase.redoStack.push({
@@ -1075,7 +1155,8 @@ function App() {
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
               }
               break;
-            case DrawTool.PlaceIcon:
+            }
+            case DrawTool.PlaceIcon: {
               if (phaseFloor.icons.length > 0) {
                 const payload = phaseFloor.icons.pop()!;
                 phase.redoStack.push({
@@ -1088,6 +1169,7 @@ function App() {
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
               }
               break;
+            }
           }
         }
       }
@@ -1107,21 +1189,24 @@ function App() {
         const prevDrawActions = phase.previousDrawActions;
 
         switch (redoAction.data.tool) {
-          case DrawTool.FreeDraw:
+          case DrawTool.FreeDraw: {
             phaseFloor.freeDrawPaths.push(redoAction.data.payload);
             prevDrawActions.push({ floor: redoAction.floor, tool: DrawTool.FreeDraw });
             drawPathToCanvas(stratEditorFreeDrawCanvasId, redoAction.data.payload);
             break;
-          case DrawTool.Arrow:
+          }
+          case DrawTool.Arrow: {
             phaseFloor.arrows.push(redoAction.data.payload);
             prevDrawActions.push({ floor: redoAction.floor, tool: DrawTool.Arrow });
             drawArrowToCanvas(stratEditorFreeDrawCanvasId, redoAction.data.payload);
             break;
-          case DrawTool.PlaceIcon:
+          }
+          case DrawTool.PlaceIcon: {
             phaseFloor.icons.push(redoAction.data.payload);
             prevDrawActions.push({ floor: redoAction.floor, tool: DrawTool.PlaceIcon });
             drawIconToCanvas(stratEditorFreeDrawCanvasId, redoAction.data.payload);
             break;
+          }
         }
       }
 

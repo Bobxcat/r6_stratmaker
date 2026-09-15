@@ -70,19 +70,19 @@ pub struct ReceivedMsg {
 }
 
 trait WsStreamExt {
-    async fn send_proto(&mut self, msg: S2CInner) -> Result<(), tokio_websockets::Error>;
+    async fn send_proto(&mut self, msg: S2CInner) -> anyhow::Result<()>;
 
     async fn next_proto(&mut self) -> anyhow::Result<ReceivedMsg>;
 }
 
 impl WsStreamExt for WebSocketStream<TcpStream> {
-    async fn send_proto(&mut self, msg: S2CInner) -> Result<(), tokio_websockets::Error> {
+    async fn send_proto(&mut self, msg: S2CInner) -> anyhow::Result<()> {
         let msg = Server2Client {
             S2CInner: Some(msg),
             special_fields: SpecialFields::new(),
         };
         let mut buf = vec![];
-        msg.write_to_vec(&mut buf);
+        msg.write_to_vec(&mut buf)?;
         self.send(tokio_websockets::Message::binary(buf)).await?;
         Ok(())
     }

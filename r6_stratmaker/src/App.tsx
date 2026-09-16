@@ -7,7 +7,69 @@ import { invoke } from "@tauri-apps/api/core";
 import WebSocket from "@tauri-apps/plugin-websocket";
 import "./App.css";
 import * as protos from "./generated_protos/primary"
+import * as uuid from 'uuid';
 
+class Uuid {
+  readonly data: string;
+  constructor() {
+    this.data = uuid.v4();
+  }
+}
+
+interface DrawElement {
+  asEnum(): AnyDrawElementData;
+  isHovered(mousePos: Vec2): boolean;
+  boundingBox(): Aabb;
+  drawToCtx(ctx: CanvasRenderingContext2D): void;
+}
+
+enum DrawElementKind {
+  DrawPath,
+  Arrow,
+  Icon,
+}
+
+type AnyDrawElementData =
+  { kind: DrawElementKind.DrawPath, data: DrawPath } |
+  { kind: DrawElementKind.Arrow, data: Arrow } |
+  { kind: DrawElementKind.Icon, data: IconPlacement };
+
+class AnyDrawElementId {
+  kind: DrawElementKind;
+  floor: number;
+  id: Uuid;
+
+  constructor(kind: DrawElementKind, floor: number, id: Uuid) {
+    this.kind = kind;
+    this.floor = floor;
+    this.id = id;
+  }
+
+  get(phase: StratEditingPhase): DrawElement | undefined {
+    const phaseFloor = phase.floors[this.floor];
+    switch (this.kind) {
+      case DrawElementKind.DrawPath: {
+        return phaseFloor?.drawPaths.get(this.id);
+      }
+      case DrawElementKind.Arrow: {
+        return phaseFloor?.arrows.get(this.id);
+      }
+      case DrawElementKind.Icon: {
+        return phaseFloor?.icons.get(this.id);
+      }
+    }
+  }
+
+  equals(other: AnyDrawElementId): boolean {
+    return (this.kind === other.kind)
+      && (this.floor === other.floor)
+      && (this.id === other.id);
+  }
+
+  clone(): AnyDrawElementId {
+    return new AnyDrawElementId(this.kind, this.floor, this.id);
+  }
+}
 
 enum Page {
   ConnectToServerPage,
@@ -41,8 +103,8 @@ class InputCanvasState {
 }
 
 class Vec2 {
-  x: number;
-  y: number;
+  readonly x: number;
+  readonly y: number;
   constructor(x: number, y: number) {
     this.x = x;
     this.y = y;
@@ -135,8 +197,8 @@ class DistanceToLineResult {
 }
 
 class Aabb {
-  minPt: Vec2 = new Vec2(0, 0);
-  maxPt: Vec2 = new Vec2(0, 0);
+  readonly minPt: Vec2 = new Vec2(0, 0);
+  readonly maxPt: Vec2 = new Vec2(0, 0);
 
   static fromPoints(pts: Vec2[]): Aabb {
     const xs = pts.map((pt) => pt.x);
@@ -162,16 +224,85 @@ class Aabb {
   }
 }
 
-class DrawPath {
+class DrawPath implements DrawElement {
   points: Array<Vec2> = [];
+
+  asEnum(): AnyDrawElementData {
+    return { kind: DrawElementKind.DrawPath, data: this };
+  }
+  isHovered(mousePos: Vec2): boolean {
+    for (let i = 0; i < this.points.length - 1; i += 1) {
+      const distToLine = mousePos.distanceToLine(this.points[i], this.points[i + 1], false, false).distance;
+      if (distToLine < 5) {
+        return true;
+      }
+    }
+    return false;
+  }
+  boundingBox(): Aabb {
+    return Aabb.fromPoints(this.points);
+  }
+  drawToCtx(ctx: CanvasRenderingContext2D): void {
+    ctx.beginPath();
+    ctx.strokeStyle = "red";
+    ctx.lineWidth = 3;
+
+    this.points.forEach((pt, idx) => {
+      if (idx == 0) {
+        ctx.moveTo(pt.x, pt.y);
+      } else {
+        ctx.lineTo(pt.x, pt.y);
+      }
+    });
+    ctx.stroke();
+    ctx.closePath();
+  }
 }
 
-class Arrow {
+class Arrow implements DrawElement {
   start: Vec2;
   end: Vec2;
   constructor(start: Vec2, end: Vec2) {
     this.start = start;
     this.end = end;
+  }
+
+  asEnum(): AnyDrawElementData {
+    return { kind: DrawElementKind.Arrow, data: this };
+  }
+  isHovered(mousePos: Vec2): boolean {
+    return mousePos.distanceToLine(this.start, this.end, false, false).distance < 5;
+  }
+  boundingBox(): Aabb {
+    return Aabb.fromPoints([this.start, this.end]);
+  }
+  drawToCtx(ctx: CanvasRenderingContext2D): void {
+    ctx.beginPath();
+    ctx.strokeStyle = "blue";
+    ctx.lineWidth = 3;
+
+    ctx.moveTo(this.start.x, this.start.y);
+    ctx.lineTo(this.end.x, this.end.y);
+
+    const makethisHeadPoint = (side: boolean, isFixedLength: boolean, fixedLength: number): Vec2 => {
+      var rot = side ? 0.1 : -0.1;
+      var a = this.end.sub(this.start).rotated(rot).scaled(0.9).add(this.start);
+      if (isFixedLength) {
+        a = a.sub(this.end).normalized().scaled(fixedLength).add(this.end);
+      }
+
+      return a;
+    };
+
+    const thisHeadPt0 = makethisHeadPoint(true, true, 10);
+    const thisHeadPt1 = makethisHeadPoint(false, true, 10);
+
+    ctx.moveTo(thisHeadPt0.x, thisHeadPt0.y);
+    ctx.lineTo(this.end.x, this.end.y)
+    ctx.lineTo(thisHeadPt1.x, thisHeadPt1.y);
+
+    ctx.stroke();
+    ctx.closePath();
   }
 
   toString(): string {
@@ -199,7 +330,7 @@ class IconInfo {
   teammateIndex: number = 0;
 }
 
-class IconPlacement {
+class IconPlacement implements DrawElement {
   pos: Vec2;
   size: number;
   info: IconInfo;
@@ -208,69 +339,135 @@ class IconPlacement {
     this.size = size;
     this.info = info;
   }
-}
 
-enum SelectableElementKind {
-  DrawPath,
-  Arrow,
-  Icon,
-}
-
-class SelectableElement {
-  kind: SelectableElementKind;
-  floor: number;
-  idx: number;
-
-  constructor(kind: SelectableElementKind, floor: number, idx: number) {
-    this.kind = kind;
-    this.floor = floor;
-    this.idx = idx;
+  asEnum(): AnyDrawElementData {
+    return { kind: DrawElementKind.Icon, data: this };
   }
-
-  equals(other: SelectableElement): boolean {
-    return (this.kind === other.kind)
-      && (this.floor === other.floor)
-      && (this.idx === other.idx);
+  isHovered(mousePos: Vec2): boolean {
+    return this.boundingBox().containsPoint(mousePos);
   }
+  boundingBox(): Aabb {
+    return Aabb.fromPoints([this.pos, this.pos.add(new Vec2(this.size, this.size))]);
+  }
+  drawToCtx(ctx: CanvasRenderingContext2D): void {
+    var imgData: CanvasImageSource | undefined;
+    switch (this.info.kind) {
+      case IconKind.Operator: {
+        imgData = operatorsIndexNonReactive.imgData.get(stratEditingState.teamLoadouts[this.info.teammateIndex].operator);
+        break;
+      }
+    }
 
-  clone(): SelectableElement {
-    return new SelectableElement(this.kind, this.floor, this.idx);
+    if (imgData) {
+      ctx.drawImage(imgData, this.pos.x, this.pos.y, 50, 50);
+    }
   }
 }
-
 
 class StratEditingPhaseFloor {
-  freeDrawPaths: DrawPath[] = [];
-  arrows: Arrow[] = [];
-  icons: IconPlacement[] = [];
+  drawPaths: Map<Uuid, DrawPath> = new Map();
+  arrows: Map<Uuid, Arrow> = new Map();
+  icons: Map<Uuid, IconPlacement> = new Map();
+
+  pushDrawElement(drawElement: DrawElement): Uuid {
+    const id = new Uuid();
+    const elem = drawElement.asEnum();
+    switch (elem.kind) {
+      case DrawElementKind.DrawPath: {
+        this.drawPaths.set(id, elem.data);
+        break;
+      }
+      case DrawElementKind.Arrow: {
+        this.arrows.set(id, elem.data);
+        break;
+      }
+      case DrawElementKind.Icon: {
+        this.icons.set(id, elem.data);
+        break;
+      }
+    }
+    return id;
+  }
+
+  allDrawElements(): Uuid[] {
+    return Array.from(this.drawPaths.keys())
+      .concat(Array.from(this.arrows.keys()))
+      .concat(Array.from(this.icons.keys()));
+  }
+
+  getDrawElement(id: Uuid): DrawElement | undefined {
+    const path = this.drawPaths.get(id);
+    if (path) {
+      return path;
+    }
+
+    const arrow = this.arrows.get(id);
+    if (arrow) {
+      return arrow;
+    }
+
+    const icon = this.icons.get(id);
+    if (icon) {
+      return icon;
+    }
+  }
+
+  setDrawElement(id: Uuid, elem: DrawElement) {
+    const drawElement = elem.asEnum();
+    switch (drawElement.kind) {
+      case DrawElementKind.DrawPath: {
+        this.drawPaths.set(id, drawElement.data);
+        break;
+      }
+      case DrawElementKind.Arrow: {
+        this.arrows.set(id, drawElement.data);
+        break;
+      }
+      case DrawElementKind.Icon: {
+        this.icons.set(id, drawElement.data);
+        break;
+      }
+    }
+  }
+
+  deleteDrawElement(id: Uuid): boolean {
+    // We take advantage of short-circuiting OR to return once we've found the element
+    return this.drawPaths.delete(id)
+      || this.arrows.delete(id)
+      || this.icons.delete(id);
+  }
 }
 
-class PreviousDrawAction {
-  floor: number = 0;
-  tool: DrawTool = DrawTool.Arrow;
+enum DrawActionKind {
+  PlaceDrawElement,
+  MoveDrawElement,
+  DeleteDrawElement,
 }
 
-class RedoStackItem {
-  floor: number = 0;
-  data: { tool: DrawTool.FreeDraw, payload: DrawPath } | { tool: DrawTool.Arrow, payload: Arrow } | { tool: DrawTool.PlaceIcon, payload: IconPlacement }
-    = { tool: DrawTool.FreeDraw, payload: new DrawPath() };
-}
+type DrawAction =
+  { kind: DrawActionKind.PlaceDrawElement, data: DrawElement, floor: number, id: Uuid } |
+  { kind: DrawActionKind.MoveDrawElement, delta: Vec2, floor: number, id: Uuid } |
+  { kind: DrawActionKind.DeleteDrawElement, data: DrawElement, floor: number, id: Uuid };
 
 class StratEditingPhase {
   phaseName: string = "---";
   floors: StratEditingPhaseFloor[] = [];
 
-  previousDrawActions: PreviousDrawAction[] = [];
-  redoStack: RedoStackItem[] = [];
+  private previousDrawActions: DrawAction[] = [];
+  redoStack: DrawAction[] = [];
 
-  pushPreviousDrawAction(action: PreviousDrawAction) {
+  getPreviousDrawActionsRef(): DrawAction[] {
+    return this.previousDrawActions;
+  }
+
+  pushPreviousDrawAction(action: DrawAction) {
     this.previousDrawActions.push(action);
     this.redoStack = [];
   }
 }
 
 class FreeDrawToolState {
-  pathStarted: boolean = false;
+  currentPath: Uuid | undefined = undefined;
 }
 
 class ArrowToolState {
@@ -283,7 +480,7 @@ class PlaceIconToolState {
 }
 
 class SelectAndEditToolState {
-  selected: SelectableElement | undefined = undefined;
+  selected: AnyDrawElementId | undefined = undefined;
   isDragging: boolean = false;
   isDeleteQueued: boolean = false;
 }
@@ -393,6 +590,7 @@ class OperatorsIndex {
     return `./operators/svg/${operator}.svg`;
   }
 }
+let operatorsIndexNonReactive = new OperatorsIndex();
 
 let websocket: WebSocket | null = null;
 
@@ -423,7 +621,7 @@ function App() {
 
   const [stratList, setStratList] = useState<Array<StratMetadata>>([]);
 
-  const [operatorsIndex, setOperatorsIndex] = useState<OperatorsIndex>(new OperatorsIndex());
+  const [operatorsIndexReactive, setOperatorsIndexReactive] = useState<OperatorsIndex>(new OperatorsIndex());
 
   enum ConnectionState {
     WaitingForIP = "Waiting for IP Address (or Connection Failed)",
@@ -451,7 +649,8 @@ function App() {
         ops.imgData.set(opName, imgElem);
       }
 
-      setOperatorsIndex(ops);
+      setOperatorsIndexReactive(ops);
+      operatorsIndexNonReactive = ops;
     }
     loadOperatorsIndex();
   }, []);
@@ -521,11 +720,11 @@ function App() {
     var ops: string[] = []
 
     if (attackers && defenders) {
-      ops = operatorsIndex.allOperators();
+      ops = operatorsIndexReactive.allOperators();
     } else if (attackers) {
-      ops = operatorsIndex.attackers;
+      ops = operatorsIndexReactive.attackers;
     } else if (defenders) {
-      ops = operatorsIndex.defenders;
+      ops = operatorsIndexReactive.defenders;
     }
 
     // Note: this is a test for the "truthyness" of widthOverride, which means that `widthOverride == 0` will *also* go to `10`
@@ -540,7 +739,7 @@ function App() {
           <div className="row">
             {row.map((opName) =>
               <button className="col" style={{ margin: 1, padding: 0, width: "fit-content", height: "fit-content" }} onClick={(_) => onClick(opName)}>
-                <img src={operatorsIndex.getImgPath(opName)} width="256" height="256" style={{ margin: 0, width: imgSize, height: imgSize }} alt="" />
+                <img src={operatorsIndexReactive.getImgPath(opName)} width="256" height="256" style={{ margin: 0, width: imgSize, height: imgSize }} alt="" />
                 {includeNames ? <p>{opName}</p> : undefined}
               </button>
             )}
@@ -670,7 +869,7 @@ function App() {
   function stratEditorPageComponent() {
     const placementPreviewCanvasId = "arrow-placement-preview-canvas";
 
-    function drawPathToCanvas(canvasId: string, path: DrawPath) {
+    function drawElementToCanvas(canvasId: string, elem: DrawElement) {
       const canvas = document.getElementById(canvasId);
       if (canvas == null) {
         return;
@@ -680,83 +879,7 @@ function App() {
       if (ctx == null) {
         return;
       }
-
-      ctx.beginPath();
-      ctx.strokeStyle = "red";
-      ctx.lineWidth = 3;
-
-      path.points.forEach((pt, idx) => {
-        if (idx == 0) {
-          ctx.moveTo(pt.x, pt.y);
-        } else {
-          ctx.lineTo(pt.x, pt.y);
-        }
-      });
-      ctx.stroke();
-      ctx.closePath();
-    }
-
-    function drawArrowToCanvas(canvasId: string, arrow: Arrow) {
-      const canvas = document.getElementById(canvasId);
-      if (canvas == null) {
-        return;
-      }
-
-      const ctx = (canvas as HTMLCanvasElement).getContext("2d");
-      if (ctx == null) {
-        return;
-      }
-
-      ctx.beginPath();
-      ctx.strokeStyle = "blue";
-      ctx.lineWidth = 3;
-
-      ctx.moveTo(arrow.start.x, arrow.start.y);
-      ctx.lineTo(arrow.end.x, arrow.end.y);
-
-      const makeArrowHeadPoint = (side: boolean, isFixedLength: boolean, fixedLength: number): Vec2 => {
-        var rot = side ? 0.1 : -0.1;
-        var a = arrow.end.sub(arrow.start).rotated(rot).scaled(0.9).add(arrow.start);
-        if (isFixedLength) {
-          a = a.sub(arrow.end).normalized().scaled(fixedLength).add(arrow.end);
-        }
-
-        return a;
-      };
-
-      const arrowHeadPt0 = makeArrowHeadPoint(true, true, 10);
-      const arrowHeadPt1 = makeArrowHeadPoint(false, true, 10);
-
-      ctx.moveTo(arrowHeadPt0.x, arrowHeadPt0.y);
-      ctx.lineTo(arrow.end.x, arrow.end.y)
-      ctx.lineTo(arrowHeadPt1.x, arrowHeadPt1.y);
-
-      ctx.stroke();
-      ctx.closePath();
-    }
-
-    function drawIconToCanvas(canvasId: string, icon: IconPlacement) {
-      const canvas = document.getElementById(canvasId);
-      if (canvas == null) {
-        return;
-      }
-
-      const ctx = (canvas as HTMLCanvasElement).getContext("2d");
-      if (ctx == null) {
-        return;
-      }
-
-      var imgData: CanvasImageSource | undefined;
-      switch (icon.info.kind) {
-        case IconKind.Operator: {
-          imgData = operatorsIndex.imgData.get(stratEditingState.teamLoadouts[icon.info.teammateIndex].operator);
-          break;
-        }
-      }
-
-      if (imgData) {
-        ctx.drawImage(imgData, icon.pos.x, icon.pos.y, 50, 50);
-      }
+      elem.drawToCtx(ctx);
     }
 
     function redrawFreeDrawCanvas(canvasId: string) {
@@ -767,14 +890,14 @@ function App() {
 
       const phaseFloor = stratEditingState.currentPhaseFloor();
       if (phaseFloor) {
-        phaseFloor.freeDrawPaths.forEach((path) => {
-          drawPathToCanvas(canvasId, path);
+        phaseFloor.drawPaths.forEach((path) => {
+          drawElementToCanvas(canvasId, path);
         });
         phaseFloor.arrows.forEach((arrow) => {
-          drawArrowToCanvas(canvasId, arrow);
+          drawElementToCanvas(canvasId, arrow);
         });
         phaseFloor.icons.forEach((icon) => {
-          drawIconToCanvas(canvasId, icon);
+          drawElementToCanvas(canvasId, icon);
         })
       }
     }
@@ -841,26 +964,31 @@ function App() {
             const toolState = stratEditingState.toolStates.freeDraw;
 
             if (inputCanvasState.mouseClicked) {
-              if (toolState.pathStarted && phaseFloor.freeDrawPaths.length > 0) {
+              if (toolState.currentPath) {
                 // Continue existing path
-                phaseFloor.freeDrawPaths[phaseFloor.freeDrawPaths.length - 1].points.push(inputCanvasState.mousePos.clone());
+                phaseFloor.drawPaths.get(toolState.currentPath)?.points.push(inputCanvasState.mousePos.clone());
               } else {
                 // Create new path
                 var path = new DrawPath();
                 path.points.push(inputCanvasState.mousePos.clone());
-                phaseFloor.freeDrawPaths.push(path);
-                stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({ floor: stratEditingState.selectedFloor, tool: DrawTool.FreeDraw });
-                toolState.pathStarted = true;
+                const id = phaseFloor.pushDrawElement(path);
+                stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({
+                  kind: DrawActionKind.PlaceDrawElement,
+                  data: path,
+                  floor: stratEditingState.selectedFloor,
+                  id,
+                });
+                toolState.currentPath = id;
               }
 
               // Draw path to canvas immediately, avoiding a rerender
               if (inputCanvasState.prevMouseClicked) {
                 var path = new DrawPath();
                 path.points = [inputCanvasState.prevMousePos.clone(), inputCanvasState.mousePos.clone()];
-                drawPathToCanvas(stratEditorFreeDrawCanvasId, path);
+                drawElementToCanvas(stratEditorFreeDrawCanvasId, path);
               }
             } else {
-              toolState.pathStarted = false;
+              toolState.currentPath = undefined;
             }
             break;
           }
@@ -870,10 +998,14 @@ function App() {
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
               if (toolState.arrowHasBeenStarted) {
                 const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone());
-                drawArrowToCanvas(stratEditorFreeDrawCanvasId, arrow);
-                phaseFloor.arrows.push(arrow);
-                stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({ floor: stratEditingState.selectedFloor, tool: DrawTool.Arrow });
-
+                drawElementToCanvas(stratEditorFreeDrawCanvasId, arrow);
+                const id = phaseFloor.pushDrawElement(arrow);
+                stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({
+                  kind: DrawActionKind.PlaceDrawElement,
+                  data: arrow,
+                  floor: stratEditingState.selectedFloor,
+                  id,
+                });
                 toolState.arrowHasBeenStarted = false;
               } else {
                 toolState.arrowStartPoint = inputCanvasState.mousePos.clone();
@@ -883,7 +1015,7 @@ function App() {
 
             if (toolState.arrowHasBeenStarted && !inputCanvasState.mouseClicked) {
               const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone());
-              drawArrowToCanvas(placementPreviewCanvasId, arrow);
+              drawElementToCanvas(placementPreviewCanvasId, arrow);
             }
             break;
           }
@@ -893,12 +1025,16 @@ function App() {
             const icon = new IconPlacement(inputCanvasState.mousePos.clone(), 50, toolState.selectedIcon);
 
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
-              drawIconToCanvas(stratEditorFreeDrawCanvasId, icon);
-              phaseFloor.icons.push(icon);
-              stratEditingState.phases[stratEditingState.selectedPhase]
-                .pushPreviousDrawAction({ floor: stratEditingState.selectedFloor, tool: DrawTool.PlaceIcon });
+              drawElementToCanvas(stratEditorFreeDrawCanvasId, icon);
+              const id = phaseFloor.pushDrawElement(icon);
+              stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({
+                kind: DrawActionKind.PlaceDrawElement,
+                data: icon,
+                floor: stratEditingState.selectedFloor,
+                id,
+              });
             } else {
-              drawIconToCanvas(placementPreviewCanvasId, icon);
+              drawElementToCanvas(placementPreviewCanvasId, icon);
             }
             break;
           }
@@ -911,22 +1047,22 @@ function App() {
             // Clear invalid selected item
             if (toolState.selected) {
               switch (toolState.selected.kind) {
-                case SelectableElementKind.DrawPath: {
-                  const path = phase.floors[toolState.selected.floor].freeDrawPaths[toolState.selected.idx];
+                case DrawElementKind.DrawPath: {
+                  const path = phase.floors[toolState.selected.floor].drawPaths.get(toolState.selected.id);
                   if (!path) {
                     toolState.selected = undefined;
                   }
                   break;
                 }
-                case SelectableElementKind.Arrow: {
-                  const arrow = phase.floors[toolState.selected.floor].arrows[toolState.selected.idx];
+                case DrawElementKind.Arrow: {
+                  const arrow = phase.floors[toolState.selected.floor].arrows.get(toolState.selected.id);
                   if (!arrow) {
                     toolState.selected = undefined;
                   }
                   break;
                 }
-                case SelectableElementKind.Icon: {
-                  const icon = phase.floors[toolState.selected.floor].icons[toolState.selected.idx];
+                case DrawElementKind.Icon: {
+                  const icon = phase.floors[toolState.selected.floor].icons.get(toolState.selected.id);
                   if (!icon) {
                     toolState.selected = undefined;
                   }
@@ -937,51 +1073,14 @@ function App() {
 
             // Update selection
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
-              function isItemHovered(selectable: SelectableElement, mousePos: Vec2): boolean {
-                let item;
-                switch (selectable.kind) {
-                  case SelectableElementKind.DrawPath: {
-                    item = phase.floors[selectable.floor].freeDrawPaths[selectable.idx];
-                    for (let i = 0; i < item.points.length - 1; i += 1) {
-                      const distToLine = mousePos.distanceToLine(item.points[i], item.points[i + 1], false, false).distance;
-                      if (distToLine < 5) {
-                        return true;
-                      }
-                    }
-                    return false;
-                  }
-                  case SelectableElementKind.Arrow: {
-                    item = phase.floors[selectable.floor].arrows[selectable.idx];
-                    const distToArrow = mousePos.distanceToLine(item.start, item.end, false, false).distance;
-                    return distToArrow < 5;
-                  }
-                  case SelectableElementKind.Icon: {
-                    item = phase.floors[selectable.floor].icons[selectable.idx];
-                    const aabb = Aabb.fromPoints([item.pos, item.pos.add(new Vec2(item.size, item.size))]);
-                    return aabb.containsPoint(mousePos);
+              function pickFloor(floor: number): AnyDrawElementId | undefined {
+                for (const id of phase.floors[floor].allDrawElements().slice().reverse()) {
+                  const item = phase.floors[floor].getDrawElement(id);
+                  if (item?.isHovered(inputCanvasState.mousePos)) {
+                    return new AnyDrawElementId(item.asEnum().kind, floor, id);
                   }
                 }
-              }
-
-              function pickFloor(floor: number): SelectableElement | undefined {
-                for (let idx = phase.floors[floor].freeDrawPaths.length - 1; idx >= 0; idx -= 1) {
-                  const item = new SelectableElement(SelectableElementKind.DrawPath, floor, idx);
-                  if (isItemHovered(item, inputCanvasState.mousePos)) {
-                    return item;
-                  }
-                }
-                for (let idx = phase.floors[floor].arrows.length - 1; idx >= 0; idx -= 1) {
-                  const item = new SelectableElement(SelectableElementKind.Arrow, floor, idx);
-                  if (isItemHovered(item, inputCanvasState.mousePos)) {
-                    return item;
-                  }
-                }
-                for (let idx = phase.floors[floor].icons.length - 1; idx >= 0; idx -= 1) {
-                  const item = new SelectableElement(SelectableElementKind.Icon, floor, idx);
-                  if (isItemHovered(item, inputCanvasState.mousePos)) {
-                    return item;
-                  }
-                }
+                return undefined;
               }
 
               // Prioritize picking current floor, then prioritize higher floors
@@ -992,7 +1091,7 @@ function App() {
                 }
               }
 
-              let itemPicked: SelectableElement | undefined = undefined;
+              let itemPicked: AnyDrawElementId | undefined = undefined;
               for (let floor of floorPriorityOrdering) {
                 const picked = pickFloor(floor);
                 if (picked) {
@@ -1017,33 +1116,9 @@ function App() {
               }
             })();
 
-            if (toolState.selected) {
+            if (toolState.selected && toolState.selected.get(phase)) {
               // Draw border around selection
-              let boundingBox: Aabb = new Aabb();
-
-              switch (toolState.selected.kind) {
-                case SelectableElementKind.DrawPath: {
-                  const path = phase.floors[toolState.selected.floor].freeDrawPaths[toolState.selected.idx];
-                  if (path) {
-                    boundingBox = Aabb.fromPoints(path.points);
-                  }
-                  break;
-                }
-                case SelectableElementKind.Arrow: {
-                  const arrow = phase.floors[toolState.selected.floor].arrows[toolState.selected.idx];
-                  if (arrow) {
-                    boundingBox = Aabb.fromPoints([arrow.start, arrow.end]);
-                  }
-                  break;
-                }
-                case SelectableElementKind.Icon: {
-                  const icon = phase.floors[toolState.selected.floor].icons[toolState.selected.idx];
-                  if (icon) {
-                    boundingBox = Aabb.fromPoints([icon.pos, icon.pos.add(new Vec2(icon.size, icon.size))]);
-                  }
-                  break;
-                }
-              }
+              const boundingBox: Aabb = toolState.selected.get(phase)!.boundingBox();
 
               placementPreviewCtx.beginPath();
 
@@ -1071,21 +1146,19 @@ function App() {
               // TODO: Enable dragging undo
               if (toolState.isDragging) {
                 const posDelta = inputCanvasState.mousePos.sub(inputCanvasState.prevMousePos);
-                switch (toolState.selected.kind) {
-                  case SelectableElementKind.DrawPath: {
-                    const item = phase.floors[toolState.selected.floor].freeDrawPaths[toolState.selected.idx];
-                    item.points = item.points.map((pt) => pt.add(posDelta));
+                const item = toolState.selected.get(phase)!.asEnum();
+                switch (item.kind) {
+                  case DrawElementKind.DrawPath: {
+                    item.data.points = item.data.points.map((pt) => pt.add(posDelta));
                     break;
                   }
-                  case SelectableElementKind.Arrow: {
-                    const item = phase.floors[toolState.selected.floor].arrows[toolState.selected.idx];
-                    item.start = item.start.add(posDelta);
-                    item.end = item.end.add(posDelta);
+                  case DrawElementKind.Arrow: {
+                    item.data.start = item.data.start.add(posDelta);
+                    item.data.end = item.data.end.add(posDelta);
                     break;
                   }
-                  case SelectableElementKind.Icon: {
-                    const item = phase.floors[toolState.selected.floor].icons[toolState.selected.idx];
-                    item.pos = item.pos.add(posDelta);
+                  case DrawElementKind.Icon: {
+                    item.data.pos = item.data.pos.add(posDelta);
                     break;
                   }
                 }
@@ -1093,23 +1166,15 @@ function App() {
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
               }
 
-              // TODO: Enable delete undo
               // Delete the selection
               if (toolState.isDeleteQueued) {
-                switch (toolState.selected.kind) {
-                  case SelectableElementKind.DrawPath: {
-                    phase.floors[toolState.selected.floor].freeDrawPaths.splice(toolState.selected.idx, 1);
-                    break;
-                  }
-                  case SelectableElementKind.Arrow: {
-                    phase.floors[toolState.selected.floor].arrows.splice(toolState.selected.idx, 1);
-                    break;
-                  }
-                  case SelectableElementKind.Icon: {
-                    phase.floors[toolState.selected.floor].icons.splice(toolState.selected.idx, 1);
-                    break;
-                  }
-                }
+                phase.pushPreviousDrawAction({
+                  kind: DrawActionKind.DeleteDrawElement,
+                  data: toolState.selected.get(phase)!,
+                  floor: toolState.selected.floor,
+                  id: toolState.selected.id,
+                });
+                phase.floors[toolState.selected.floor].deleteDrawElement(toolState.selected.id);
                 toolState.isDeleteQueued = false;
                 toolState.selected = undefined;
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
@@ -1130,10 +1195,9 @@ function App() {
       requestAnimationFrame(onUpdate);
 
       function triggerUndo() {
-        const previousDrawActionsList = stratEditingState.phases[stratEditingState.selectedPhase]?.previousDrawActions;
+        const previousDrawActionsList = stratEditingState.phases[stratEditingState.selectedPhase]?.getPreviousDrawActionsRef();
         if (!previousDrawActionsList) {
           return;
-
         }
 
         if (previousDrawActionsList.length == 0) {
@@ -1143,54 +1207,24 @@ function App() {
         const previousDrawAction = previousDrawActionsList.pop()!;
 
         const phase = stratEditingState.phases[stratEditingState.selectedPhase];
-        const phaseFloor = phase?.floors[previousDrawAction.floor];
-        if (phaseFloor) {
-          switch (previousDrawAction.tool) {
-            case DrawTool.FreeDraw: {
-              stratEditingState.toolStates.freeDraw.pathStarted = false;
-              if (phaseFloor.freeDrawPaths.length > 0) {
-                const payload = phaseFloor.freeDrawPaths.pop()!;
-                phase.redoStack.push({
-                  floor: previousDrawAction.floor,
-                  data: {
-                    tool: DrawTool.FreeDraw,
-                    payload,
-                  }
-                });
-                redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
-              }
-              break;
+        phase.redoStack.push(previousDrawAction);
+
+        switch (previousDrawAction.kind) {
+          case DrawActionKind.PlaceDrawElement: {
+            const phaseFloor = phase?.floors[previousDrawAction.floor];
+            phaseFloor.deleteDrawElement(previousDrawAction.id);
+            if (previousDrawAction.data.asEnum().kind = DrawElementKind.DrawPath) {
+              stratEditingState.toolStates.freeDraw.currentPath = undefined;
             }
-            case DrawTool.Arrow: {
-              if (phaseFloor.arrows.length > 0) {
-                const payload = phaseFloor.arrows.pop()!;
-                phase.redoStack.push({
-                  floor: previousDrawAction.floor,
-                  data: {
-                    tool: DrawTool.Arrow,
-                    payload,
-                  }
-                });
-                redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
-              }
-              break;
-            }
-            case DrawTool.PlaceIcon: {
-              if (phaseFloor.icons.length > 0) {
-                const payload = phaseFloor.icons.pop()!;
-                phase.redoStack.push({
-                  floor: previousDrawAction.floor,
-                  data: {
-                    tool: DrawTool.PlaceIcon,
-                    payload,
-                  }
-                });
-                redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
-              }
-              break;
-            }
+            break;
+          }
+          case DrawActionKind.DeleteDrawElement: {
+            const phaseFloor = phase?.floors[previousDrawAction.floor];
+            phaseFloor.setDrawElement(previousDrawAction.id, previousDrawAction.data);
+            break;
           }
         }
+        redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
       }
 
       function triggerRedo() {
@@ -1203,27 +1237,19 @@ function App() {
         if (!redoAction) {
           return;
         }
+        phase.getPreviousDrawActionsRef().push(redoAction);
 
-        const phaseFloor = phase.floors[redoAction.floor];
-        const prevDrawActions = phase.previousDrawActions;
-
-        switch (redoAction.data.tool) {
-          case DrawTool.FreeDraw: {
-            phaseFloor.freeDrawPaths.push(redoAction.data.payload);
-            prevDrawActions.push({ floor: redoAction.floor, tool: DrawTool.FreeDraw });
-            drawPathToCanvas(stratEditorFreeDrawCanvasId, redoAction.data.payload);
+        switch (redoAction.kind) {
+          case DrawActionKind.PlaceDrawElement: {
+            const phaseFloor = phase.floors[redoAction.floor];
+            phaseFloor.setDrawElement(redoAction.id, redoAction.data);
+            drawElementToCanvas(stratEditorFreeDrawCanvasId, redoAction.data);
             break;
           }
-          case DrawTool.Arrow: {
-            phaseFloor.arrows.push(redoAction.data.payload);
-            prevDrawActions.push({ floor: redoAction.floor, tool: DrawTool.Arrow });
-            drawArrowToCanvas(stratEditorFreeDrawCanvasId, redoAction.data.payload);
-            break;
-          }
-          case DrawTool.PlaceIcon: {
-            phaseFloor.icons.push(redoAction.data.payload);
-            prevDrawActions.push({ floor: redoAction.floor, tool: DrawTool.PlaceIcon });
-            drawIconToCanvas(stratEditorFreeDrawCanvasId, redoAction.data.payload);
+          case DrawActionKind.DeleteDrawElement: {
+            const phaseFloor = phase.floors[redoAction.floor];
+            phaseFloor.deleteDrawElement(redoAction.id);
+            redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
             break;
           }
         }
@@ -1338,7 +1364,7 @@ function App() {
                 stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.Operator, teammateIndex: idx };
                 updateStratEditingStateDisplay();
               }}>
-                <img src={operatorsIndex.getImgPath(loadout.operator)} style={{ width: 64, height: 64 }} />
+                <img src={operatorsIndexReactive.getImgPath(loadout.operator)} style={{ width: 64, height: 64 }} />
               </button>
               <button onClick={(_e) => {
                 if (selectOperatorForTeammateActiveIdx == idx) {

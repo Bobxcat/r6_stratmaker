@@ -21,6 +21,7 @@ interface DrawElement {
   isHovered(mousePos: Vec2): boolean;
   boundingBox(): Aabb;
   drawToCtx(ctx: CanvasRenderingContext2D): void;
+  mapPoints(map: (pt: Vec2) => Vec2): void;
 }
 
 enum DrawElementKind {
@@ -257,6 +258,9 @@ class DrawPath implements DrawElement {
     ctx.stroke();
     ctx.closePath();
   }
+  mapPoints(map: (pt: Vec2) => Vec2): void {
+    this.points = this.points.map(map)
+  }
 }
 
 class Arrow implements DrawElement {
@@ -303,6 +307,10 @@ class Arrow implements DrawElement {
 
     ctx.stroke();
     ctx.closePath();
+  }
+  mapPoints(map: (pt: Vec2) => Vec2): void {
+    this.start = map(this.start);
+    this.end = map(this.end);
   }
 
   toString(): string {
@@ -361,6 +369,9 @@ class IconPlacement implements DrawElement {
     if (imgData) {
       ctx.drawImage(imgData, this.pos.x, this.pos.y, 50, 50);
     }
+  }
+  mapPoints(map: (pt: Vec2) => Vec2): void {
+    this.pos = map(this.pos)
   }
 }
 
@@ -482,6 +493,7 @@ class PlaceIconToolState {
 class SelectAndEditToolState {
   selected: AnyDrawElementId | undefined = undefined;
   isDragging: boolean = false;
+  currDragTotalDelta: Vec2 = new Vec2(0, 0);
   isDeleteQueued: boolean = false;
 }
 
@@ -1140,28 +1152,25 @@ function App() {
               if (!selectionChanged && inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
                 toolState.isDragging = true;
               } else if (!inputCanvasState.mouseClicked) {
+                if (toolState.isDragging && !toolState.currDragTotalDelta.approxEq(new Vec2(0, 0))) {
+                  phase.pushPreviousDrawAction({
+                    kind: DrawActionKind.MoveDrawElement,
+                    delta: toolState.currDragTotalDelta.clone(),
+                    floor: toolState.selected.floor,
+                    id: toolState.selected.id,
+                  });
+                }
+
+                toolState.currDragTotalDelta = new Vec2(0, 0);
                 toolState.isDragging = false;
               }
 
-              // TODO: Enable dragging undo
+              // Drag the selection
               if (toolState.isDragging) {
                 const posDelta = inputCanvasState.mousePos.sub(inputCanvasState.prevMousePos);
-                const item = toolState.selected.get(phase)!.asEnum();
-                switch (item.kind) {
-                  case DrawElementKind.DrawPath: {
-                    item.data.points = item.data.points.map((pt) => pt.add(posDelta));
-                    break;
-                  }
-                  case DrawElementKind.Arrow: {
-                    item.data.start = item.data.start.add(posDelta);
-                    item.data.end = item.data.end.add(posDelta);
-                    break;
-                  }
-                  case DrawElementKind.Icon: {
-                    item.data.pos = item.data.pos.add(posDelta);
-                    break;
-                  }
-                }
+                toolState.selected.get(phase)!.mapPoints((pt) => pt.add(posDelta));
+                toolState.currDragTotalDelta = toolState.currDragTotalDelta.add(posDelta);
+
                 // Somehow this isn't *that* bad for performance??
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
               }
@@ -1223,6 +1232,12 @@ function App() {
             phaseFloor.setDrawElement(previousDrawAction.id, previousDrawAction.data);
             break;
           }
+          case DrawActionKind.MoveDrawElement: {
+            const phaseFloor = phase?.floors[previousDrawAction.floor];
+            const elem = phaseFloor.getDrawElement(previousDrawAction.id);
+            elem?.mapPoints((pt) => pt.sub(previousDrawAction.delta));
+            break;
+          }
         }
         redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
       }
@@ -1249,6 +1264,13 @@ function App() {
           case DrawActionKind.DeleteDrawElement: {
             const phaseFloor = phase.floors[redoAction.floor];
             phaseFloor.deleteDrawElement(redoAction.id);
+            redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+            break;
+          }
+          case DrawActionKind.MoveDrawElement: {
+            const phaseFloor = phase.floors[redoAction.floor];
+            const elem = phaseFloor.getDrawElement(redoAction.id);
+            elem?.mapPoints((pt) => pt.add(redoAction.delta));
             redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
             break;
           }

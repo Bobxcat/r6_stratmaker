@@ -8,6 +8,10 @@ import WebSocket from "@tauri-apps/plugin-websocket";
 import "./App.css";
 import * as protos from "./generated_protos/primary"
 import * as uuid from 'uuid';
+import {
+  stringifyCSSProperties,
+  stringifyStyleMap,
+} from "react-style-stringify";
 
 class Uuid {
   readonly data: string;
@@ -331,6 +335,7 @@ class StratMetadata {
 
 enum IconKind {
   Operator,
+  OperatorAbility,
 }
 
 class IconInfo {
@@ -355,19 +360,51 @@ class IconPlacement implements DrawElement {
     return this.boundingBox().containsPoint(mousePos);
   }
   boundingBox(): Aabb {
-    return Aabb.fromPoints([this.pos, this.pos.add(new Vec2(this.size, this.size))]);
+    var width = 0;
+    var height = 0;
+
+    const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
+    const opName = loadout.operator;
+    switch (this.info.kind) {
+      case IconKind.Operator: {
+        width = this.size;
+        height = this.size;
+        break;
+      }
+      case IconKind.OperatorAbility: {
+        height = this.size;
+        const imgData = operatorsIndexNonReactive.abilityImgData.get(opName);
+        const foo: HTMLImageElement = imgData! as HTMLImageElement;
+        width = height * (foo.width / foo.height);
+        break;
+      }
+    }
+
+    return Aabb.fromPoints([this.pos, this.pos.add(new Vec2(width, height))]);
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     var imgData: CanvasImageSource | undefined;
+
+    var aabb = this.boundingBox();
+
+    const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
+    const opName = loadout.operator;
     switch (this.info.kind) {
       case IconKind.Operator: {
-        imgData = operatorsIndexNonReactive.imgData.get(stratEditingState.teamLoadouts[this.info.teammateIndex].operator);
+        imgData = operatorsIndexNonReactive.operatorImgData.get(opName);
+        break;
+      }
+      case IconKind.OperatorAbility: {
+        imgData = operatorsIndexNonReactive.abilityImgData.get(opName);
+
+        ctx.fillStyle = `rgb(${loadout.color[0]}, ${loadout.color[1]}, ${loadout.color[2]})`;
+        ctx.fillRect(aabb.minPt.x, aabb.minPt.y, aabb.width(), aabb.height());
         break;
       }
     }
 
     if (imgData) {
-      ctx.drawImage(imgData, this.pos.x, this.pos.y, 50, 50);
+      ctx.drawImage(imgData, aabb.minPt.x, aabb.minPt.y, aabb.width(), aabb.height());
     }
   }
   mapPoints(map: (pt: Vec2) => Vec2): void {
@@ -505,11 +542,24 @@ class ToolStates {
 }
 
 class StratEditingLoadout {
+  static readonly defaultPalette: [number, number, number][] = [
+    [175, 43, 191],
+    [161, 78, 191],
+    [108, 145, 191],
+    [95, 176, 183],
+    [91, 200, 175],
+  ];
+
   operator: string = "ace";
+  color: [number, number, number] = [1, 2, 3];
 }
 
 class StratEditingState {
-  teamLoadouts: StratEditingLoadout[] = newArrayOfSize(5, () => new StratEditingLoadout());
+  teamLoadouts: StratEditingLoadout[] = newArrayOfSize(5, (idx) => {
+    let l = new StratEditingLoadout();
+    l.color = StratEditingLoadout.defaultPalette[idx];
+    return l;
+  });
 
   prevSelectedDrawTool: DrawTool = DrawTool.FreeDraw;
   selectedDrawTool: DrawTool = DrawTool.FreeDraw;
@@ -582,17 +632,22 @@ class OperatorsIndexImgPathOverride {
 }
 
 class OperatorsIndex {
+  static readonly abilityImgDataStyle: React.CSSProperties = { maxHeight: 48, maxWidth: 56 };
+
+  // Part of the JSON...
   attackers: string[] = [];
   defenders: string[] = [];
   img_path_override: OperatorsIndexImgPathOverride[] = [];
 
-  imgData: Map<string, CanvasImageSource> = new Map();
+  // Normal fields...
+  operatorImgData: Map<string, CanvasImageSource> = new Map();
+  abilityImgData: Map<string, CanvasImageSource> = new Map();
 
   allOperators(): string[] {
     return this.attackers.concat(this.defenders);
   }
 
-  getImgPath(operator: string): string {
+  getOperatorIconPath(operator: string): string {
     for (const override of this.img_path_override) {
       if (override.operator == operator) {
         return override.img_path;
@@ -600,6 +655,10 @@ class OperatorsIndex {
     }
 
     return `./operators/svg/${operator}.svg`;
+  }
+
+  getOperatorAbilityIconPath(operator: string): string {
+    return `./abilities/ability_${operator}.webp`;
   }
 }
 let operatorsIndexNonReactive = new OperatorsIndex();
@@ -654,11 +713,17 @@ function App() {
         return Object.assign(new OperatorsIndex(), asJson);
       });
 
-      for (const opName of ops.allOperators()) {
+      async function imgElemFromPath(path: string): Promise<HTMLImageElement> {
         const imgElem = document.createElement("img") as HTMLImageElement;
-        imgElem.setAttribute("src", ops.getImgPath(opName));
-        imgElem.decode();
-        ops.imgData.set(opName, imgElem);
+        imgElem.setAttribute("src", path);
+        return imgElem;
+      }
+
+      for (const opName of ops.allOperators()) {
+        // Load operator icons
+        ops.operatorImgData.set(opName, await imgElemFromPath(ops.getOperatorIconPath(opName)));
+        const abilityImg = await imgElemFromPath(ops.getOperatorAbilityIconPath(opName));
+        ops.abilityImgData.set(opName, abilityImg);
       }
 
       setOperatorsIndexReactive(ops);
@@ -751,7 +816,7 @@ function App() {
           <div className="row">
             {row.map((opName) =>
               <button className="col" style={{ margin: 1, padding: 0, width: "fit-content", height: "fit-content" }} onClick={(_) => onClick(opName)}>
-                <img src={operatorsIndexReactive.getImgPath(opName)} width="256" height="256" style={{ margin: 0, width: imgSize, height: imgSize }} alt="" />
+                <img src={operatorsIndexReactive.getOperatorIconPath(opName)} width="256" height="256" style={{ margin: 0, width: imgSize, height: imgSize }} alt="" />
                 {includeNames ? <p>{opName}</p> : undefined}
               </button>
             )}
@@ -881,6 +946,49 @@ function App() {
   function stratEditorPageComponent() {
     const placementPreviewCanvasId = "arrow-placement-preview-canvas";
 
+    /**
+     * 
+     * @param carets A positive number indicates pointing upwards, a negative number indicates pointing downwards
+     */
+    function drawCaretToCanvas(canvasId: string, carets: number, pos: Vec2) {
+      carets = Math.trunc(carets);
+      if (carets == 0) {
+        return;
+      }
+
+      const canvas = document.getElementById(canvasId);
+      if (canvas == null) {
+        return;
+      }
+
+      const ctx = (canvas as HTMLCanvasElement).getContext("2d");
+      if (ctx == null) {
+        return;
+      }
+
+      const length = 5;
+
+      let offsetRight = new Vec2(1, 0).rotated(-0.4).scaled(length);
+      if (carets < 0) {
+        offsetRight = new Vec2(offsetRight.x, -offsetRight.y);
+      }
+      let offsetLeft = new Vec2(-offsetRight.x, offsetRight.y);
+
+      let ptLeft = offsetRight.add(pos);
+      let ptRight = offsetLeft.add(pos);
+
+      ctx.beginPath();
+      ctx.strokeStyle = "blue";
+      ctx.lineWidth = 1.5;
+
+      ctx.moveTo(ptLeft.x, ptLeft.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.lineTo(ptRight.x, ptRight.y);
+
+      ctx.stroke();
+      ctx.closePath();
+    }
+
     function drawElementToCanvas(canvasId: string, elem: DrawElement) {
       const canvas = document.getElementById(canvasId);
       if (canvas == null) {
@@ -892,6 +1000,9 @@ function App() {
         return;
       }
       elem.drawToCtx(ctx);
+      const aabb = elem.boundingBox();
+      const caretPt = new Vec2(aabb.minPt.x, (aabb.minPt.y + aabb.maxPt.y) / 2);
+      drawCaretToCanvas(canvasId, 0, caretPt);
     }
 
     function redrawFreeDrawCanvas(canvasId: string) {
@@ -910,7 +1021,7 @@ function App() {
         });
         phaseFloor.icons.forEach((icon) => {
           drawElementToCanvas(canvasId, icon);
-        })
+        });
       }
     }
 
@@ -1034,7 +1145,19 @@ function App() {
           case DrawTool.PlaceIcon: {
             const toolState = stratEditingState.toolStates.placeIcon;
 
-            const icon = new IconPlacement(inputCanvasState.mousePos.clone(), 50, toolState.selectedIcon);
+            let iconSize;
+            switch (toolState.selectedIcon.kind) {
+              case IconKind.Operator: {
+                iconSize = 50;
+                break;
+              }
+              case IconKind.OperatorAbility: {
+                iconSize = 30;
+                break;
+              }
+            }
+
+            const icon = new IconPlacement(inputCanvasState.mousePos.clone(), iconSize, toolState.selectedIcon);
 
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
               drawElementToCanvas(stratEditorFreeDrawCanvasId, icon);
@@ -1386,7 +1509,7 @@ function App() {
                 stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.Operator, teammateIndex: idx };
                 updateStratEditingStateDisplay();
               }}>
-                <img src={operatorsIndexReactive.getImgPath(loadout.operator)} style={{ width: 64, height: 64 }} />
+                <img src={operatorsIndexReactive.getOperatorIconPath(loadout.operator)} style={{ width: 64, height: 64 }} />
               </button>
               <button onClick={(_e) => {
                 if (selectOperatorForTeammateActiveIdx == idx) {
@@ -1408,6 +1531,16 @@ function App() {
                   </div>
                 </div>
               )}
+              <button style={{ paddingTop: 4, paddingBottom: 4, paddingLeft: 0, paddingRight: 0, height: 56 }} onClick={(_e) => {
+                stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
+                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.OperatorAbility, teammateIndex: idx };
+                updateStratEditingStateDisplay();
+              }}>
+                <img
+                  src={operatorsIndexReactive.getOperatorAbilityIconPath(loadout.operator)}
+                  style={OperatorsIndex.abilityImgDataStyle}
+                />
+              </button>
             </div>
           )}
         </div>

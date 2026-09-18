@@ -685,6 +685,10 @@ function newArrayOfSize<T>(size: number, create: (idx: number) => T): T[] {
   return arr;
 }
 
+function lerp(start: number, end: number, t: number): number {
+  return start * (1 - t) + end * t;
+}
+
 function App() {
   const [stratEditingStateDisplay, setStratEditingStateDisplay] = useState<StratEditingStateDisplay>(new StratEditingStateDisplay());
 
@@ -956,6 +960,9 @@ function App() {
         return;
       }
 
+      const caretDown = carets < 0;
+      const numCarets = Math.abs(carets);
+
       const canvas = document.getElementById(canvasId);
       if (canvas == null) {
         return;
@@ -967,29 +974,45 @@ function App() {
       }
 
       const length = 5;
+      const lineWidth = 1.5;
+      const spacing = 3;
 
-      let offsetRight = new Vec2(1, 0).rotated(-0.4).scaled(length);
-      if (carets < 0) {
-        offsetRight = new Vec2(offsetRight.x, -offsetRight.y);
+      function drawSingleCaret(ctx: CanvasRenderingContext2D, isDown: boolean, pos: Vec2) {
+        // Since -y is "up", we rotate in the positive direction to point downwards
+        let offsetRight = new Vec2(1, 0).rotated(0.4).scaled(length);
+        if (isDown) {
+          offsetRight = new Vec2(offsetRight.x, -offsetRight.y);
+        }
+        let offsetLeft = new Vec2(-offsetRight.x, offsetRight.y);
+
+        let ptLeft = offsetRight.add(pos);
+        let ptRight = offsetLeft.add(pos);
+
+        ctx.beginPath();
+        ctx.strokeStyle = "blue";
+        ctx.lineWidth = lineWidth;
+
+        ctx.moveTo(ptLeft.x, ptLeft.y);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.lineTo(ptRight.x, ptRight.y);
+
+        ctx.stroke();
+        ctx.closePath();
       }
-      let offsetLeft = new Vec2(-offsetRight.x, offsetRight.y);
 
-      let ptLeft = offsetRight.add(pos);
-      let ptRight = offsetLeft.add(pos);
+      if (numCarets == 1) {
+        drawSingleCaret(ctx, caretDown, pos);
+      } else {
+        const offsetMax = 0.5 * numCarets * spacing;
 
-      ctx.beginPath();
-      ctx.strokeStyle = "blue";
-      ctx.lineWidth = 1.5;
-
-      ctx.moveTo(ptLeft.x, ptLeft.y);
-      ctx.lineTo(pos.x, pos.y);
-      ctx.lineTo(ptRight.x, ptRight.y);
-
-      ctx.stroke();
-      ctx.closePath();
+        for (let caret = 0; caret < numCarets; caret += 1) {
+          const posY = pos.y + lerp(-offsetMax, offsetMax, caret / (numCarets - 1));
+          drawSingleCaret(ctx, caretDown, new Vec2(pos.x, posY));
+        }
+      }
     }
 
-    function drawElementToCanvas(canvasId: string, elem: DrawElement) {
+    function drawElementToCanvas(canvasId: string, elem: DrawElement, floor: number) {
       const canvas = document.getElementById(canvasId);
       if (canvas == null) {
         return;
@@ -999,10 +1022,16 @@ function App() {
       if (ctx == null) {
         return;
       }
+
+      if (stratEditingState.selectedFloor != floor) {
+        ctx.globalAlpha = 0.3;
+      }
       elem.drawToCtx(ctx);
+      ctx.globalAlpha = 1.0;
+
       const aabb = elem.boundingBox();
       const caretPt = new Vec2(aabb.minPt.x, (aabb.minPt.y + aabb.maxPt.y) / 2);
-      drawCaretToCanvas(canvasId, 0, caretPt);
+      drawCaretToCanvas(canvasId, floor - stratEditingState.selectedFloor, caretPt);
     }
 
     function redrawFreeDrawCanvas(canvasId: string) {
@@ -1011,18 +1040,47 @@ function App() {
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const phaseFloor = stratEditingState.currentPhaseFloor();
-      if (phaseFloor) {
-        phaseFloor.drawPaths.forEach((path) => {
-          drawElementToCanvas(canvasId, path);
-        });
-        phaseFloor.arrows.forEach((arrow) => {
-          drawElementToCanvas(canvasId, arrow);
-        });
-        phaseFloor.icons.forEach((icon) => {
-          drawElementToCanvas(canvasId, icon);
-        });
+      const phase = stratEditingState.phases[stratEditingState.selectedPhase];
+
+      if (!phase) {
+        return;
       }
+
+      let floorPriorityOrdering = [];
+      for (let i = 0; i < stratEditingState.mapFloors.length; i += 1) {
+        if (i != stratEditingState.selectedFloor) {
+          floorPriorityOrdering.push(i);
+        }
+      }
+
+      for (let floorIdx = 0; floorIdx < stratEditingState.mapFloors.length; floorIdx += 1) {
+        const phaseFloor = phase.floors[floorIdx];
+        if (phaseFloor) {
+          phaseFloor.drawPaths.forEach((path) => {
+            drawElementToCanvas(canvasId, path, floorIdx);
+          });
+          phaseFloor.arrows.forEach((arrow) => {
+            drawElementToCanvas(canvasId, arrow, floorIdx);
+          });
+          phaseFloor.icons.forEach((icon) => {
+            drawElementToCanvas(canvasId, icon, floorIdx);
+          });
+        }
+      }
+
+      // const phaseFloor = stratEditingState.currentPhaseFloor();
+
+      // if (phaseFloor) {
+      //   phaseFloor.drawPaths.forEach((path) => {
+      //     drawElementToCanvas(canvasId, path);
+      //   });
+      //   phaseFloor.arrows.forEach((arrow) => {
+      //     drawElementToCanvas(canvasId, arrow);
+      //   });
+      //   phaseFloor.icons.forEach((icon) => {
+      //     drawElementToCanvas(canvasId, icon);
+      //   });
+      // }
     }
 
     function mousePosForCanvas(canvasId: string, clientX: number, clientY: number): Vec2 {
@@ -1108,7 +1166,7 @@ function App() {
               if (inputCanvasState.prevMouseClicked) {
                 var path = new DrawPath();
                 path.points = [inputCanvasState.prevMousePos.clone(), inputCanvasState.mousePos.clone()];
-                drawElementToCanvas(stratEditorFreeDrawCanvasId, path);
+                drawElementToCanvas(stratEditorFreeDrawCanvasId, path, stratEditingState.selectedFloor);
               }
             } else {
               toolState.currentPath = undefined;
@@ -1121,7 +1179,7 @@ function App() {
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
               if (toolState.arrowHasBeenStarted) {
                 const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone());
-                drawElementToCanvas(stratEditorFreeDrawCanvasId, arrow);
+                drawElementToCanvas(stratEditorFreeDrawCanvasId, arrow, stratEditingState.selectedFloor);
                 const id = phaseFloor.pushDrawElement(arrow);
                 stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({
                   kind: DrawActionKind.PlaceDrawElement,
@@ -1138,7 +1196,7 @@ function App() {
 
             if (toolState.arrowHasBeenStarted && !inputCanvasState.mouseClicked) {
               const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone());
-              drawElementToCanvas(placementPreviewCanvasId, arrow);
+              drawElementToCanvas(placementPreviewCanvasId, arrow, stratEditingState.selectedFloor);
             }
             break;
           }
@@ -1160,7 +1218,7 @@ function App() {
             const icon = new IconPlacement(inputCanvasState.mousePos.clone(), iconSize, toolState.selectedIcon);
 
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
-              drawElementToCanvas(stratEditorFreeDrawCanvasId, icon);
+              drawElementToCanvas(stratEditorFreeDrawCanvasId, icon, stratEditingState.selectedFloor);
               const id = phaseFloor.pushDrawElement(icon);
               stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({
                 kind: DrawActionKind.PlaceDrawElement,
@@ -1169,7 +1227,7 @@ function App() {
                 id,
               });
             } else {
-              drawElementToCanvas(placementPreviewCanvasId, icon);
+              drawElementToCanvas(placementPreviewCanvasId, icon, stratEditingState.selectedFloor);
             }
             break;
           }
@@ -1381,7 +1439,7 @@ function App() {
           case DrawActionKind.PlaceDrawElement: {
             const phaseFloor = phase.floors[redoAction.floor];
             phaseFloor.setDrawElement(redoAction.id, redoAction.data);
-            drawElementToCanvas(stratEditorFreeDrawCanvasId, redoAction.data);
+            drawElementToCanvas(stratEditorFreeDrawCanvasId, redoAction.data, stratEditingState.selectedFloor);
             break;
           }
           case DrawActionKind.DeleteDrawElement: {

@@ -13,6 +13,7 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-websocket": "^2.4.3",
+    "js-toml": "^2.0.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-style-stringify": "^1.2.0",

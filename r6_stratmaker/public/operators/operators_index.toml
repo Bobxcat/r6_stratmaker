@@ -1,0 +1,253 @@
+[attackers.ace]
+utils = ["stun_grenade", "claymore"]
+
+[attackers.amaru]
+utils = ["stun_grenade", "hard_breach_charge"]
+
+[attackers.ash]
+utils = ["breach_charge", "claymore"]
+
+[attackers.blackbeard]
+utils = ["claymore", "frag_grenade"]
+
+[attackers.blitz]
+utils = ["smoke_grenade", "breach_charge"]
+
+[attackers.brava]
+utils = ["smoke_grenade", "claymore"]
+
+[attackers.buck]
+utils = ["stun_grenade", "claymore"]
+
+[attackers.capitao]
+utils = ["claymore", "hard_breach_charge", "impact_emp_grenade"]
+
+[attackers.deimos]
+utils = ["frag_grenade", "hard_breach_charge"]
+
+[attackers.dokkaebi]
+utils = ["smoke_grenade", "breach_charge"]
+
+[attackers.finka]
+utils = ["frag_grenade", "smoke_grenade", "stun_grenade"]
+
+[attackers.flores]
+utils = ["stun_grenade", "claymore"]
+
+[attackers.fuze]
+utils = ["breach_charge", "hard_breach_charge", "smoke_grenade"]
+
+[attackers.glaz]
+utils = ["smoke_grenade", "frag_grenade", "claymore"]
+
+[attackers.gridlock]
+utils = ["smoke_grenade", "frag_grenade", "impact_emp_grenade"]
+
+[attackers.grim]
+utils = ["claymore", "hard_breach_charge", "impact_emp_grenade"]
+
+[attackers.hibana]
+utils = ["breach_charge", "stun_grenade", "claymore"]
+
+[attackers.iana]
+utils = ["impact_emp_grenade", "smoke_grenade"]
+
+[attackers.iq]
+utils = ["breach_charge", "frag_grenade", "claymore"]
+
+[attackers.jackal]
+utils = ["claymore", "smoke_grenade", "frag_grenade"]
+
+[attackers.kali]
+utils = ["breach_charge", "claymore", "smoke_grenade"]
+
+[attackers.lion]
+utils = ["claymore", "frag_grenade", "stun_grenade"]
+
+[attackers.maverick]
+utils = ["claymore", "stun_grenade", "frag_grenade"]
+
+[attackers.montagne]
+utils = ["hard_breach_charge", "smoke_grenade", "impact_emp_grenade"]
+
+[attackers.nokk]
+utils = ["hard_breach_charge", "frag_grenade", "impact_emp_grenade"]
+
+[attackers.nomad]
+utils = ["breach_charge", "stun_grenade"]
+
+[attackers.osa]
+utils = ["claymore", "frag_grenade", "impact_emp_grenade"]
+
+[attackers.ram]
+utils = ["smoke_grenade", "stun_grenade"]
+
+[attackers.rauora]
+utils = ["smoke_grenade", "breach_charge"]
+
+[attackers.sens]
+utils = ["claymore", "frag_grenade", "hard_breach_charge"]
+
+[attackers.sledge]
+utils = ["frag_grenade", "stun_grenade", "impact_emp_grenade"]
+
+[attackers.solid_snake]
+utils = [
+    "frag_grenade",
+    "stun_grenade",
+    "impact_emp_grenade",
+    "smoke_grenade",
+    "breach_charge",
+]
+img_path_override = "./operators/solid_snake_icon.png"
+
+[attackers.striker]
+utils = [
+    "breach_charge",
+    "claymore",
+    "frag_grenade",
+    "hard_breach_charge",
+    "smoke_grenade",
+    "stun_grenade",
+    "impact_emp_grenade",
+]
+
+[attackers.thatcher]
+utils = ["breach_charge", "claymore"]
+
+[attackers.thermite]
+utils = ["smoke_grenade", "stun_grenade"]
+
+[attackers.twitch]
+utils = ["smoke_grenade", "claymore"]
+
+[attackers.ying]
+utils = ["hard_breach_charge", "smoke_grenade"]
+
+[attackers.zero]
+utils = ["hard_breach_charge", "claymore"]
+
+[attackers.zofia]
+utils = ["claymore", "hard_breach_charge"]
+
+[defenders.alibi]
+utils = ["proximity_alarm", "observation_blocker"]
+
+[defenders.aruni]
+utils = ["bulletproof_camera", "barbed_wire"]
+
+[defenders.azami]
+utils = ["impact_grenade", "barbed_wire"]
+
+[defenders.bandit]
+utils = ["barbed_wire", "nitro_cell"]
+
+[defenders.castle]
+utils = ["proximity_alarm", "bulletproof_camera"]
+
+[defenders.caveira]
+utils = ["proximity_alarm", "impact_grenade", "observation_blocker"]
+
+[defenders.clash]
+utils = ["barbed_wire", "impact_grenade"]
+
+[defenders.denari]
+utils = ["observation_blocker", "deployable_shield"]
+
+[defenders.doc]
+utils = ["bulletproof_camera", "barbed_wire"]
+
+[defenders.echo]
+utils = ["impact_grenade", "deployable_shield"]
+
+[defenders.ela]
+utils = ["barbed_wire", "deployable_shield", "impact_grenade"]
+
+[defenders.fenrir]
+utils = ["bulletproof_camera", "observation_blocker"]
+
+[defenders.frost]
+utils = ["bulletproof_camera", "deployable_shield"]
+
+[defenders.goyo]
+utils = ["proximity_alarm", "bulletproof_camera", "impact_grenade"]
+
+[defenders.jager]
+utils = ["bulletproof_camera", "observation_blocker"]
+
+[defenders.kaid]
+utils = ["barbed_wire", "nitro_cell", "observation_blocker"]
+
+[defenders.kapkan]
+utils = ["barbed_wire", "bulletproof_camera"]
+
+[defenders.lesion]
+utils = ["observation_blocker", "bulletproof_camera"]
+
+[defenders.maestro]
+utils = ["barbed_wire", "impact_grenade", "observation_blocker"]
+
+[defenders.melusi]
+utils = ["bulletproof_camera", "impact_grenade"]
+
+[defenders.mira]
+utils = ["proximity_alarm", "nitro_cell"]
+
+[defenders.mozzie]
+utils = ["barbed_wire", "nitro_cell", "impact_grenade"]
+
+[defenders.mute]
+utils = ["bulletproof_camera", "nitro_cell"]
+
+[defenders.oryx]
+utils = ["barbed_wire", "proximity_alarm"]
+
+[defenders.pulse]
+utils = ["nitro_cell", "deployable_shield", "observation_blocker"]
+
+[defenders.rook]
+utils = ["proximity_alarm", "impact_grenade", "nitro_cell"]
+
+[defenders.sentry]
+utils = [
+    "barbed_wire",
+    "bulletproof_camera",
+    "deployable_shield",
+    "observation_blocker",
+    "impact_grenade",
+    "nitro_cell",
+    "proximity_alarm",
+]
+
+[defenders.skopos]
+utils = ["impact_grenade", "proximity_alarm"]
+
+[defenders.smoke]
+utils = ["barbed_wire", "proximity_alarm", "deployable_shield"]
+
+[defenders.solis]
+utils = ["impact_grenade", "proximity_alarm"]
+
+[defenders.tachanka]
+utils = ["barbed_wire", "proximity_alarm", "deployable_shield"]
+
+[defenders.thorn]
+utils = ["deployable_shield", "barbed_wire"]
+
+[defenders.thunderbird]
+utils = ["barbed_wire", "bulletproof_camera", "deployable_shield"]
+
+[defenders.tubarao]
+utils = ["nitro_cell", "proximity_alarm"]
+
+[defenders.valkyrie]
+utils = ["impact_grenade", "nitro_cell"]
+
+[defenders.vigil]
+utils = ["bulletproof_camera", "impact_grenade"]
+
+[defenders.wamai]
+utils = ["deployable_shield", "proximity_alarm", "nitro_cell"]
+
+[defenders.warden]
+utils = ["deployable_shield", "nitro_cell", "observation_blocker"]

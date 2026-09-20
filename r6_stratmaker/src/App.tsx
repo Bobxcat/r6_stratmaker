@@ -12,6 +12,7 @@ import {
   stringifyCSSProperties,
   stringifyStyleMap,
 } from "react-style-stringify";
+import * as js_toml from 'js-toml';
 
 class Uuid {
   readonly data: string;
@@ -626,9 +627,10 @@ const stratEditorFreeDrawCanvasId = "strat-editor-free-draw-canvas";
 
 const mapList = ["chalet", "coastline"];
 
-class OperatorsIndexImgPathOverride {
-  operator: string = "";
-  img_path: string = "";
+class OperatorInfo {
+  op_name: string = "";
+  utils: string[] = [];
+  img_path_override: string | undefined = undefined;
 }
 
 class OperatorsIndex {
@@ -637,21 +639,16 @@ class OperatorsIndex {
   // Part of the JSON...
   attackers: string[] = [];
   defenders: string[] = [];
-  img_path_override: OperatorsIndexImgPathOverride[] = [];
+  operators: Map<string, OperatorInfo> = new Map();
 
   // Normal fields...
   operatorImgData: Map<string, CanvasImageSource> = new Map();
   abilityImgData: Map<string, CanvasImageSource> = new Map();
 
-  allOperators(): string[] {
-    return this.attackers.concat(this.defenders);
-  }
-
   getOperatorIconPath(operator: string): string {
-    for (const override of this.img_path_override) {
-      if (override.operator == operator) {
-        return override.img_path;
-      }
+    const op = this.operators.get(operator);
+    if (op?.img_path_override) {
+      return op?.img_path_override;
     }
 
     return `./operators/svg/${operator}.svg`;
@@ -659,6 +656,56 @@ class OperatorsIndex {
 
   getOperatorAbilityIconPath(operator: string): string {
     return `./abilities/ability_${operator}.webp`;
+  }
+
+  getSecondaryUtilityIconPath(utility: string): string {
+    return `./secondary_utilities/${utility}.webp`;
+  }
+
+  static async fromString(file: string): Promise<OperatorsIndex> {
+    let ops = new OperatorsIndex();
+
+    const data: Record<string, any> = js_toml.load(file);
+
+    const loadOperator = (op: [string, any], isAttacker: boolean) => {
+      console.log(op);
+      if (isAttacker) {
+        ops.attackers.push(op[0]);
+      } else {
+        ops.defenders.push(op[0]);
+      }
+
+      let opInfo = new OperatorInfo();
+      opInfo.op_name = op[0];
+      opInfo.utils = op[1].utils;
+      opInfo.img_path_override = op[1].img_path_override;
+
+      ops.operators.set(op[0], opInfo);
+    };
+
+    for (const op of Object.entries(data["attackers"])) {
+      loadOperator(op, true);
+    }
+    for (const op of Object.entries(data["defenders"])) {
+      loadOperator(op, false);
+    }
+
+    async function imgElemFromPath(path: string): Promise<HTMLImageElement> {
+      const imgElem = document.createElement("img") as HTMLImageElement;
+      imgElem.setAttribute("src", path);
+      return imgElem;
+    }
+
+    for (const opName of ops.operators.keys()) {
+      // Load operator icons
+      ops.operatorImgData.set(opName, await imgElemFromPath(ops.getOperatorIconPath(opName)));
+      const abilityImg = await imgElemFromPath(ops.getOperatorAbilityIconPath(opName));
+      ops.abilityImgData.set(opName, abilityImg);
+    }
+
+    console.log(ops.operators);
+
+    return ops;
   }
 }
 let operatorsIndexNonReactive = new OperatorsIndex();
@@ -711,24 +758,9 @@ function App() {
   // Load operators
   useEffect(() => {
     async function loadOperatorsIndex() {
-      const ops: OperatorsIndex = await fetch("./operators/operators_index.json").then((response) => {
-        return response.json();
-      }).then((asJson) => {
-        return Object.assign(new OperatorsIndex(), asJson);
+      const ops: OperatorsIndex = await fetch("./operators/operators_index.toml").then((response) => {
+        return response.text().then((r) => OperatorsIndex.fromString(r));
       });
-
-      async function imgElemFromPath(path: string): Promise<HTMLImageElement> {
-        const imgElem = document.createElement("img") as HTMLImageElement;
-        imgElem.setAttribute("src", path);
-        return imgElem;
-      }
-
-      for (const opName of ops.allOperators()) {
-        // Load operator icons
-        ops.operatorImgData.set(opName, await imgElemFromPath(ops.getOperatorIconPath(opName)));
-        const abilityImg = await imgElemFromPath(ops.getOperatorAbilityIconPath(opName));
-        ops.abilityImgData.set(opName, abilityImg);
-      }
 
       setOperatorsIndexReactive(ops);
       operatorsIndexNonReactive = ops;
@@ -801,7 +833,7 @@ function App() {
     var ops: string[] = []
 
     if (attackers && defenders) {
-      ops = operatorsIndexReactive.allOperators();
+      ops = Array.from(operatorsIndexReactive.operators.keys());
     } else if (attackers) {
       ops = operatorsIndexReactive.attackers;
     } else if (defenders) {
@@ -1589,6 +1621,16 @@ function App() {
                   </div>
                 </div>
               )}
+              <button style={{ paddingTop: 4, paddingBottom: 4, paddingLeft: 0, paddingRight: 0, height: 56 }} onClick={(_e) => {
+                stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
+                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.OperatorAbility, teammateIndex: idx };
+                updateStratEditingStateDisplay();
+              }}>
+                <img
+                  src={operatorsIndexReactive.getOperatorAbilityIconPath(loadout.operator)}
+                  style={OperatorsIndex.abilityImgDataStyle}
+                />
+              </button>
               <button style={{ paddingTop: 4, paddingBottom: 4, paddingLeft: 0, paddingRight: 0, height: 56 }} onClick={(_e) => {
                 stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
                 stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.OperatorAbility, teammateIndex: idx };

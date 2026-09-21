@@ -1,10 +1,10 @@
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
-use anyhow::{anyhow, bail};
+use anyhow::{Context, anyhow, bail};
 use fjall::{Database, Keyspace, KeyspaceCreateOptions};
 use futures_util::{SinkExt, StreamExt};
 use json::JsonValue;
-use protobuf::{Message, SpecialFields};
+use protobuf::{Message, MessageField, SpecialFields};
 use serde::{Deserialize, Serialize};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_websockets::{ServerBuilder, WebSocketStream};
@@ -12,8 +12,8 @@ use uuid::Uuid;
 
 use crate::{
     database::{
-        DatabaseHandle, StratEntry, StratId, StratPhase, StratPhaseFloor, StratsKeyspace, Username,
-        UsersKeyspace,
+        Arrow, Color, DatabaseHandle, DrawPath, PhaseFloor, PlacedIcon, ProtoConvert, StratEntry,
+        StratId, StratPhase, StratsKeyspace, Teammate, Username, UsersKeyspace,
     },
     protos::primary::{
         self, Client2Server, Server2Client, client2server::C2SInner, server2client::S2CInner,
@@ -208,6 +208,7 @@ async fn accept_client(
                             strat_name: "unnamed".into(),
                             map: msg.map,
                             phases: vec![],
+                            teammates: vec![Teammate::default(); 5],
                         },
                     )
                     .await?;
@@ -253,24 +254,35 @@ async fn accept_client(
                                 .floors
                                 .into_iter()
                                 .map(|floor| primary::StratFloor {
-                                    freeDrawPaths: floor
+                                    drawPaths: floor
                                         .draw_paths
                                         .into_iter()
-                                        .map(|path| primary::FreeDrawPath {
-                                            points: path
-                                                .into_iter()
-                                                .map(|[x, y]| primary::Point {
-                                                    x,
-                                                    y,
-                                                    special_fields: SpecialFields::new(),
-                                                })
-                                                .collect(),
-                                            special_fields: SpecialFields::new(),
-                                        })
+                                        .map(|(id, path)| (id, path.to_proto()))
                                         .collect(),
+                                    arrows: floor
+                                        .arrows
+                                        .into_iter()
+                                        .map(|(id, arrow)| (id, arrow.to_proto()))
+                                        .collect(),
+                                    icons: floor
+                                        .icons
+                                        .into_iter()
+                                        .map(|(id, icon)| (id, icon.to_proto()))
+                                        .collect(),
+
                                     special_fields: SpecialFields::new(),
                                 })
                                 .collect(),
+                            special_fields: SpecialFields::new(),
+                        })
+                        .collect(),
+                    teammates: strat
+                        .teammates
+                        .into_iter()
+                        .map(|teammate| primary::Teammate {
+                            operator: teammate.operator,
+                            color: MessageField::some(teammate.color.to_proto()),
+                            util: teammate.util,
                             special_fields: SpecialFields::new(),
                         })
                         .collect(),
@@ -287,7 +299,11 @@ async fn accept_client(
                     .await?;
             }
             C2SInner::SaveStrat(msg) => {
-                let strat_id = StratId(Uuid::try_parse(&msg.strat_id)?);
+                let strat_id = StratId(Uuid::try_parse(&msg.strat_id).context(format!(
+                    "{}: {}",
+                    line!(),
+                    msg.strat_id
+                ))?);
                 let Some(state) = msg.state.into_option() else {
                     continue;
                 };
@@ -295,37 +311,48 @@ async fn accept_client(
                 let Some(mut strat) = database.get::<StratsKeyspace>(&strat_id).await? else {
                     continue;
                 };
-                // Update strat entry...
+
                 strat = StratEntry {
                     strat_name: state.strat_name,
                     map: strat.map,
+                    teammates: state
+                        .teammates
+                        .into_iter()
+                        .map(|teammate| Teammate {
+                            operator: teammate.operator,
+                            color: Color::from_proto(teammate.color.unwrap()),
+                            util: teammate.util,
+                        })
+                        .collect(),
                     phases: state
                         .phases
                         .into_iter()
-                        .map(|state_phase| StratPhase {
-                            phase_name: state_phase.phase_name,
-                            floors: state_phase
+                        .map(|phase| StratPhase {
+                            phase_name: phase.phase_name,
+                            floors: phase
                                 .floors
                                 .into_iter()
-                                .map(|state_floor| StratPhaseFloor {
-                                    draw_paths: state_floor
-                                        .freeDrawPaths
+                                .map(|f| PhaseFloor {
+                                    draw_paths: f
+                                        .drawPaths
                                         .into_iter()
-                                        .map(|free_draw_path| {
-                                            free_draw_path
-                                                .points
-                                                .into_iter()
-                                                .map(|pt| [pt.x, pt.y])
-                                                .collect()
-                                        })
+                                        .map(|(id, path)| (id, DrawPath::from_proto(path)))
                                         .collect(),
-                                    placed_icons: vec![],
+                                    arrows: f
+                                        .arrows
+                                        .into_iter()
+                                        .map(|(id, path)| (id, Arrow::from_proto(path)))
+                                        .collect(),
+                                    icons: f
+                                        .icons
+                                        .into_iter()
+                                        .map(|(id, path)| (id, PlacedIcon::from_proto(path)))
+                                        .collect(),
                                 })
                                 .collect(),
                         })
                         .collect(),
                 };
-                // ...
                 database.insert::<StratsKeyspace>(&strat_id, &strat).await?;
             }
             msg => println!("Unexpected message: `{msg:?}`",),

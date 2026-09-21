@@ -2,16 +2,61 @@ syntax = "proto3";
 
 // Shared types
 message Point {
-    float x = 1;
-    float y = 2;
+    double x = 1;
+    double y = 2;
 }
 
-message FreeDrawPath {
+message Color {
+    double r = 1;
+    double g = 2;
+    double b = 3;
+}
+
+message DrawPath {
     repeated Point points = 1;
+    Color color = 2;
 }
 
+message Arrow {
+    Point start = 1;
+    Point end = 2;
+    Color color = 3;
+}
+
+message Icon {
+    message TeamOperator {
+        uint32 teammateIdx = 1;
+    }
+    message TeamAbility {
+        uint32 teammateIdx = 1;
+    }
+    message TeamUtility {
+        uint32 teammateIdx = 1;
+    }
+    message FreeOperator {
+        string operator = 1;
+    }
+    message FreeAbility {
+        string ability = 1;
+    }
+    message FreeUtility {
+        string util = 1;
+    }
+
+    Point pos = 1;
+    oneof IconKind {
+        TeamOperator teamOperator = 11;
+        TeamAbility teamAbility = 12;
+        TeamUtility teamUtility = 13;
+        FreeOperator freeOperator = 14;
+        FreeAbility freeAbility = 15;
+        FreeUtility freeUtility = 16;
+    }
+}
 message StratFloor {
-    repeated FreeDrawPath freeDrawPaths = 1;
+    map<string, DrawPath> drawPaths = 1;
+    map<string, Arrow> arrows = 2;
+    map<string, Icon> icons = 3;
 }
 
 message StratPhase {
@@ -19,9 +64,16 @@ message StratPhase {
     repeated StratFloor floors = 2;
 }
 
+message Teammate {
+    string operator = 1;
+    Color color = 2;
+    string util = 3;
+}
+
 message StratState {
     string strat_name = 1;
     repeated StratPhase phases = 2;
+    repeated Teammate teammates = 3;
 }
 
 // Hello

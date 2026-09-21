@@ -16,8 +16,12 @@ import * as js_toml from 'js-toml';
 
 class Uuid {
   readonly data: string;
-  constructor() {
-    this.data = uuid.v4();
+  constructor(data?: string) {
+    if (data) {
+      this.data = data;
+    } else {
+      this.data = uuid.v4();
+    }
   }
 }
 
@@ -114,6 +118,10 @@ class Vec2 {
   constructor(x: number, y: number) {
     this.x = x;
     this.y = y;
+  }
+
+  static fromProto(proto: protos.Point): Vec2 {
+    return new Vec2(proto.x, proto.y);
   }
 
   toString(): string {
@@ -351,11 +359,6 @@ enum IconKind {
   FreeAbility,
   FreeUtility,
 }
-
-// class IconInfo {
-//   kind: IconKind = IconKind.Operator;
-//   teammateIndex: number = 0;
-// }
 
 type IconInfo =
   { kind: IconKind.TeamOperator, teammateIndex: number }
@@ -698,6 +701,7 @@ class StratEditingStateDisplay {
 }
 
 const stratEditingState = new StratEditingState();
+let redrawFreeDrawCanvasQueued: boolean = false;
 
 const inputCanvasState = InputCanvasState.Instance;
 
@@ -817,6 +821,35 @@ function lerp(start: number, end: number, t: number): number {
   return start * (1 - t) + end * t;
 }
 
+function mapMap<K1, V1, K2, V2>(map: Map<K1, V1>, cb: (k: K1, v: V1) => [K2, V2]): Map<K2, V2> {
+  let outMap = new Map();
+
+  for (const entry of map) {
+    const out = cb(entry[0], entry[1]);
+    outMap.set(out[0], out[1]);
+  }
+
+  return outMap;
+}
+
+function mapMapToObject<K1, V1, V2>(map: Map<K1, V1>, cb: (k: K1, v: V1) => [string, V2]): Record<string, V2> {
+  let record: Record<string, V2> = {};
+
+  for (const entry of mapMap(map, cb)) {
+    record[entry[0]] = entry[1];
+  }
+
+  return record;
+}
+
+function colorToProto(color: [number, number, number]): protos.Color {
+  return { r: color[0], g: color[1], b: color[2] };
+}
+
+function colorFromProto(color: protos.Color): [number, number, number] {
+  return [color.r, color.g, color.b];
+}
+
 function App() {
   const [stratEditingStateDisplay, setStratEditingStateDisplay] = useState<StratEditingStateDisplay>(new StratEditingStateDisplay());
 
@@ -904,9 +937,85 @@ function App() {
       stratEditingState.mapFloors = msg.getMapMetadataResponse.floors;
       updateStratEditingStateDisplay();
     } else if (msg.getStratInfoResponse) {
-      //
+      const state: protos.StratState = msg.getStratInfoResponse.state!;
+      stratEditingState.stratName = state.stratName;
+      stratEditingState.teamLoadouts = state.teammates.map((teammate) => {
+        return { operator: teammate.operator, color: colorFromProto(teammate.color!), util: teammate.util }
+      });
+      stratEditingState.phases = state.phases.map((protoPhase) => {
+        let phase = new StratEditingPhase();
+        phase.phaseName = protoPhase.phaseName;
+        phase.floors = protoPhase.floors.map((protoFloor) => {
+          let floor = new StratEditingPhaseFloor();
+          for (const id in protoFloor.drawPaths) {
+            let path = protoFloor.drawPaths[id];
+            floor.drawPaths.set(new Uuid(id), new DrawPath(path.points.map((pt) => Vec2.fromProto(pt)), colorFromProto(path.color!)));
+          }
+          for (const id in protoFloor.arrows) {
+            let arrow = protoFloor.arrows[id];
+            floor.arrows.set(new Uuid(id), new Arrow(Vec2.fromProto(arrow.start!), Vec2.fromProto(arrow.end!), colorFromProto(arrow.color!)));
+          }
+          for (const id in protoFloor.icons) {
+            let icon = protoFloor.icons[id];
+
+            let parsedIconInfo: IconInfo;
+            if (icon.teamOperator) {
+              parsedIconInfo = { kind: IconKind.TeamOperator, teammateIndex: icon.teamOperator.teammateIdx };
+            } else if (icon.teamAbility) {
+              parsedIconInfo = { kind: IconKind.TeamAbility, teammateIndex: icon.teamAbility.teammateIdx };
+            } else if (icon.teamUtility) {
+              parsedIconInfo = { kind: IconKind.TeamUtility, teammateIndex: icon.teamUtility.teammateIdx };
+            } else if (icon.freeOperator) {
+              parsedIconInfo = { kind: IconKind.FreeOperator, operator: icon.freeOperator.operator };
+            } else if (icon.freeAbility) {
+              parsedIconInfo = { kind: IconKind.FreeAbility, operator: icon.freeAbility.ability };
+            } else if (icon.freeUtility) {
+              parsedIconInfo = { kind: IconKind.FreeUtility, util: icon.freeUtility.util };
+            } else {
+              let e = "UNHANDLED BRANCH: parsedIconInfo";
+              println(e);
+              throw new Error(e);
+            };
+
+            let iconSize;
+            switch (parsedIconInfo.kind) {
+              case IconKind.TeamOperator: {
+                iconSize = 50;
+                break;
+              }
+              case IconKind.TeamAbility: {
+                iconSize = 30;
+                break;
+              }
+              case IconKind.TeamUtility: {
+                iconSize = 30;
+                break;
+              }
+              case IconKind.FreeOperator: {
+                iconSize = 50;
+                break;
+              }
+              case IconKind.FreeAbility: {
+                iconSize = 30;
+                break;
+              }
+              case IconKind.FreeUtility: {
+                iconSize = 30;
+                break;
+              }
+            }
+            floor.icons.set(new Uuid(id), new IconPlacement(Vec2.fromProto(icon.pos!), iconSize, parsedIconInfo));
+          }
+
+          return floor;
+        });
+        return phase;
+      });
+      setCurrPage(Page.StratEditorPage);
+      updateStratEditingStateDisplay();
+      redrawFreeDrawCanvasQueued = true;
     } else if (msg.saveStratResponse) {
-      //
+      // Yay!
     } else {
       println(`  Unhandled message!!!`);
     }
@@ -1043,6 +1152,7 @@ function App() {
 
   function stratListPageComponent() {
     async function loadStrat(stratMeta: StratMetadata) {
+      stratEditingState.stratId = stratMeta.uuid;
       stratEditingState.map = stratMeta.map;
       updateStratEditingStateDisplay();
       await sendNetworkMessage(protos.Client2Server.create({ getStratInfo: { stratId: stratMeta.uuid } }));
@@ -1060,7 +1170,6 @@ function App() {
           <p>{stratMeta.map}</p>
           <button onClick={(_) => {
             loadStrat(stratMeta);
-            println("TODO: GET STRAT INFO FROM SERVER AND LOAD!");
           }}>Edit</button>
         </div>
       )}
@@ -1208,20 +1317,6 @@ function App() {
           });
         }
       }
-
-      // const phaseFloor = stratEditingState.currentPhaseFloor();
-
-      // if (phaseFloor) {
-      //   phaseFloor.drawPaths.forEach((path) => {
-      //     drawElementToCanvas(canvasId, path);
-      //   });
-      //   phaseFloor.arrows.forEach((arrow) => {
-      //     drawElementToCanvas(canvasId, arrow);
-      //   });
-      //   phaseFloor.icons.forEach((icon) => {
-      //     drawElementToCanvas(canvasId, icon);
-      //   });
-      // }
     }
 
     function mousePosForCanvas(canvasId: string, clientX: number, clientY: number): Vec2 {
@@ -1247,6 +1342,11 @@ function App() {
       const inputGatheringCanvasId = "input-gathering-canvas";
 
       function onUpdate() {
+        if (document.getElementById(stratEditorFreeDrawCanvasId) && redrawFreeDrawCanvasQueued) {
+          redrawFreeDrawCanvasQueued = false;
+          redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+        }
+
         const phaseFloor = stratEditingState.currentPhaseFloor();
         const placementPreviewCanvas = document.getElementById(placementPreviewCanvasId)! as HTMLCanvasElement;
         const placementPreviewCtx = placementPreviewCanvas.getContext("2d")!;
@@ -1649,18 +1749,57 @@ function App() {
     }
 
     async function saveProgress() {
-      const phaseFloor = stratEditingState.currentPhaseFloor();
-      // const paths: protos.FreeDrawPath[] = phaseFloor.paths.map((path) =>
-      //   protos.FreeDrawPath.create({
-      //     points:
-      //       path.points.map((pt) =>
-      //         protos.Point.create({ x: pt.x, y: pt.y })
-      //       )
-      //   })
-      // );
-      println("TODO SAVE!");
-      // const state: protos.StratState = { stratName: "My cool strat!", phases: {} }
-      // await sendNetworkMessage(protos.Client2Server.create({ saveStrat: { stratId: currStratId, state: state } }));
+      const phases: protos.StratPhase[] = stratEditingState.phases.map((phase) => {
+        return {
+          phaseName: phase.phaseName, floors: phase.floors.map((floor) => {
+            return {
+              drawPaths: mapMapToObject(floor.drawPaths, (id, path) => {
+                return [id.data, { points: path.points, color: colorToProto(path.color) }]
+              }),
+              arrows: mapMapToObject(floor.arrows, (id, arrow) => {
+                return [id.data, { start: arrow.start, end: arrow.end, color: colorToProto(arrow.color) }]
+              }),
+              icons: mapMapToObject(floor.icons, (id, icon) => {
+                let protoIcon = { pos: icon.pos };
+                switch (icon.info.kind) {
+                  case IconKind.TeamOperator: {
+                    Object.assign(protoIcon, { teamOperator: { teammateIdx: icon.info.teammateIndex } })
+                    break;
+                  }
+                  case IconKind.TeamAbility: {
+                    Object.assign(protoIcon, { teamAbility: { teammateIdx: icon.info.teammateIndex } })
+                    break;
+                  }
+                  case IconKind.TeamUtility: {
+                    Object.assign(protoIcon, { teamUtility: { teammateIdx: icon.info.teammateIndex } })
+                    break;
+                  }
+                  case IconKind.FreeOperator: {
+                    Object.assign(protoIcon, { freeOperator: { operator: icon.info.operator } })
+                    break;
+                  }
+                  case IconKind.FreeAbility: {
+                    Object.assign(protoIcon, { freeAbility: { ability: icon.info.operator } })
+                    break;
+                  }
+                  case IconKind.FreeUtility: {
+                    Object.assign(protoIcon, { freeUtility: { util: icon.info.util } })
+                    break;
+                  }
+                }
+                return [id.data, protoIcon]
+              }),
+            };
+          })
+        };
+      });
+      const teammates: protos.Teammate[] = stratEditingState.teamLoadouts.map((loadout) => {
+        return { operator: loadout.operator, color: { r: loadout.color[0], g: loadout.color[1], b: loadout.color[2] }, util: loadout.util }
+      });
+
+      const state: protos.StratState = { stratName: stratEditingState.stratName, phases, teammates };
+
+      await sendNetworkMessage(protos.Client2Server.create({ saveStrat: { stratId: stratEditingState.stratId, state: state } }));
     }
 
     return (
@@ -1670,6 +1809,7 @@ function App() {
           saveProgress().then((_) => {
             stratEditingState.reset();
             updateStratEditingStateDisplay();
+            sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
             setCurrPage(Page.StratListPage);
           });
         }}>Back to Strat list</button>
@@ -1677,6 +1817,17 @@ function App() {
         <button onClick={(_) => {
           saveProgress()
         }}>Save Progress</button>
+
+        {/* Edit strat name */}
+        <div className="row">
+          <p>Title: </p>
+          <input
+            value={stratEditingStateDisplay.stratName}
+            onChange={(e) => {
+              stratEditingState.stratName = e.target.value;
+              updateStratEditingStateDisplay();
+            }} />
+        </div>
 
         {/* Edit current phase name & select phase */}
         <div className="row">

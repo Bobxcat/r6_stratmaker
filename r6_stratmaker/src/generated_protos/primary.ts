@@ -15,12 +15,76 @@ export interface Point {
   y: number;
 }
 
-export interface FreeDrawPath {
+export interface Color {
+  r: number;
+  g: number;
+  b: number;
+}
+
+export interface DrawPath {
   points: Point[];
+  color: Color | undefined;
+}
+
+export interface Arrow {
+  start: Point | undefined;
+  end: Point | undefined;
+  color: Color | undefined;
+}
+
+export interface Icon {
+  pos: Point | undefined;
+  teamOperator?: Icon_TeamOperator | undefined;
+  teamAbility?: Icon_TeamAbility | undefined;
+  teamUtility?: Icon_TeamUtility | undefined;
+  freeOperator?: Icon_FreeOperator | undefined;
+  freeAbility?: Icon_FreeAbility | undefined;
+  freeUtility?: Icon_FreeUtility | undefined;
+}
+
+export interface Icon_TeamOperator {
+  teammateIdx: number;
+}
+
+export interface Icon_TeamAbility {
+  teammateIdx: number;
+}
+
+export interface Icon_TeamUtility {
+  teammateIdx: number;
+}
+
+export interface Icon_FreeOperator {
+  operator: string;
+}
+
+export interface Icon_FreeAbility {
+  ability: string;
+}
+
+export interface Icon_FreeUtility {
+  util: string;
 }
 
 export interface StratFloor {
-  freeDrawPaths: FreeDrawPath[];
+  drawPaths: { [key: string]: DrawPath };
+  arrows: { [key: string]: Arrow };
+  icons: { [key: string]: Icon };
+}
+
+export interface StratFloor_DrawPathsEntry {
+  key: string;
+  value: DrawPath | undefined;
+}
+
+export interface StratFloor_ArrowsEntry {
+  key: string;
+  value: Arrow | undefined;
+}
+
+export interface StratFloor_IconsEntry {
+  key: string;
+  value: Icon | undefined;
 }
 
 export interface StratPhase {
@@ -28,9 +92,16 @@ export interface StratPhase {
   floors: StratFloor[];
 }
 
+export interface Teammate {
+  operator: string;
+  color: Color | undefined;
+  util: string;
+}
+
 export interface StratState {
   stratName: string;
   phases: StratPhase[];
+  teammates: Teammate[];
 }
 
 /** Hello */
@@ -125,10 +196,10 @@ function createBasePoint(): Point {
 export const Point: MessageFns<Point> = {
   encode(message: Point, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.x !== 0) {
-      writer.uint32(13).float(message.x);
+      writer.uint32(9).double(message.x);
     }
     if (message.y !== 0) {
-      writer.uint32(21).float(message.y);
+      writer.uint32(17).double(message.y);
     }
     return writer;
   },
@@ -147,19 +218,19 @@ export const Point: MessageFns<Point> = {
         const tag = reader.uint32();
         switch (tag >>> 3) {
           case 1: {
-            if (tag !== 13) {
+            if (tag !== 9) {
               break;
             }
 
-            message.x = reader.float();
+            message.x = reader.double();
             continue;
           }
           case 2: {
-            if (tag !== 21) {
+            if (tag !== 17) {
               break;
             }
 
-            message.y = reader.float();
+            message.y = reader.double();
             continue;
           }
         }
@@ -203,19 +274,25 @@ export const Point: MessageFns<Point> = {
   },
 };
 
-function createBaseFreeDrawPath(): FreeDrawPath {
-  return { points: [] };
+function createBaseColor(): Color {
+  return { r: 0, g: 0, b: 0 };
 }
 
-export const FreeDrawPath: MessageFns<FreeDrawPath> = {
-  encode(message: FreeDrawPath, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    for (const v of message.points) {
-      Point.encode(v!, writer.uint32(10).fork()).join();
+export const Color: MessageFns<Color> = {
+  encode(message: Color, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.r !== 0) {
+      writer.uint32(9).double(message.r);
+    }
+    if (message.g !== 0) {
+      writer.uint32(17).double(message.g);
+    }
+    if (message.b !== 0) {
+      writer.uint32(25).double(message.b);
     }
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): FreeDrawPath {
+  decode(input: BinaryReader | Uint8Array, length?: number): Color {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
     if (previousRecursionDepth >= 100) {
@@ -224,16 +301,32 @@ export const FreeDrawPath: MessageFns<FreeDrawPath> = {
     (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
     try {
       const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseFreeDrawPath();
+      const message = createBaseColor();
       while (reader.pos < end) {
         const tag = reader.uint32();
         switch (tag >>> 3) {
           case 1: {
-            if (tag !== 10) {
+            if (tag !== 9) {
               break;
             }
 
-            message.points.push(Point.decode(reader, reader.uint32()));
+            message.r = reader.double();
+            continue;
+          }
+          case 2: {
+            if (tag !== 17) {
+              break;
+            }
+
+            message.g = reader.double();
+            continue;
+          }
+          case 3: {
+            if (tag !== 25) {
+              break;
+            }
+
+            message.b = reader.double();
             continue;
           }
         }
@@ -248,37 +341,828 @@ export const FreeDrawPath: MessageFns<FreeDrawPath> = {
     }
   },
 
-  fromJSON(object: any): FreeDrawPath {
-    return { points: globalThis.Array.isArray(object?.points) ? object.points.map((e: any) => Point.fromJSON(e)) : [] };
+  fromJSON(object: any): Color {
+    return {
+      r: isSet(object.r) ? globalThis.Number(object.r) : 0,
+      g: isSet(object.g) ? globalThis.Number(object.g) : 0,
+      b: isSet(object.b) ? globalThis.Number(object.b) : 0,
+    };
   },
 
-  toJSON(message: FreeDrawPath): unknown {
+  toJSON(message: Color): unknown {
     const obj: any = {};
-    if (message.points?.length) {
-      obj.points = message.points.map((e) => Point.toJSON(e));
+    if (message.r !== 0) {
+      obj.r = message.r;
+    }
+    if (message.g !== 0) {
+      obj.g = message.g;
+    }
+    if (message.b !== 0) {
+      obj.b = message.b;
     }
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<FreeDrawPath>, I>>(base?: I): FreeDrawPath {
-    return FreeDrawPath.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<Color>, I>>(base?: I): Color {
+    return Color.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<FreeDrawPath>, I>>(object: I): FreeDrawPath {
-    const message = createBaseFreeDrawPath();
+  fromPartial<I extends Exact<DeepPartial<Color>, I>>(object: I): Color {
+    const message = createBaseColor();
+    message.r = object.r ?? 0;
+    message.g = object.g ?? 0;
+    message.b = object.b ?? 0;
+    return message;
+  },
+};
+
+function createBaseDrawPath(): DrawPath {
+  return { points: [], color: undefined };
+}
+
+export const DrawPath: MessageFns<DrawPath> = {
+  encode(message: DrawPath, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.points) {
+      Point.encode(v!, writer.uint32(10).fork()).join();
+    }
+    if (message.color !== undefined) {
+      Color.encode(message.color, writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): DrawPath {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseDrawPath();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.points.push(Point.decode(reader, reader.uint32()));
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.color = Color.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): DrawPath {
+    return {
+      points: globalThis.Array.isArray(object?.points) ? object.points.map((e: any) => Point.fromJSON(e)) : [],
+      color: isSet(object.color) ? Color.fromJSON(object.color) : undefined,
+    };
+  },
+
+  toJSON(message: DrawPath): unknown {
+    const obj: any = {};
+    if (message.points?.length) {
+      obj.points = message.points.map((e) => Point.toJSON(e));
+    }
+    if (message.color !== undefined) {
+      obj.color = Color.toJSON(message.color);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DrawPath>, I>>(base?: I): DrawPath {
+    return DrawPath.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DrawPath>, I>>(object: I): DrawPath {
+    const message = createBaseDrawPath();
     message.points = object.points?.map((e) => Point.fromPartial(e)) || [];
+    message.color = (object.color !== undefined && object.color !== null) ? Color.fromPartial(object.color) : undefined;
+    return message;
+  },
+};
+
+function createBaseArrow(): Arrow {
+  return { start: undefined, end: undefined, color: undefined };
+}
+
+export const Arrow: MessageFns<Arrow> = {
+  encode(message: Arrow, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.start !== undefined) {
+      Point.encode(message.start, writer.uint32(10).fork()).join();
+    }
+    if (message.end !== undefined) {
+      Point.encode(message.end, writer.uint32(18).fork()).join();
+    }
+    if (message.color !== undefined) {
+      Color.encode(message.color, writer.uint32(26).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Arrow {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseArrow();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.start = Point.decode(reader, reader.uint32());
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.end = Point.decode(reader, reader.uint32());
+            continue;
+          }
+          case 3: {
+            if (tag !== 26) {
+              break;
+            }
+
+            message.color = Color.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): Arrow {
+    return {
+      start: isSet(object.start) ? Point.fromJSON(object.start) : undefined,
+      end: isSet(object.end) ? Point.fromJSON(object.end) : undefined,
+      color: isSet(object.color) ? Color.fromJSON(object.color) : undefined,
+    };
+  },
+
+  toJSON(message: Arrow): unknown {
+    const obj: any = {};
+    if (message.start !== undefined) {
+      obj.start = Point.toJSON(message.start);
+    }
+    if (message.end !== undefined) {
+      obj.end = Point.toJSON(message.end);
+    }
+    if (message.color !== undefined) {
+      obj.color = Color.toJSON(message.color);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Arrow>, I>>(base?: I): Arrow {
+    return Arrow.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Arrow>, I>>(object: I): Arrow {
+    const message = createBaseArrow();
+    message.start = (object.start !== undefined && object.start !== null) ? Point.fromPartial(object.start) : undefined;
+    message.end = (object.end !== undefined && object.end !== null) ? Point.fromPartial(object.end) : undefined;
+    message.color = (object.color !== undefined && object.color !== null) ? Color.fromPartial(object.color) : undefined;
+    return message;
+  },
+};
+
+function createBaseIcon(): Icon {
+  return {
+    pos: undefined,
+    teamOperator: undefined,
+    teamAbility: undefined,
+    teamUtility: undefined,
+    freeOperator: undefined,
+    freeAbility: undefined,
+    freeUtility: undefined,
+  };
+}
+
+export const Icon: MessageFns<Icon> = {
+  encode(message: Icon, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.pos !== undefined) {
+      Point.encode(message.pos, writer.uint32(10).fork()).join();
+    }
+    if (message.teamOperator !== undefined) {
+      Icon_TeamOperator.encode(message.teamOperator, writer.uint32(90).fork()).join();
+    }
+    if (message.teamAbility !== undefined) {
+      Icon_TeamAbility.encode(message.teamAbility, writer.uint32(98).fork()).join();
+    }
+    if (message.teamUtility !== undefined) {
+      Icon_TeamUtility.encode(message.teamUtility, writer.uint32(106).fork()).join();
+    }
+    if (message.freeOperator !== undefined) {
+      Icon_FreeOperator.encode(message.freeOperator, writer.uint32(114).fork()).join();
+    }
+    if (message.freeAbility !== undefined) {
+      Icon_FreeAbility.encode(message.freeAbility, writer.uint32(122).fork()).join();
+    }
+    if (message.freeUtility !== undefined) {
+      Icon_FreeUtility.encode(message.freeUtility, writer.uint32(130).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.pos = Point.decode(reader, reader.uint32());
+            continue;
+          }
+          case 11: {
+            if (tag !== 90) {
+              break;
+            }
+
+            message.teamOperator = Icon_TeamOperator.decode(reader, reader.uint32());
+            continue;
+          }
+          case 12: {
+            if (tag !== 98) {
+              break;
+            }
+
+            message.teamAbility = Icon_TeamAbility.decode(reader, reader.uint32());
+            continue;
+          }
+          case 13: {
+            if (tag !== 106) {
+              break;
+            }
+
+            message.teamUtility = Icon_TeamUtility.decode(reader, reader.uint32());
+            continue;
+          }
+          case 14: {
+            if (tag !== 114) {
+              break;
+            }
+
+            message.freeOperator = Icon_FreeOperator.decode(reader, reader.uint32());
+            continue;
+          }
+          case 15: {
+            if (tag !== 122) {
+              break;
+            }
+
+            message.freeAbility = Icon_FreeAbility.decode(reader, reader.uint32());
+            continue;
+          }
+          case 16: {
+            if (tag !== 130) {
+              break;
+            }
+
+            message.freeUtility = Icon_FreeUtility.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): Icon {
+    return {
+      pos: isSet(object.pos) ? Point.fromJSON(object.pos) : undefined,
+      teamOperator: isSet(object.teamOperator) ? Icon_TeamOperator.fromJSON(object.teamOperator) : undefined,
+      teamAbility: isSet(object.teamAbility) ? Icon_TeamAbility.fromJSON(object.teamAbility) : undefined,
+      teamUtility: isSet(object.teamUtility) ? Icon_TeamUtility.fromJSON(object.teamUtility) : undefined,
+      freeOperator: isSet(object.freeOperator) ? Icon_FreeOperator.fromJSON(object.freeOperator) : undefined,
+      freeAbility: isSet(object.freeAbility) ? Icon_FreeAbility.fromJSON(object.freeAbility) : undefined,
+      freeUtility: isSet(object.freeUtility) ? Icon_FreeUtility.fromJSON(object.freeUtility) : undefined,
+    };
+  },
+
+  toJSON(message: Icon): unknown {
+    const obj: any = {};
+    if (message.pos !== undefined) {
+      obj.pos = Point.toJSON(message.pos);
+    }
+    if (message.teamOperator !== undefined) {
+      obj.teamOperator = Icon_TeamOperator.toJSON(message.teamOperator);
+    }
+    if (message.teamAbility !== undefined) {
+      obj.teamAbility = Icon_TeamAbility.toJSON(message.teamAbility);
+    }
+    if (message.teamUtility !== undefined) {
+      obj.teamUtility = Icon_TeamUtility.toJSON(message.teamUtility);
+    }
+    if (message.freeOperator !== undefined) {
+      obj.freeOperator = Icon_FreeOperator.toJSON(message.freeOperator);
+    }
+    if (message.freeAbility !== undefined) {
+      obj.freeAbility = Icon_FreeAbility.toJSON(message.freeAbility);
+    }
+    if (message.freeUtility !== undefined) {
+      obj.freeUtility = Icon_FreeUtility.toJSON(message.freeUtility);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon>, I>>(base?: I): Icon {
+    return Icon.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon>, I>>(object: I): Icon {
+    const message = createBaseIcon();
+    message.pos = (object.pos !== undefined && object.pos !== null) ? Point.fromPartial(object.pos) : undefined;
+    message.teamOperator = (object.teamOperator !== undefined && object.teamOperator !== null)
+      ? Icon_TeamOperator.fromPartial(object.teamOperator)
+      : undefined;
+    message.teamAbility = (object.teamAbility !== undefined && object.teamAbility !== null)
+      ? Icon_TeamAbility.fromPartial(object.teamAbility)
+      : undefined;
+    message.teamUtility = (object.teamUtility !== undefined && object.teamUtility !== null)
+      ? Icon_TeamUtility.fromPartial(object.teamUtility)
+      : undefined;
+    message.freeOperator = (object.freeOperator !== undefined && object.freeOperator !== null)
+      ? Icon_FreeOperator.fromPartial(object.freeOperator)
+      : undefined;
+    message.freeAbility = (object.freeAbility !== undefined && object.freeAbility !== null)
+      ? Icon_FreeAbility.fromPartial(object.freeAbility)
+      : undefined;
+    message.freeUtility = (object.freeUtility !== undefined && object.freeUtility !== null)
+      ? Icon_FreeUtility.fromPartial(object.freeUtility)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseIcon_TeamOperator(): Icon_TeamOperator {
+  return { teammateIdx: 0 };
+}
+
+export const Icon_TeamOperator: MessageFns<Icon_TeamOperator> = {
+  encode(message: Icon_TeamOperator, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.teammateIdx !== 0) {
+      writer.uint32(8).uint32(message.teammateIdx);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon_TeamOperator {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon_TeamOperator();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 8) {
+              break;
+            }
+
+            message.teammateIdx = reader.uint32();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): Icon_TeamOperator {
+    return { teammateIdx: isSet(object.teammateIdx) ? globalThis.Number(object.teammateIdx) : 0 };
+  },
+
+  toJSON(message: Icon_TeamOperator): unknown {
+    const obj: any = {};
+    if (message.teammateIdx !== 0) {
+      obj.teammateIdx = Math.round(message.teammateIdx);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon_TeamOperator>, I>>(base?: I): Icon_TeamOperator {
+    return Icon_TeamOperator.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon_TeamOperator>, I>>(object: I): Icon_TeamOperator {
+    const message = createBaseIcon_TeamOperator();
+    message.teammateIdx = object.teammateIdx ?? 0;
+    return message;
+  },
+};
+
+function createBaseIcon_TeamAbility(): Icon_TeamAbility {
+  return { teammateIdx: 0 };
+}
+
+export const Icon_TeamAbility: MessageFns<Icon_TeamAbility> = {
+  encode(message: Icon_TeamAbility, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.teammateIdx !== 0) {
+      writer.uint32(8).uint32(message.teammateIdx);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon_TeamAbility {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon_TeamAbility();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 8) {
+              break;
+            }
+
+            message.teammateIdx = reader.uint32();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): Icon_TeamAbility {
+    return { teammateIdx: isSet(object.teammateIdx) ? globalThis.Number(object.teammateIdx) : 0 };
+  },
+
+  toJSON(message: Icon_TeamAbility): unknown {
+    const obj: any = {};
+    if (message.teammateIdx !== 0) {
+      obj.teammateIdx = Math.round(message.teammateIdx);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon_TeamAbility>, I>>(base?: I): Icon_TeamAbility {
+    return Icon_TeamAbility.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon_TeamAbility>, I>>(object: I): Icon_TeamAbility {
+    const message = createBaseIcon_TeamAbility();
+    message.teammateIdx = object.teammateIdx ?? 0;
+    return message;
+  },
+};
+
+function createBaseIcon_TeamUtility(): Icon_TeamUtility {
+  return { teammateIdx: 0 };
+}
+
+export const Icon_TeamUtility: MessageFns<Icon_TeamUtility> = {
+  encode(message: Icon_TeamUtility, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.teammateIdx !== 0) {
+      writer.uint32(8).uint32(message.teammateIdx);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon_TeamUtility {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon_TeamUtility();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 8) {
+              break;
+            }
+
+            message.teammateIdx = reader.uint32();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): Icon_TeamUtility {
+    return { teammateIdx: isSet(object.teammateIdx) ? globalThis.Number(object.teammateIdx) : 0 };
+  },
+
+  toJSON(message: Icon_TeamUtility): unknown {
+    const obj: any = {};
+    if (message.teammateIdx !== 0) {
+      obj.teammateIdx = Math.round(message.teammateIdx);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon_TeamUtility>, I>>(base?: I): Icon_TeamUtility {
+    return Icon_TeamUtility.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon_TeamUtility>, I>>(object: I): Icon_TeamUtility {
+    const message = createBaseIcon_TeamUtility();
+    message.teammateIdx = object.teammateIdx ?? 0;
+    return message;
+  },
+};
+
+function createBaseIcon_FreeOperator(): Icon_FreeOperator {
+  return { operator: "" };
+}
+
+export const Icon_FreeOperator: MessageFns<Icon_FreeOperator> = {
+  encode(message: Icon_FreeOperator, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.operator !== "") {
+      writer.uint32(10).string(message.operator);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon_FreeOperator {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon_FreeOperator();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.operator = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): Icon_FreeOperator {
+    return { operator: isSet(object.operator) ? globalThis.String(object.operator) : "" };
+  },
+
+  toJSON(message: Icon_FreeOperator): unknown {
+    const obj: any = {};
+    if (message.operator !== "") {
+      obj.operator = message.operator;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon_FreeOperator>, I>>(base?: I): Icon_FreeOperator {
+    return Icon_FreeOperator.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon_FreeOperator>, I>>(object: I): Icon_FreeOperator {
+    const message = createBaseIcon_FreeOperator();
+    message.operator = object.operator ?? "";
+    return message;
+  },
+};
+
+function createBaseIcon_FreeAbility(): Icon_FreeAbility {
+  return { ability: "" };
+}
+
+export const Icon_FreeAbility: MessageFns<Icon_FreeAbility> = {
+  encode(message: Icon_FreeAbility, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.ability !== "") {
+      writer.uint32(10).string(message.ability);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon_FreeAbility {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon_FreeAbility();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.ability = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): Icon_FreeAbility {
+    return { ability: isSet(object.ability) ? globalThis.String(object.ability) : "" };
+  },
+
+  toJSON(message: Icon_FreeAbility): unknown {
+    const obj: any = {};
+    if (message.ability !== "") {
+      obj.ability = message.ability;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon_FreeAbility>, I>>(base?: I): Icon_FreeAbility {
+    return Icon_FreeAbility.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon_FreeAbility>, I>>(object: I): Icon_FreeAbility {
+    const message = createBaseIcon_FreeAbility();
+    message.ability = object.ability ?? "";
+    return message;
+  },
+};
+
+function createBaseIcon_FreeUtility(): Icon_FreeUtility {
+  return { util: "" };
+}
+
+export const Icon_FreeUtility: MessageFns<Icon_FreeUtility> = {
+  encode(message: Icon_FreeUtility, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.util !== "") {
+      writer.uint32(10).string(message.util);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon_FreeUtility {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon_FreeUtility();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.util = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): Icon_FreeUtility {
+    return { util: isSet(object.util) ? globalThis.String(object.util) : "" };
+  },
+
+  toJSON(message: Icon_FreeUtility): unknown {
+    const obj: any = {};
+    if (message.util !== "") {
+      obj.util = message.util;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon_FreeUtility>, I>>(base?: I): Icon_FreeUtility {
+    return Icon_FreeUtility.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon_FreeUtility>, I>>(object: I): Icon_FreeUtility {
+    const message = createBaseIcon_FreeUtility();
+    message.util = object.util ?? "";
     return message;
   },
 };
 
 function createBaseStratFloor(): StratFloor {
-  return { freeDrawPaths: [] };
+  return { drawPaths: {}, arrows: {}, icons: {} };
 }
 
 export const StratFloor: MessageFns<StratFloor> = {
   encode(message: StratFloor, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    for (const v of message.freeDrawPaths) {
-      FreeDrawPath.encode(v!, writer.uint32(10).fork()).join();
-    }
+    globalThis.Object.entries(message.drawPaths).forEach(([key, value]: [string, DrawPath]) => {
+      StratFloor_DrawPathsEntry.encode({ key: key as any, value }, writer.uint32(10).fork()).join();
+    });
+    globalThis.Object.entries(message.arrows).forEach(([key, value]: [string, Arrow]) => {
+      StratFloor_ArrowsEntry.encode({ key: key as any, value }, writer.uint32(18).fork()).join();
+    });
+    globalThis.Object.entries(message.icons).forEach(([key, value]: [string, Icon]) => {
+      StratFloor_IconsEntry.encode({ key: key as any, value }, writer.uint32(26).fork()).join();
+    });
     return writer;
   },
 
@@ -300,7 +1184,32 @@ export const StratFloor: MessageFns<StratFloor> = {
               break;
             }
 
-            message.freeDrawPaths.push(FreeDrawPath.decode(reader, reader.uint32()));
+            const entry1 = StratFloor_DrawPathsEntry.decode(reader, reader.uint32());
+            if (entry1.value !== undefined) {
+              message.drawPaths[entry1.key] = entry1.value;
+            }
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            const entry2 = StratFloor_ArrowsEntry.decode(reader, reader.uint32());
+            if (entry2.value !== undefined) {
+              message.arrows[entry2.key] = entry2.value;
+            }
+            continue;
+          }
+          case 3: {
+            if (tag !== 26) {
+              break;
+            }
+
+            const entry3 = StratFloor_IconsEntry.decode(reader, reader.uint32());
+            if (entry3.value !== undefined) {
+              message.icons[entry3.key] = entry3.value;
+            }
             continue;
           }
         }
@@ -317,16 +1226,79 @@ export const StratFloor: MessageFns<StratFloor> = {
 
   fromJSON(object: any): StratFloor {
     return {
-      freeDrawPaths: globalThis.Array.isArray(object?.freeDrawPaths)
-        ? object.freeDrawPaths.map((e: any) => FreeDrawPath.fromJSON(e))
-        : [],
+      drawPaths: isObject(object.drawPaths)
+        ? (globalThis.Object.entries(object.drawPaths) as [string, any][]).reduce(
+          (acc: { [key: string]: DrawPath }, [key, value]: [string, any]) => {
+            globalThis.Object.defineProperty(acc, key, {
+              value: DrawPath.fromJSON(value),
+              enumerable: true,
+              configurable: true,
+              writable: true,
+            });
+            return acc;
+          },
+          {},
+        )
+        : {},
+      arrows: isObject(object.arrows)
+        ? (globalThis.Object.entries(object.arrows) as [string, any][]).reduce(
+          (acc: { [key: string]: Arrow }, [key, value]: [string, any]) => {
+            globalThis.Object.defineProperty(acc, key, {
+              value: Arrow.fromJSON(value),
+              enumerable: true,
+              configurable: true,
+              writable: true,
+            });
+            return acc;
+          },
+          {},
+        )
+        : {},
+      icons: isObject(object.icons)
+        ? (globalThis.Object.entries(object.icons) as [string, any][]).reduce(
+          (acc: { [key: string]: Icon }, [key, value]: [string, any]) => {
+            globalThis.Object.defineProperty(acc, key, {
+              value: Icon.fromJSON(value),
+              enumerable: true,
+              configurable: true,
+              writable: true,
+            });
+            return acc;
+          },
+          {},
+        )
+        : {},
     };
   },
 
   toJSON(message: StratFloor): unknown {
     const obj: any = {};
-    if (message.freeDrawPaths?.length) {
-      obj.freeDrawPaths = message.freeDrawPaths.map((e) => FreeDrawPath.toJSON(e));
+    if (message.drawPaths) {
+      const entries = globalThis.Object.entries(message.drawPaths) as [string, DrawPath][];
+      if (entries.length > 0) {
+        obj.drawPaths = {};
+        entries.forEach(([k, v]) => {
+          obj.drawPaths[k] = DrawPath.toJSON(v);
+        });
+      }
+    }
+    if (message.arrows) {
+      const entries = globalThis.Object.entries(message.arrows) as [string, Arrow][];
+      if (entries.length > 0) {
+        obj.arrows = {};
+        entries.forEach(([k, v]) => {
+          obj.arrows[k] = Arrow.toJSON(v);
+        });
+      }
+    }
+    if (message.icons) {
+      const entries = globalThis.Object.entries(message.icons) as [string, Icon][];
+      if (entries.length > 0) {
+        obj.icons = {};
+        entries.forEach(([k, v]) => {
+          obj.icons[k] = Icon.toJSON(v);
+        });
+      }
     }
     return obj;
   },
@@ -336,7 +1308,290 @@ export const StratFloor: MessageFns<StratFloor> = {
   },
   fromPartial<I extends Exact<DeepPartial<StratFloor>, I>>(object: I): StratFloor {
     const message = createBaseStratFloor();
-    message.freeDrawPaths = object.freeDrawPaths?.map((e) => FreeDrawPath.fromPartial(e)) || [];
+    message.drawPaths = (globalThis.Object.entries(object.drawPaths ?? {}) as [string, DrawPath][]).reduce(
+      (acc: { [key: string]: DrawPath }, [key, value]: [string, DrawPath]) => {
+        if (value !== undefined) {
+          acc[key] = DrawPath.fromPartial(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    message.arrows = (globalThis.Object.entries(object.arrows ?? {}) as [string, Arrow][]).reduce(
+      (acc: { [key: string]: Arrow }, [key, value]: [string, Arrow]) => {
+        if (value !== undefined) {
+          acc[key] = Arrow.fromPartial(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    message.icons = (globalThis.Object.entries(object.icons ?? {}) as [string, Icon][]).reduce(
+      (acc: { [key: string]: Icon }, [key, value]: [string, Icon]) => {
+        if (value !== undefined) {
+          acc[key] = Icon.fromPartial(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    return message;
+  },
+};
+
+function createBaseStratFloor_DrawPathsEntry(): StratFloor_DrawPathsEntry {
+  return { key: "", value: undefined };
+}
+
+export const StratFloor_DrawPathsEntry: MessageFns<StratFloor_DrawPathsEntry> = {
+  encode(message: StratFloor_DrawPathsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== undefined) {
+      DrawPath.encode(message.value, writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): StratFloor_DrawPathsEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseStratFloor_DrawPathsEntry();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.key = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.value = DrawPath.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): StratFloor_DrawPathsEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? DrawPath.fromJSON(object.value) : undefined,
+    };
+  },
+
+  toJSON(message: StratFloor_DrawPathsEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== undefined) {
+      obj.value = DrawPath.toJSON(message.value);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<StratFloor_DrawPathsEntry>, I>>(base?: I): StratFloor_DrawPathsEntry {
+    return StratFloor_DrawPathsEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<StratFloor_DrawPathsEntry>, I>>(object: I): StratFloor_DrawPathsEntry {
+    const message = createBaseStratFloor_DrawPathsEntry();
+    message.key = object.key ?? "";
+    message.value = (object.value !== undefined && object.value !== null)
+      ? DrawPath.fromPartial(object.value)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseStratFloor_ArrowsEntry(): StratFloor_ArrowsEntry {
+  return { key: "", value: undefined };
+}
+
+export const StratFloor_ArrowsEntry: MessageFns<StratFloor_ArrowsEntry> = {
+  encode(message: StratFloor_ArrowsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== undefined) {
+      Arrow.encode(message.value, writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): StratFloor_ArrowsEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseStratFloor_ArrowsEntry();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.key = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.value = Arrow.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): StratFloor_ArrowsEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? Arrow.fromJSON(object.value) : undefined,
+    };
+  },
+
+  toJSON(message: StratFloor_ArrowsEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== undefined) {
+      obj.value = Arrow.toJSON(message.value);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<StratFloor_ArrowsEntry>, I>>(base?: I): StratFloor_ArrowsEntry {
+    return StratFloor_ArrowsEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<StratFloor_ArrowsEntry>, I>>(object: I): StratFloor_ArrowsEntry {
+    const message = createBaseStratFloor_ArrowsEntry();
+    message.key = object.key ?? "";
+    message.value = (object.value !== undefined && object.value !== null) ? Arrow.fromPartial(object.value) : undefined;
+    return message;
+  },
+};
+
+function createBaseStratFloor_IconsEntry(): StratFloor_IconsEntry {
+  return { key: "", value: undefined };
+}
+
+export const StratFloor_IconsEntry: MessageFns<StratFloor_IconsEntry> = {
+  encode(message: StratFloor_IconsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== undefined) {
+      Icon.encode(message.value, writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): StratFloor_IconsEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseStratFloor_IconsEntry();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.key = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.value = Icon.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): StratFloor_IconsEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? Icon.fromJSON(object.value) : undefined,
+    };
+  },
+
+  toJSON(message: StratFloor_IconsEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== undefined) {
+      obj.value = Icon.toJSON(message.value);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<StratFloor_IconsEntry>, I>>(base?: I): StratFloor_IconsEntry {
+    return StratFloor_IconsEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<StratFloor_IconsEntry>, I>>(object: I): StratFloor_IconsEntry {
+    const message = createBaseStratFloor_IconsEntry();
+    message.key = object.key ?? "";
+    message.value = (object.value !== undefined && object.value !== null) ? Icon.fromPartial(object.value) : undefined;
     return message;
   },
 };
@@ -430,8 +1685,109 @@ export const StratPhase: MessageFns<StratPhase> = {
   },
 };
 
+function createBaseTeammate(): Teammate {
+  return { operator: "", color: undefined, util: "" };
+}
+
+export const Teammate: MessageFns<Teammate> = {
+  encode(message: Teammate, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.operator !== "") {
+      writer.uint32(10).string(message.operator);
+    }
+    if (message.color !== undefined) {
+      Color.encode(message.color, writer.uint32(18).fork()).join();
+    }
+    if (message.util !== "") {
+      writer.uint32(26).string(message.util);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Teammate {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseTeammate();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.operator = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.color = Color.decode(reader, reader.uint32());
+            continue;
+          }
+          case 3: {
+            if (tag !== 26) {
+              break;
+            }
+
+            message.util = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): Teammate {
+    return {
+      operator: isSet(object.operator) ? globalThis.String(object.operator) : "",
+      color: isSet(object.color) ? Color.fromJSON(object.color) : undefined,
+      util: isSet(object.util) ? globalThis.String(object.util) : "",
+    };
+  },
+
+  toJSON(message: Teammate): unknown {
+    const obj: any = {};
+    if (message.operator !== "") {
+      obj.operator = message.operator;
+    }
+    if (message.color !== undefined) {
+      obj.color = Color.toJSON(message.color);
+    }
+    if (message.util !== "") {
+      obj.util = message.util;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Teammate>, I>>(base?: I): Teammate {
+    return Teammate.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Teammate>, I>>(object: I): Teammate {
+    const message = createBaseTeammate();
+    message.operator = object.operator ?? "";
+    message.color = (object.color !== undefined && object.color !== null) ? Color.fromPartial(object.color) : undefined;
+    message.util = object.util ?? "";
+    return message;
+  },
+};
+
 function createBaseStratState(): StratState {
-  return { stratName: "", phases: [] };
+  return { stratName: "", phases: [], teammates: [] };
 }
 
 export const StratState: MessageFns<StratState> = {
@@ -441,6 +1797,9 @@ export const StratState: MessageFns<StratState> = {
     }
     for (const v of message.phases) {
       StratPhase.encode(v!, writer.uint32(18).fork()).join();
+    }
+    for (const v of message.teammates) {
+      Teammate.encode(v!, writer.uint32(26).fork()).join();
     }
     return writer;
   },
@@ -474,6 +1833,14 @@ export const StratState: MessageFns<StratState> = {
             message.phases.push(StratPhase.decode(reader, reader.uint32()));
             continue;
           }
+          case 3: {
+            if (tag !== 26) {
+              break;
+            }
+
+            message.teammates.push(Teammate.decode(reader, reader.uint32()));
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -494,6 +1861,9 @@ export const StratState: MessageFns<StratState> = {
         ? globalThis.String(object.strat_name)
         : "",
       phases: globalThis.Array.isArray(object?.phases) ? object.phases.map((e: any) => StratPhase.fromJSON(e)) : [],
+      teammates: globalThis.Array.isArray(object?.teammates)
+        ? object.teammates.map((e: any) => Teammate.fromJSON(e))
+        : [],
     };
   },
 
@@ -505,6 +1875,9 @@ export const StratState: MessageFns<StratState> = {
     if (message.phases?.length) {
       obj.phases = message.phases.map((e) => StratPhase.toJSON(e));
     }
+    if (message.teammates?.length) {
+      obj.teammates = message.teammates.map((e) => Teammate.toJSON(e));
+    }
     return obj;
   },
 
@@ -515,6 +1888,7 @@ export const StratState: MessageFns<StratState> = {
     const message = createBaseStratState();
     message.stratName = object.stratName ?? "";
     message.phases = object.phases?.map((e) => StratPhase.fromPartial(e)) || [];
+    message.teammates = object.teammates?.map((e) => Teammate.fromPartial(e)) || [];
     return message;
   },
 };
@@ -1930,6 +3304,10 @@ export type DeepPartial<T> = T extends Builtin ? T
 type KeysOfUnion<T> = T extends T ? keyof T : never;
 export type Exact<P, I extends P> = P extends Builtin ? P
   : P & { [K in keyof P]: Exact<P[K], I[K]> } & { [K in Exclude<keyof I, KeysOfUnion<P>>]: never };
+
+function isObject(value: any): boolean {
+  return typeof value === "object" && value !== null;
+}
 
 function isSet(value: any): boolean {
   return value !== null && value !== undefined;

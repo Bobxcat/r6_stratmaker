@@ -231,7 +231,13 @@ class Aabb {
 }
 
 class DrawPath implements DrawElement {
-  points: Array<Vec2> = [];
+  points: Array<Vec2>;
+  color: [number, number, number];
+
+  constructor(points: Array<Vec2>, color: [number, number, number]) {
+    this.points = points;
+    this.color = color;
+  }
 
   asEnum(): AnyDrawElementData {
     return { kind: DrawElementKind.DrawPath, data: this };
@@ -250,7 +256,7 @@ class DrawPath implements DrawElement {
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
-    ctx.strokeStyle = "red";
+    ctx.strokeStyle = `rgb(${this.color[0]}, ${this.color[1]}, ${this.color[2]})`;
     ctx.lineWidth = 3;
 
     this.points.forEach((pt, idx) => {
@@ -271,9 +277,12 @@ class DrawPath implements DrawElement {
 class Arrow implements DrawElement {
   start: Vec2;
   end: Vec2;
-  constructor(start: Vec2, end: Vec2) {
+  color: [number, number, number];
+
+  constructor(start: Vec2, end: Vec2, color: [number, number, number]) {
     this.start = start;
     this.end = end;
+    this.color = color;
   }
 
   asEnum(): AnyDrawElementData {
@@ -287,13 +296,13 @@ class Arrow implements DrawElement {
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
-    ctx.strokeStyle = "blue";
+    ctx.strokeStyle = `rgb(${this.color[0]}, ${this.color[1]}, ${this.color[2]})`;
     ctx.lineWidth = 3;
 
     ctx.moveTo(this.start.x, this.start.y);
     ctx.lineTo(this.end.x, this.end.y);
 
-    const makethisHeadPoint = (side: boolean, isFixedLength: boolean, fixedLength: number): Vec2 => {
+    const makeHeadPoint = (side: boolean, isFixedLength: boolean, fixedLength: number): Vec2 => {
       var rot = side ? 0.1 : -0.1;
       var a = this.end.sub(this.start).rotated(rot).scaled(0.9).add(this.start);
       if (isFixedLength) {
@@ -303,12 +312,12 @@ class Arrow implements DrawElement {
       return a;
     };
 
-    const thisHeadPt0 = makethisHeadPoint(true, true, 10);
-    const thisHeadPt1 = makethisHeadPoint(false, true, 10);
+    const headPt0 = makeHeadPoint(true, true, 10);
+    const headPt1 = makeHeadPoint(false, true, 10);
 
-    ctx.moveTo(thisHeadPt0.x, thisHeadPt0.y);
+    ctx.moveTo(headPt0.x, headPt0.y);
     ctx.lineTo(this.end.x, this.end.y)
-    ctx.lineTo(thisHeadPt1.x, thisHeadPt1.y);
+    ctx.lineTo(headPt1.x, headPt1.y);
 
     ctx.stroke();
     ctx.closePath();
@@ -335,14 +344,26 @@ class StratMetadata {
 }
 
 enum IconKind {
-  Operator,
-  OperatorAbility,
+  TeamOperator,
+  TeamAbility,
+  TeamUtility,
+  FreeOperator,
+  FreeAbility,
+  FreeUtility,
 }
 
-class IconInfo {
-  kind: IconKind = IconKind.Operator;
-  teammateIndex: number = 0;
-}
+// class IconInfo {
+//   kind: IconKind = IconKind.Operator;
+//   teammateIndex: number = 0;
+// }
+
+type IconInfo =
+  { kind: IconKind.TeamOperator, teammateIndex: number }
+  | { kind: IconKind.TeamAbility, teammateIndex: number }
+  | { kind: IconKind.TeamUtility, teammateIndex: number }
+  | { kind: IconKind.FreeOperator, operator: string }
+  | { kind: IconKind.FreeAbility, operator: string }
+  | { kind: IconKind.FreeUtility, util: string };
 
 class IconPlacement implements DrawElement {
   pos: Vec2;
@@ -364,19 +385,43 @@ class IconPlacement implements DrawElement {
     var width = 0;
     var height = 0;
 
-    const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
-    const opName = loadout.operator;
+    function imgAspectRatio(imgData: CanvasImageSource): number {
+      const imgElem: HTMLImageElement = imgData! as HTMLImageElement;
+      return imgElem.width / imgElem.height;
+    }
+
+    // const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
     switch (this.info.kind) {
-      case IconKind.Operator: {
+      case IconKind.TeamOperator: {
         width = this.size;
         height = this.size;
         break;
       }
-      case IconKind.OperatorAbility: {
+      case IconKind.TeamAbility: {
         height = this.size;
-        const imgData = operatorsIndexNonReactive.abilityImgData.get(opName);
-        const foo: HTMLImageElement = imgData! as HTMLImageElement;
-        width = height * (foo.width / foo.height);
+        const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
+        width = height * imgAspectRatio(operatorsIndexNonReactive.abilityImgData.get(loadout.operator)!);
+        break;
+      }
+      case IconKind.TeamUtility: {
+        height = this.size;
+        const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
+        width = height * imgAspectRatio(operatorsIndexNonReactive.utilityImgData.get(loadout.util)!);
+        break;
+      }
+      case IconKind.FreeOperator: {
+        width = this.size;
+        height = this.size;
+        break;
+      }
+      case IconKind.FreeAbility: {
+        height = this.size;
+        width = height * imgAspectRatio(operatorsIndexNonReactive.abilityImgData.get(this.info.operator)!);
+        break;
+      }
+      case IconKind.FreeUtility: {
+        height = this.size;
+        width = height * imgAspectRatio(operatorsIndexNonReactive.utilityImgData.get(this.info.util)!);
         break;
       }
     }
@@ -388,21 +433,42 @@ class IconPlacement implements DrawElement {
 
     var aabb = this.boundingBox();
 
-    const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
-    const opName = loadout.operator;
     switch (this.info.kind) {
-      case IconKind.Operator: {
-        imgData = operatorsIndexNonReactive.operatorImgData.get(opName);
+      case IconKind.TeamOperator: {
+        const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
+        ctx.fillStyle = `rgb(${loadout.color[0]}, ${loadout.color[1]}, ${loadout.color[2]})`;
+        imgData = operatorsIndexNonReactive.operatorImgData.get(loadout.operator);
         break;
       }
-      case IconKind.OperatorAbility: {
-        imgData = operatorsIndexNonReactive.abilityImgData.get(opName);
-
+      case IconKind.TeamAbility: {
+        const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
         ctx.fillStyle = `rgb(${loadout.color[0]}, ${loadout.color[1]}, ${loadout.color[2]})`;
-        ctx.fillRect(aabb.minPt.x, aabb.minPt.y, aabb.width(), aabb.height());
+        imgData = operatorsIndexNonReactive.abilityImgData.get(loadout.operator);
+        break;
+      }
+      case IconKind.TeamUtility: {
+        const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
+        ctx.fillStyle = `rgb(${loadout.color[0]}, ${loadout.color[1]}, ${loadout.color[2]})`;
+        imgData = operatorsIndexNonReactive.utilityImgData.get(loadout.util);
+        break;
+      }
+      case IconKind.FreeOperator: {
+        ctx.fillStyle = `rgb(128, 128, 128)`;
+        imgData = operatorsIndexNonReactive.operatorImgData.get(this.info.operator);
+        break;
+      }
+      case IconKind.FreeAbility: {
+        ctx.fillStyle = `rgb(128, 128, 128)`;
+        imgData = operatorsIndexNonReactive.abilityImgData.get(this.info.operator);
+        break;
+      }
+      case IconKind.FreeUtility: {
+        ctx.fillStyle = `rgb(128, 128, 128)`;
+        imgData = operatorsIndexNonReactive.utilityImgData.get(this.info.util);
         break;
       }
     }
+    ctx.fillRect(aabb.minPt.x, aabb.minPt.y, aabb.width(), aabb.height());
 
     if (imgData) {
       ctx.drawImage(imgData, aabb.minPt.x, aabb.minPt.y, aabb.width(), aabb.height());
@@ -525,7 +591,7 @@ class ArrowToolState {
 }
 
 class PlaceIconToolState {
-  selectedIcon: IconInfo = new IconInfo();
+  selectedIcon: IconInfo = { kind: IconKind.FreeOperator, operator: "" };
 }
 
 class SelectAndEditToolState {
@@ -553,9 +619,19 @@ class StratEditingLoadout {
 
   operator: string = "ace";
   color: [number, number, number] = [1, 2, 3];
+  util: string = "";
 }
 
 class StratEditingState {
+  static readonly freeDrawPalette: [number, number, number][] = StratEditingLoadout.defaultPalette.concat([
+    [200, 10, 10],
+    [10, 200, 10],
+    [10, 10, 200],
+    [200, 200, 10],
+  ]);
+
+  selectedDrawColor: [number, number, number] = StratEditingState.freeDrawPalette[0];
+
   teamLoadouts: StratEditingLoadout[] = newArrayOfSize(5, (idx) => {
     let l = new StratEditingLoadout();
     l.color = StratEditingLoadout.defaultPalette[idx];
@@ -599,6 +675,7 @@ class StratEditingDisplayPhase {
 
 class StratEditingDisplayLoadout {
   operator: string = "ace";
+  util: string = "";
 }
 
 /** This contains a subset of `StratEditingState` to be used as reactive state for the UI.
@@ -644,6 +721,7 @@ class OperatorsIndex {
   // Normal fields...
   operatorImgData: Map<string, CanvasImageSource> = new Map();
   abilityImgData: Map<string, CanvasImageSource> = new Map();
+  utilityImgData: Map<string, CanvasImageSource> = new Map();
 
   getOperatorIconPath(operator: string): string {
     const op = this.operators.get(operator);
@@ -658,7 +736,7 @@ class OperatorsIndex {
     return `./abilities/ability_${operator}.webp`;
   }
 
-  getSecondaryUtilityIconPath(utility: string): string {
+  getUtilityIconPath(utility: string): string {
     return `./secondary_utilities/${utility}.webp`;
   }
 
@@ -696,8 +774,13 @@ class OperatorsIndex {
       return imgElem;
     }
 
-    for (const opName of ops.operators.keys()) {
-      // Load operator icons
+    for (const op of ops.operators) {
+      const opName = op[0];
+      for (const util of op[1].utils) {
+        if (!ops.utilityImgData.has(util)) {
+          ops.utilityImgData.set(util, await imgElemFromPath(ops.getUtilityIconPath(util)));
+        }
+      }
       ops.operatorImgData.set(opName, await imgElemFromPath(ops.getOperatorIconPath(opName)));
       const abilityImg = await imgElemFromPath(ops.getOperatorAbilityIconPath(opName));
       ops.abilityImgData.set(opName, abilityImg);
@@ -754,6 +837,7 @@ function App() {
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.WaitingForIP);
 
   const [selectOperatorForTeammateActiveIdx, setSelectOperatorForTeammateActiveIdx] = useState<number | undefined>(undefined);
+  const [selectUtilityForTeammateActiveIdx, setSelectUtilityForTeammateActiveIdx] = useState<number | undefined>(undefined);
 
   // Load operators
   useEffect(() => {
@@ -778,7 +862,7 @@ function App() {
 
   function updateStratEditingStateDisplay() {
     const newDisplayState: StratEditingStateDisplay = {
-      teamLoadouts: stratEditingState.teamLoadouts.map((l) => { return { operator: l.operator } }),
+      teamLoadouts: stratEditingState.teamLoadouts.map((l) => { return { operator: l.operator, util: l.util } }),
       selectedDrawTool: stratEditingState.selectedDrawTool,
       stratName: stratEditingState.stratName,
       map: stratEditingState.map,
@@ -829,6 +913,42 @@ function App() {
     }
   }
 
+  function tileListComponent<T>(keys: T[], listInnerComponent: (key: T) => any, onClick: (key: T) => void, rowWidthOverride?: number) {
+
+    // Note: this is a test for the "truthyness" of widthOverride, which means that `widthOverride == 0` will *also* go to `10`
+    const rowWidth = rowWidthOverride ? rowWidthOverride : 10;
+    var rows: T[][] = arrayChunk(keys, rowWidth);
+
+    return (<>
+      <div className="col">
+        {rows.map((row) =>
+          <div className="row">
+            {row.map((key) =>
+              <button className="col" style={{ margin: 1, padding: 0, width: "fit-content", height: "fit-content" }} onClick={(_) => onClick(key)}>
+                {listInnerComponent(key)}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </>)
+    //
+  }
+
+  function utilityTileListComponent(onClick: (util: string) => void, utilForOp?: string, rowWidthOverride?: number) {
+    const utils = utilForOp ? operatorsIndexNonReactive.operators.get(utilForOp)!.utils : Array.from(operatorsIndexNonReactive.utilityImgData.keys());
+
+    return tileListComponent(utils, (util) => <>
+      <img
+        src={operatorsIndexReactive.getUtilityIconPath(util)}
+        width="256"
+        height="256"
+        style={{ margin: 0, width: 32, height: 32 }}
+        alt=""
+      />
+    </>, onClick, rowWidthOverride)
+  }
+
   function operatorTileListComponent(onClick: (opName: string) => void, includeNames: boolean, attackers: boolean, defenders: boolean, rowWidthOverride?: number, imgSizeOverride?: number) {
     var ops: string[] = []
 
@@ -841,25 +961,15 @@ function App() {
     }
 
     // Note: this is a test for the "truthyness" of widthOverride, which means that `widthOverride == 0` will *also* go to `10`
-    const rowWidth = rowWidthOverride ? rowWidthOverride : 10;
-    var rows: string[][] = arrayChunk(ops, rowWidth);
+    // const rowWidth = rowWidthOverride ? rowWidthOverride : 10;
+    // var rows: string[][] = arrayChunk(ops, rowWidth);
 
     var imgSize = (imgSizeOverride === undefined) ? 32 : imgSizeOverride;
 
-    return (<>
-      <div className="col">
-        {rows.map((row) =>
-          <div className="row">
-            {row.map((opName) =>
-              <button className="col" style={{ margin: 1, padding: 0, width: "fit-content", height: "fit-content" }} onClick={(_) => onClick(opName)}>
-                <img src={operatorsIndexReactive.getOperatorIconPath(opName)} width="256" height="256" style={{ margin: 0, width: imgSize, height: imgSize }} alt="" />
-                {includeNames ? <p>{opName}</p> : undefined}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </>)
+    return tileListComponent(ops, (opName) => <>
+      <img src={operatorsIndexReactive.getOperatorIconPath(opName)} width="256" height="256" style={{ margin: 0, width: imgSize, height: imgSize }} alt="" />
+      {includeNames ? <p>{opName}</p> : undefined}
+    </>, onClick, rowWidthOverride)
   }
 
   function connectToServerPageComponent() {
@@ -1177,13 +1287,12 @@ function App() {
             const toolState = stratEditingState.toolStates.freeDraw;
 
             if (inputCanvasState.mouseClicked) {
-              if (toolState.currentPath) {
+              if (toolState.currentPath && phaseFloor.drawPaths.get(toolState.currentPath)?.color == stratEditingState.selectedDrawColor) {
                 // Continue existing path
                 phaseFloor.drawPaths.get(toolState.currentPath)?.points.push(inputCanvasState.mousePos.clone());
               } else {
                 // Create new path
-                var path = new DrawPath();
-                path.points.push(inputCanvasState.mousePos.clone());
+                var path = new DrawPath([inputCanvasState.mousePos.clone()], stratEditingState.selectedDrawColor);
                 const id = phaseFloor.pushDrawElement(path);
                 stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({
                   kind: DrawActionKind.PlaceDrawElement,
@@ -1196,8 +1305,7 @@ function App() {
 
               // Draw path to canvas immediately, avoiding a rerender
               if (inputCanvasState.prevMouseClicked) {
-                var path = new DrawPath();
-                path.points = [inputCanvasState.prevMousePos.clone(), inputCanvasState.mousePos.clone()];
+                var path = new DrawPath([inputCanvasState.prevMousePos.clone(), inputCanvasState.mousePos.clone()], stratEditingState.selectedDrawColor);
                 drawElementToCanvas(stratEditorFreeDrawCanvasId, path, stratEditingState.selectedFloor);
               }
             } else {
@@ -1210,7 +1318,7 @@ function App() {
 
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
               if (toolState.arrowHasBeenStarted) {
-                const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone());
+                const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone(), stratEditingState.selectedDrawColor);
                 drawElementToCanvas(stratEditorFreeDrawCanvasId, arrow, stratEditingState.selectedFloor);
                 const id = phaseFloor.pushDrawElement(arrow);
                 stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({
@@ -1227,7 +1335,7 @@ function App() {
             }
 
             if (toolState.arrowHasBeenStarted && !inputCanvasState.mouseClicked) {
-              const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone());
+              const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone(), stratEditingState.selectedDrawColor);
               drawElementToCanvas(placementPreviewCanvasId, arrow, stratEditingState.selectedFloor);
             }
             break;
@@ -1237,11 +1345,27 @@ function App() {
 
             let iconSize;
             switch (toolState.selectedIcon.kind) {
-              case IconKind.Operator: {
+              case IconKind.TeamOperator: {
                 iconSize = 50;
                 break;
               }
-              case IconKind.OperatorAbility: {
+              case IconKind.TeamAbility: {
+                iconSize = 30;
+                break;
+              }
+              case IconKind.TeamUtility: {
+                iconSize = 30;
+                break;
+              }
+              case IconKind.FreeOperator: {
+                iconSize = 50;
+                break;
+              }
+              case IconKind.FreeAbility: {
+                iconSize = 30;
+                break;
+              }
+              case IconKind.FreeUtility: {
                 iconSize = 30;
                 break;
               }
@@ -1596,7 +1720,7 @@ function App() {
             <div key={idx} className="col" style={{ border: "2px solid #0f0f0f" }}>
               <button style={{ padding: 0 }} onClick={(_e) => {
                 stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
-                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.Operator, teammateIndex: idx };
+                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.TeamOperator, teammateIndex: idx };
                 updateStratEditingStateDisplay();
               }}>
                 <img src={operatorsIndexReactive.getOperatorIconPath(loadout.operator)} style={{ width: 64, height: 64 }} />
@@ -1613,6 +1737,7 @@ function App() {
                   <div style={{ position: "absolute", zIndex: 1001, top: "32px", left: "-50%", backgroundColor: "#bababa", border: "2px solid #0f0f0f", borderRadius: "8px" }}>
                     {operatorTileListComponent((opName) => {
                       stratEditingState.teamLoadouts[idx].operator = opName;
+                      stratEditingState.teamLoadouts[idx].util = "";
                       setSelectOperatorForTeammateActiveIdx(undefined);
 
                       updateStratEditingStateDisplay();
@@ -1623,7 +1748,7 @@ function App() {
               )}
               <button style={{ paddingTop: 4, paddingBottom: 4, paddingLeft: 0, paddingRight: 0, height: 56 }} onClick={(_e) => {
                 stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
-                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.OperatorAbility, teammateIndex: idx };
+                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.TeamAbility, teammateIndex: idx };
                 updateStratEditingStateDisplay();
               }}>
                 <img
@@ -1631,16 +1756,37 @@ function App() {
                   style={OperatorsIndex.abilityImgDataStyle}
                 />
               </button>
+
               <button style={{ paddingTop: 4, paddingBottom: 4, paddingLeft: 0, paddingRight: 0, height: 56 }} onClick={(_e) => {
                 stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
-                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.OperatorAbility, teammateIndex: idx };
+                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.TeamUtility, teammateIndex: idx };
                 updateStratEditingStateDisplay();
               }}>
                 <img
-                  src={operatorsIndexReactive.getOperatorAbilityIconPath(loadout.operator)}
+                  src={operatorsIndexReactive.getUtilityIconPath(loadout.util)}
                   style={OperatorsIndex.abilityImgDataStyle}
                 />
               </button>
+              <button onClick={(_e) => {
+                if (selectUtilityForTeammateActiveIdx == idx) {
+                  setSelectUtilityForTeammateActiveIdx(undefined);
+                } else {
+                  setSelectUtilityForTeammateActiveIdx(idx);
+                }
+              }}>Select Utility</button>
+              {selectUtilityForTeammateActiveIdx == idx && (
+                <div style={{ position: "relative", zIndex: 1000, padding: 0 }}>
+                  <div style={{ position: "absolute", zIndex: 1001, top: "32px", left: "-50%", backgroundColor: "#bababa", border: "2px solid #0f0f0f", borderRadius: "8px" }}>
+                    {utilityTileListComponent((util) => {
+                      stratEditingState.teamLoadouts[idx].util = util;
+                      setSelectUtilityForTeammateActiveIdx(undefined);
+
+                      updateStratEditingStateDisplay();
+                      redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+                    }, stratEditingState.teamLoadouts[idx].operator)}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1650,9 +1796,29 @@ function App() {
           {/* Toolbar */}
           <div className="col" id="tool-selector-bar" style={{ margin: 8 }}>
             <p>{DrawTool[stratEditingState.selectedDrawTool]}</p>
+            <div style={{ border: "2px solid #0f0f0f", borderRadius: "8px" }}>
+              {tileListComponent(StratEditingState.freeDrawPalette, (color) => <>
+                <div style={{ width: 32, height: 32, backgroundColor: `rgb(${color[0]}, ${color[1]}, ${color[2]})`, borderRadius: "8px" }}></div>
+              </>, (color) => { stratEditingState.selectedDrawColor = color; }, 3)}
+            </div>
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.SelectAndEdit; updateStratEditingStateDisplay(); }}>Select and edit</button>
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.FreeDraw; updateStratEditingStateDisplay(); }}>Free draw</button>
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.Arrow; updateStratEditingStateDisplay(); }}>Arrow</button>
+            <div style={{ border: "2px solid #0f0f0f", borderRadius: "8px" }}>
+              {operatorTileListComponent((operator) => {
+                stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
+                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.FreeOperator, operator };
+                updateStratEditingStateDisplay();
+              }, false, true, true, 6)}
+            </div>
+            <div style={{ border: "2px solid #0f0f0f", borderRadius: "8px" }}>
+              {utilityTileListComponent((util) => {
+                stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
+                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.FreeUtility, util };
+                updateStratEditingStateDisplay();
+              }, undefined, 6)}
+            </div>
+
           </div>
 
           {/* Draw Area */}

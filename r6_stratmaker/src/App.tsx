@@ -683,6 +683,7 @@ class StratEditingDisplayLoadout {
  */
 class StratEditingStateDisplay {
   teamLoadouts: StratEditingDisplayLoadout[] = newArrayOfSize(5, () => new StratEditingDisplayLoadout());
+  selectedDrawColor: [number, number, number] = StratEditingState.freeDrawPalette[0];
   selectedDrawTool: DrawTool = DrawTool.FreeDraw;
 
   stratName: string = "";
@@ -746,7 +747,6 @@ class OperatorsIndex {
     const data: Record<string, any> = js_toml.load(file);
 
     const loadOperator = (op: [string, any], isAttacker: boolean) => {
-      console.log(op);
       if (isAttacker) {
         ops.attackers.push(op[0]);
       } else {
@@ -785,8 +785,6 @@ class OperatorsIndex {
       const abilityImg = await imgElemFromPath(ops.getOperatorAbilityIconPath(opName));
       ops.abilityImgData.set(opName, abilityImg);
     }
-
-    console.log(ops.operators);
 
     return ops;
   }
@@ -863,6 +861,7 @@ function App() {
   function updateStratEditingStateDisplay() {
     const newDisplayState: StratEditingStateDisplay = {
       teamLoadouts: stratEditingState.teamLoadouts.map((l) => { return { operator: l.operator, util: l.util } }),
+      selectedDrawColor: stratEditingState.selectedDrawColor,
       selectedDrawTool: stratEditingState.selectedDrawTool,
       stratName: stratEditingState.stratName,
       map: stratEditingState.map,
@@ -1630,14 +1629,20 @@ function App() {
 
       return (<>
         <canvas id={inputGatheringCanvasId}
-          style={{ gridColumn: 1, gridRow: 1, zIndex: 100 }}
+          style={{ gridColumn: 1, gridRow: 1, zIndex: 100, touchAction: "none" }}
+          // style={{ gridColumn: 1, gridRow: 1, zIndex: 100 }}
           width={stratEditingStateDisplay.mapImgWidth}
           height={stratEditingStateDisplay.mapImgHeight}
           onMouseEnter={(_e) => inputCanvasState.mouseClicked = false}
           onMouseLeave={(_e) => inputCanvasState.mouseClicked = false}
           onMouseDown={(_e) => inputCanvasState.mouseClicked = true}
           onMouseUp={(_e) => inputCanvasState.mouseClicked = false}
+          // onMouseEnter={(e) => { inputCanvasState.mouseClicked = false; e.preventDefault(); }}
+          // onMouseLeave={(e) => { inputCanvasState.mouseClicked = false; e.preventDefault(); }}
+          // onMouseDown={(e) => { inputCanvasState.mouseClicked = true; e.preventDefault(); }}
+          // onMouseUp={(e) => { inputCanvasState.mouseClicked = false; e.preventDefault(); }}
           onMouseMove={(e) => {
+            e.preventDefault();
             inputCanvasState.mousePos = mousePosForCanvas(inputGatheringCanvasId, e.clientX, e.clientY);
           }}></canvas>
       </>)
@@ -1688,7 +1693,11 @@ function App() {
             <button key={i} onClick={(e) => {
               e.preventDefault();
               stratEditingState.selectedPhase = i;
-              stratEditingState.toolStates = new ToolStates();
+
+              stratEditingState.toolStates.arrow = new ArrowToolState();
+              stratEditingState.toolStates.freeDraw = new FreeDrawToolState();
+              // Don't clear icon placement state
+              stratEditingState.toolStates.selectAndEdit = new SelectAndEditToolState();
               redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
               updateStratEditingStateDisplay();
             }}>{phase.phaseName}</button>
@@ -1798,8 +1807,17 @@ function App() {
             <p>{DrawTool[stratEditingState.selectedDrawTool]}</p>
             <div style={{ border: "2px solid #0f0f0f", borderRadius: "8px" }}>
               {tileListComponent(StratEditingState.freeDrawPalette, (color) => <>
-                <div style={{ width: 32, height: 32, backgroundColor: `rgb(${color[0]}, ${color[1]}, ${color[2]})`, borderRadius: "8px" }}></div>
-              </>, (color) => { stratEditingState.selectedDrawColor = color; }, 3)}
+                <div style={{
+                  width: 32,
+                  height: 32,
+                  border: stratEditingStateDisplay.selectedDrawColor == color ? "2px solid #0f0f0f" : "",
+                  backgroundColor: `rgb(${color[0]}, ${color[1]}, ${color[2]})`,
+                  borderRadius: "8px"
+                }}></div>
+              </>, (color) => {
+                stratEditingState.selectedDrawColor = color;
+                updateStratEditingStateDisplay();
+              }, 3)}
             </div>
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.SelectAndEdit; updateStratEditingStateDisplay(); }}>Select and edit</button>
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.FreeDraw; updateStratEditingStateDisplay(); }}>Free draw</button>

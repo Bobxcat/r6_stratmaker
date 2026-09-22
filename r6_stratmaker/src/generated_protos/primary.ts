@@ -169,6 +169,26 @@ export interface SaveStrat {
 export interface SaveStratResponse {
 }
 
+/** CreateLobby */
+export interface CreateLobby {
+}
+
+export interface CreateLobbyResponse {
+}
+
+/** GetLobbyList */
+export interface GetLobbyList {
+}
+
+export interface GetLobbyListResponse {
+  hosts: string[];
+}
+
+/** UpdateLobbyMembers */
+export interface UpdateLobbyMembers {
+  members: string[];
+}
+
 export interface Client2Server {
   hello?: Hello | undefined;
   loginRequest?: LoginRequest | undefined;
@@ -177,6 +197,8 @@ export interface Client2Server {
   getMapMetadata?: GetMapMetadata | undefined;
   getStratInfo?: GetStratInfo | undefined;
   saveStrat?: SaveStrat | undefined;
+  createLobby?: CreateLobby | undefined;
+  getLobbyList?: GetLobbyList | undefined;
 }
 
 export interface Server2Client {
@@ -187,6 +209,9 @@ export interface Server2Client {
   getMapMetadataResponse?: GetMapMetadataResponse | undefined;
   getStratInfoResponse?: GetStratInfoResponse | undefined;
   saveStratResponse?: SaveStratResponse | undefined;
+  createLobbyResponse?: CreateLobbyResponse | undefined;
+  getLobbyListResponse?: GetLobbyListResponse | undefined;
+  updateLobbyMembers?: UpdateLobbyMembers | undefined;
 }
 
 function createBasePoint(): Point {
@@ -2909,6 +2934,298 @@ export const SaveStratResponse: MessageFns<SaveStratResponse> = {
   },
 };
 
+function createBaseCreateLobby(): CreateLobby {
+  return {};
+}
+
+export const CreateLobby: MessageFns<CreateLobby> = {
+  encode(_: CreateLobby, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): CreateLobby {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseCreateLobby();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(_: any): CreateLobby {
+    return {};
+  },
+
+  toJSON(_: CreateLobby): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreateLobby>, I>>(base?: I): CreateLobby {
+    return CreateLobby.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreateLobby>, I>>(_: I): CreateLobby {
+    const message = createBaseCreateLobby();
+    return message;
+  },
+};
+
+function createBaseCreateLobbyResponse(): CreateLobbyResponse {
+  return {};
+}
+
+export const CreateLobbyResponse: MessageFns<CreateLobbyResponse> = {
+  encode(_: CreateLobbyResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): CreateLobbyResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseCreateLobbyResponse();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(_: any): CreateLobbyResponse {
+    return {};
+  },
+
+  toJSON(_: CreateLobbyResponse): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CreateLobbyResponse>, I>>(base?: I): CreateLobbyResponse {
+    return CreateLobbyResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CreateLobbyResponse>, I>>(_: I): CreateLobbyResponse {
+    const message = createBaseCreateLobbyResponse();
+    return message;
+  },
+};
+
+function createBaseGetLobbyList(): GetLobbyList {
+  return {};
+}
+
+export const GetLobbyList: MessageFns<GetLobbyList> = {
+  encode(_: GetLobbyList, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GetLobbyList {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseGetLobbyList();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(_: any): GetLobbyList {
+    return {};
+  },
+
+  toJSON(_: GetLobbyList): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetLobbyList>, I>>(base?: I): GetLobbyList {
+    return GetLobbyList.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetLobbyList>, I>>(_: I): GetLobbyList {
+    const message = createBaseGetLobbyList();
+    return message;
+  },
+};
+
+function createBaseGetLobbyListResponse(): GetLobbyListResponse {
+  return { hosts: [] };
+}
+
+export const GetLobbyListResponse: MessageFns<GetLobbyListResponse> = {
+  encode(message: GetLobbyListResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.hosts) {
+      writer.uint32(10).string(v!);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GetLobbyListResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseGetLobbyListResponse();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.hosts.push(reader.string());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): GetLobbyListResponse {
+    return { hosts: globalThis.Array.isArray(object?.hosts) ? object.hosts.map((e: any) => globalThis.String(e)) : [] };
+  },
+
+  toJSON(message: GetLobbyListResponse): unknown {
+    const obj: any = {};
+    if (message.hosts?.length) {
+      obj.hosts = message.hosts;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetLobbyListResponse>, I>>(base?: I): GetLobbyListResponse {
+    return GetLobbyListResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetLobbyListResponse>, I>>(object: I): GetLobbyListResponse {
+    const message = createBaseGetLobbyListResponse();
+    message.hosts = object.hosts?.map((e) => e) || [];
+    return message;
+  },
+};
+
+function createBaseUpdateLobbyMembers(): UpdateLobbyMembers {
+  return { members: [] };
+}
+
+export const UpdateLobbyMembers: MessageFns<UpdateLobbyMembers> = {
+  encode(message: UpdateLobbyMembers, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.members) {
+      writer.uint32(10).string(v!);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): UpdateLobbyMembers {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseUpdateLobbyMembers();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.members.push(reader.string());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): UpdateLobbyMembers {
+    return {
+      members: globalThis.Array.isArray(object?.members) ? object.members.map((e: any) => globalThis.String(e)) : [],
+    };
+  },
+
+  toJSON(message: UpdateLobbyMembers): unknown {
+    const obj: any = {};
+    if (message.members?.length) {
+      obj.members = message.members;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UpdateLobbyMembers>, I>>(base?: I): UpdateLobbyMembers {
+    return UpdateLobbyMembers.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UpdateLobbyMembers>, I>>(object: I): UpdateLobbyMembers {
+    const message = createBaseUpdateLobbyMembers();
+    message.members = object.members?.map((e) => e) || [];
+    return message;
+  },
+};
+
 function createBaseClient2Server(): Client2Server {
   return {
     hello: undefined,
@@ -2918,6 +3235,8 @@ function createBaseClient2Server(): Client2Server {
     getMapMetadata: undefined,
     getStratInfo: undefined,
     saveStrat: undefined,
+    createLobby: undefined,
+    getLobbyList: undefined,
   };
 }
 
@@ -2943,6 +3262,12 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.saveStrat !== undefined) {
       SaveStrat.encode(message.saveStrat, writer.uint32(58).fork()).join();
+    }
+    if (message.createLobby !== undefined) {
+      CreateLobby.encode(message.createLobby, writer.uint32(810).fork()).join();
+    }
+    if (message.getLobbyList !== undefined) {
+      GetLobbyList.encode(message.getLobbyList, writer.uint32(818).fork()).join();
     }
     return writer;
   },
@@ -3016,6 +3341,22 @@ export const Client2Server: MessageFns<Client2Server> = {
             message.saveStrat = SaveStrat.decode(reader, reader.uint32());
             continue;
           }
+          case 101: {
+            if (tag !== 810) {
+              break;
+            }
+
+            message.createLobby = CreateLobby.decode(reader, reader.uint32());
+            continue;
+          }
+          case 102: {
+            if (tag !== 818) {
+              break;
+            }
+
+            message.getLobbyList = GetLobbyList.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -3037,6 +3378,8 @@ export const Client2Server: MessageFns<Client2Server> = {
       getMapMetadata: isSet(object.getMapMetadata) ? GetMapMetadata.fromJSON(object.getMapMetadata) : undefined,
       getStratInfo: isSet(object.getStratInfo) ? GetStratInfo.fromJSON(object.getStratInfo) : undefined,
       saveStrat: isSet(object.saveStrat) ? SaveStrat.fromJSON(object.saveStrat) : undefined,
+      createLobby: isSet(object.createLobby) ? CreateLobby.fromJSON(object.createLobby) : undefined,
+      getLobbyList: isSet(object.getLobbyList) ? GetLobbyList.fromJSON(object.getLobbyList) : undefined,
     };
   },
 
@@ -3062,6 +3405,12 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.saveStrat !== undefined) {
       obj.saveStrat = SaveStrat.toJSON(message.saveStrat);
+    }
+    if (message.createLobby !== undefined) {
+      obj.createLobby = CreateLobby.toJSON(message.createLobby);
+    }
+    if (message.getLobbyList !== undefined) {
+      obj.getLobbyList = GetLobbyList.toJSON(message.getLobbyList);
     }
     return obj;
   },
@@ -3090,6 +3439,12 @@ export const Client2Server: MessageFns<Client2Server> = {
     message.saveStrat = (object.saveStrat !== undefined && object.saveStrat !== null)
       ? SaveStrat.fromPartial(object.saveStrat)
       : undefined;
+    message.createLobby = (object.createLobby !== undefined && object.createLobby !== null)
+      ? CreateLobby.fromPartial(object.createLobby)
+      : undefined;
+    message.getLobbyList = (object.getLobbyList !== undefined && object.getLobbyList !== null)
+      ? GetLobbyList.fromPartial(object.getLobbyList)
+      : undefined;
     return message;
   },
 };
@@ -3103,6 +3458,9 @@ function createBaseServer2Client(): Server2Client {
     getMapMetadataResponse: undefined,
     getStratInfoResponse: undefined,
     saveStratResponse: undefined,
+    createLobbyResponse: undefined,
+    getLobbyListResponse: undefined,
+    updateLobbyMembers: undefined,
   };
 }
 
@@ -3128,6 +3486,15 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.saveStratResponse !== undefined) {
       SaveStratResponse.encode(message.saveStratResponse, writer.uint32(58).fork()).join();
+    }
+    if (message.createLobbyResponse !== undefined) {
+      CreateLobbyResponse.encode(message.createLobbyResponse, writer.uint32(810).fork()).join();
+    }
+    if (message.getLobbyListResponse !== undefined) {
+      GetLobbyListResponse.encode(message.getLobbyListResponse, writer.uint32(818).fork()).join();
+    }
+    if (message.updateLobbyMembers !== undefined) {
+      UpdateLobbyMembers.encode(message.updateLobbyMembers, writer.uint32(826).fork()).join();
     }
     return writer;
   },
@@ -3201,6 +3568,30 @@ export const Server2Client: MessageFns<Server2Client> = {
             message.saveStratResponse = SaveStratResponse.decode(reader, reader.uint32());
             continue;
           }
+          case 101: {
+            if (tag !== 810) {
+              break;
+            }
+
+            message.createLobbyResponse = CreateLobbyResponse.decode(reader, reader.uint32());
+            continue;
+          }
+          case 102: {
+            if (tag !== 818) {
+              break;
+            }
+
+            message.getLobbyListResponse = GetLobbyListResponse.decode(reader, reader.uint32());
+            continue;
+          }
+          case 103: {
+            if (tag !== 826) {
+              break;
+            }
+
+            message.updateLobbyMembers = UpdateLobbyMembers.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -3232,6 +3623,15 @@ export const Server2Client: MessageFns<Server2Client> = {
       saveStratResponse: isSet(object.saveStratResponse)
         ? SaveStratResponse.fromJSON(object.saveStratResponse)
         : undefined,
+      createLobbyResponse: isSet(object.createLobbyResponse)
+        ? CreateLobbyResponse.fromJSON(object.createLobbyResponse)
+        : undefined,
+      getLobbyListResponse: isSet(object.getLobbyListResponse)
+        ? GetLobbyListResponse.fromJSON(object.getLobbyListResponse)
+        : undefined,
+      updateLobbyMembers: isSet(object.updateLobbyMembers)
+        ? UpdateLobbyMembers.fromJSON(object.updateLobbyMembers)
+        : undefined,
     };
   },
 
@@ -3257,6 +3657,15 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.saveStratResponse !== undefined) {
       obj.saveStratResponse = SaveStratResponse.toJSON(message.saveStratResponse);
+    }
+    if (message.createLobbyResponse !== undefined) {
+      obj.createLobbyResponse = CreateLobbyResponse.toJSON(message.createLobbyResponse);
+    }
+    if (message.getLobbyListResponse !== undefined) {
+      obj.getLobbyListResponse = GetLobbyListResponse.toJSON(message.getLobbyListResponse);
+    }
+    if (message.updateLobbyMembers !== undefined) {
+      obj.updateLobbyMembers = UpdateLobbyMembers.toJSON(message.updateLobbyMembers);
     }
     return obj;
   },
@@ -3288,6 +3697,15 @@ export const Server2Client: MessageFns<Server2Client> = {
       : undefined;
     message.saveStratResponse = (object.saveStratResponse !== undefined && object.saveStratResponse !== null)
       ? SaveStratResponse.fromPartial(object.saveStratResponse)
+      : undefined;
+    message.createLobbyResponse = (object.createLobbyResponse !== undefined && object.createLobbyResponse !== null)
+      ? CreateLobbyResponse.fromPartial(object.createLobbyResponse)
+      : undefined;
+    message.getLobbyListResponse = (object.getLobbyListResponse !== undefined && object.getLobbyListResponse !== null)
+      ? GetLobbyListResponse.fromPartial(object.getLobbyListResponse)
+      : undefined;
+    message.updateLobbyMembers = (object.updateLobbyMembers !== undefined && object.updateLobbyMembers !== null)
+      ? UpdateLobbyMembers.fromPartial(object.updateLobbyMembers)
       : undefined;
     return message;
   },

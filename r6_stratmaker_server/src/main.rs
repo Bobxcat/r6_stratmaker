@@ -1,4 +1,9 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::HashMap,
+    ops::Deref,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use anyhow::{Context, anyhow, bail};
 use fjall::{Database, Keyspace, KeyspaceCreateOptions};
@@ -6,7 +11,10 @@ use futures_util::{SinkExt, StreamExt};
 use json::JsonValue;
 use protobuf::{Message, MessageField, SpecialFields};
 use serde::{Deserialize, Serialize};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    sync::oneshot,
+};
 use tokio_websockets::{ServerBuilder, WebSocketStream};
 use uuid::Uuid;
 
@@ -103,18 +111,28 @@ impl WsStreamExt for WebSocketStream<TcpStream> {
     }
 }
 
-impl Server2Client {
-    pub fn from_inner(x: S2CInner) -> Self {
-        Self {
-            S2CInner: Some(x),
-            special_fields: SpecialFields::new(),
-        }
+#[derive(Debug)]
+struct SharedState {
+    /// `host -> members (incl. host)`
+    pub lobbies: HashMap<String, Vec<String>>,
+}
+
+#[derive(Debug, Clone)]
+struct SharedStateHandle(Arc<Mutex<SharedState>>);
+
+impl Deref for SharedStateHandle {
+    type Target = Arc<Mutex<SharedState>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
 async fn accept_client(
     mut ws_stream: WebSocketStream<TcpStream>,
     database: DatabaseHandle,
+    username_tx: oneshot::Sender<String>,
+    shared_state: SharedStateHandle,
 ) -> Result<(), anyhow::Error> {
     // Handshake
     let user = {
@@ -145,6 +163,8 @@ async fn accept_client(
         ws_stream
             .send_proto(S2CInner::LoginResponse(primary::LoginResponse::new()))
             .await?;
+
+        username_tx.send(user.0.clone()).unwrap();
 
         user
     };
@@ -355,6 +375,35 @@ async fn accept_client(
                 };
                 database.insert::<StratsKeyspace>(&strat_id, &strat).await?;
             }
+            C2SInner::CreateLobby(_msg) => {
+                {
+                    let mut state = shared_state.lock().unwrap();
+                    state.lobbies.insert(user.0.clone(), vec![user.0.clone()]);
+                }
+
+                ws_stream
+                    .send_proto(S2CInner::CreateLobbyResponse(
+                        primary::CreateLobbyResponse {
+                            special_fields: SpecialFields::new(),
+                        },
+                    ))
+                    .await?;
+            }
+            C2SInner::GetLobbyList(_msg) => {
+                let hosts = {
+                    let state = shared_state.lock().unwrap();
+                    state.lobbies.keys().cloned().collect()
+                };
+
+                ws_stream
+                    .send_proto(S2CInner::GetLobbyListResponse(
+                        primary::GetLobbyListResponse {
+                            hosts,
+                            special_fields: SpecialFields::new(),
+                        },
+                    ))
+                    .await?;
+            }
             msg => println!("Unexpected message: `{msg:?}`",),
         }
     }
@@ -367,6 +416,10 @@ async fn main() -> Result<(), anyhow::Error> {
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
     let database = DatabaseHandle::initialize().await?;
 
+    let shared_state = SharedState {
+        lobbies: HashMap::new(),
+    };
+    let shared_state = SharedStateHandle(Arc::new(Mutex::new(shared_state)));
     println!("Started!");
 
     tokio::spawn(async move {
@@ -376,9 +429,18 @@ async fn main() -> Result<(), anyhow::Error> {
             println!("Client Accepted at {:?}", ws_stream.get_ref().local_addr());
 
             let db_clone = database.clone();
+            let state_clone = shared_state.clone();
             tokio::spawn(async move {
-                let res = accept_client(ws_stream, db_clone).await;
-                println!("Client Exited: {res:?}");
+                let (user_tx, user_rx) = oneshot::channel();
+                let res = accept_client(ws_stream, db_clone, user_tx, state_clone.clone()).await;
+                let user = user_rx.await?;
+
+                if let Ok(mut state) = state_clone.lock() {
+                    state.lobbies.remove(&user);
+                }
+                drop(state_clone);
+
+                println!("Client Exited: (user: {user}) {res:?}");
                 res
             });
         }

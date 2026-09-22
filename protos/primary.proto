@@ -135,6 +135,25 @@ message SaveStrat {
 
 message SaveStratResponse {}
 
+// CreateLobby
+message CreateLobby {}
+
+message CreateLobbyResponse {}
+
+// GetLobbyList
+message GetLobbyList {}
+
+message GetLobbyListResponse {
+    repeated string hosts = 1;
+}
+
+// UpdateLobbyMembers
+message UpdateLobbyMembers {
+    repeated string members = 1;
+}
+
+// 
+
 message Client2Server {
     oneof C2SInner {
         Hello hello = 1;
@@ -144,6 +163,9 @@ message Client2Server {
         GetMapMetadata getMapMetadata = 5;
         GetStratInfo getStratInfo = 6;
         SaveStrat saveStrat = 7;
+
+        CreateLobby createLobby = 101;
+        GetLobbyList getLobbyList = 102;
     }
 }
 
@@ -156,5 +178,9 @@ message Server2Client {
         GetMapMetadataResponse getMapMetadataResponse = 5;
         GetStratInfoResponse getStratInfoResponse = 6;
         SaveStratResponse saveStratResponse = 7;
+
+        CreateLobbyResponse createLobbyResponse = 101;
+        GetLobbyListResponse getLobbyListResponse = 102;
+        UpdateLobbyMembers updateLobbyMembers = 103;
     }
 }

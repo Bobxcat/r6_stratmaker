@@ -85,6 +85,7 @@ enum Page {
   ConnectToServerPage,
   LoginPage,
   StratListPage,
+  LobbyListPage,
   CreateNewStratMapSelectionPage,
   StratEditorPage,
 }
@@ -625,6 +626,11 @@ class StratEditingLoadout {
   util: string = "";
 }
 
+enum StratEditingMode {
+  Singleplayer,
+  Lobby,
+}
+
 class StratEditingState {
   static readonly freeDrawPalette: [number, number, number][] = StratEditingLoadout.defaultPalette.concat([
     [200, 10, 10],
@@ -632,6 +638,8 @@ class StratEditingState {
     [10, 10, 200],
     [200, 200, 10],
   ]);
+
+  mode: StratEditingMode = StratEditingMode.Singleplayer;
 
   selectedDrawColor: [number, number, number] = StratEditingState.freeDrawPalette[0];
 
@@ -857,6 +865,8 @@ function App() {
 
   const [stratList, setStratList] = useState<Array<StratMetadata>>([]);
 
+  const [lobbyList, setLobbyList] = useState<Array<string>>([]);
+
   const [operatorsIndexReactive, setOperatorsIndexReactive] = useState<OperatorsIndex>(new OperatorsIndex());
 
   enum ConnectionState {
@@ -869,6 +879,7 @@ function App() {
 
   const [selectOperatorForTeammateActiveIdx, setSelectOperatorForTeammateActiveIdx] = useState<number | undefined>(undefined);
   const [selectUtilityForTeammateActiveIdx, setSelectUtilityForTeammateActiveIdx] = useState<number | undefined>(undefined);
+
 
   // Load operators
   useEffect(() => {
@@ -921,8 +932,8 @@ function App() {
     if (msg.helloResponse) {
       setCurrPage(Page.LoginPage);
     } else if (msg.loginResponse) {
-      setCurrPage(Page.StratListPage);
       sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
+      setCurrPage(Page.StratListPage);
     } else if (msg.getStratListResponse) {
       var newStratList: Array<StratMetadata> = [];
       msg.getStratListResponse.strats.forEach((strat) => {
@@ -1014,7 +1025,11 @@ function App() {
       setCurrPage(Page.StratEditorPage);
       updateStratEditingStateDisplay();
       redrawFreeDrawCanvasQueued = true;
+    } else if (msg.getLobbyListResponse) {
+      setLobbyList(msg.getLobbyListResponse.hosts);
     } else if (msg.saveStratResponse) {
+      // Yay!
+    } else if (msg.createLobbyResponse) {
       // Yay!
     } else {
       println(`  Unhandled message!!!`);
@@ -1154,12 +1169,17 @@ function App() {
     async function loadStrat(stratMeta: StratMetadata) {
       stratEditingState.stratId = stratMeta.uuid;
       stratEditingState.map = stratMeta.map;
+      stratEditingState.mode = StratEditingMode.Singleplayer;
       updateStratEditingStateDisplay();
       await sendNetworkMessage(protos.Client2Server.create({ getStratInfo: { stratId: stratMeta.uuid } }));
       await sendNetworkMessage(protos.Client2Server.create({ getMapMetadata: { map: stratMeta.map } }));
     }
 
     return (<>
+      <button onClick={(_) => {
+        sendNetworkMessage(protos.Client2Server.create({ getLobbyList: {} }));
+        setCurrPage(Page.LobbyListPage);
+      }} style={{ width: "fit-content" }}>Join Lobby</button>
       <p>List of strats!</p>
       <button onClick={(_) => {
         setCurrPage(Page.CreateNewStratMapSelectionPage);
@@ -1176,9 +1196,25 @@ function App() {
     </>)
   }
 
+  function lobbyListPageComponent() {
+    return (<>
+      <button onClick={(_) => {
+        sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
+        setCurrPage(Page.StratListPage);
+      }}>Edit Strat</button>
+      <button onClick={(_) => {
+        sendNetworkMessage(protos.Client2Server.create({ createLobby: {} }));
+      }}>Create Lobby</button>
+      {lobbyList.map((host) => <>
+        <button key={host}>{host}</button>
+      </>)}
+    </>);
+  }
+
   function createNewStratMapSelectionPageComponent() {
     async function createNewStrat(map: string) {
       stratEditingState.map = map;
+      stratEditingState.mode = StratEditingMode.Singleplayer;
       updateStratEditingStateDisplay();
       await sendNetworkMessage(protos.Client2Server.create({ createEmptyStrat: { map } }));
       await sendNetworkMessage(protos.Client2Server.create({ getMapMetadata: { map } }));
@@ -2006,7 +2042,6 @@ function App() {
     );
   }
 
-
   function currPageSelectorComponent(currPage: Page) {
     switch (currPage) {
       case Page.ConnectToServerPage:
@@ -2015,6 +2050,8 @@ function App() {
         return loginPageComponent()
       case Page.StratListPage:
         return stratListPageComponent()
+      case Page.LobbyListPage:
+        return lobbyListPageComponent()
       case Page.CreateNewStratMapSelectionPage:
         return createNewStratMapSelectionPageComponent()
       case Page.StratEditorPage:

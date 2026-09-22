@@ -388,6 +388,12 @@ async fn accept_client(
                         },
                     ))
                     .await?;
+                ws_stream
+                    .send_proto(S2CInner::UpdateLobbyMembers(primary::UpdateLobbyMembers {
+                        members: vec![user.0.clone()],
+                        special_fields: SpecialFields::new(),
+                    }))
+                    .await?;
             }
             C2SInner::GetLobbyList(_msg) => {
                 let hosts = {

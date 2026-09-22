@@ -636,6 +636,7 @@ class StratEditingState {
   ]);
 
   mode: StratEditingMode = StratEditingMode.Singleplayer;
+  lobbyMembers: string[] = [];
 
   selectedDrawColor: [number, number, number] = StratEditingState.freeDrawPalette[0];
 
@@ -984,6 +985,9 @@ function App() {
       redrawFreeDrawCanvasQueued = true;
     } else if (msg.getLobbyListResponse) {
       setLobbyList(msg.getLobbyListResponse.hosts);
+    } else if (msg.updateLobbyMembers) {
+      stratEditingState.lobbyMembers = msg.updateLobbyMembers.members;
+      updateStratEditingStateDisplay();
     } else if (msg.saveStratResponse) {
       // Yay!
     } else if (msg.createLobbyResponse) {
@@ -994,7 +998,6 @@ function App() {
   }
 
   function tileListComponent<T>(keys: T[], listInnerComponent: (key: T) => any, onClick: (key: T) => void, rowWidthOverride?: number) {
-
     // Note: this is a test for the "truthyness" of widthOverride, which means that `widthOverride == 0` will *also* go to `10`
     const rowWidth = rowWidthOverride ? rowWidthOverride : 10;
     var rows: T[][] = arrayChunk(keys, rowWidth);
@@ -1326,8 +1329,7 @@ function App() {
           style={{ gridColumn: 1, gridRow: 1, zIndex: 1 }}
           width={stratEditingStateDisplay.mapImgWidth}
           height={stratEditingStateDisplay.mapImgHeight}
-        >
-        </canvas>
+        ></canvas>
       )
     }
 
@@ -1820,6 +1822,14 @@ function App() {
         {stratEditingStateDisplay.mode == StratEditingMode.Singleplayer && (<button onClick={(_) => {
           saveProgress()
         }}>Save Progress</button>)}
+
+        {/* Lobby members display */}
+        {stratEditingStateDisplay.mode == StratEditingMode.Lobby && (<>
+          <p>Lobby Members</p>
+          {stratEditingStateDisplay.lobbyMembers.forEach((member) =>
+            <p>{member}</p>
+          )}
+        </>)}
 
         {/* Edit strat name */}
         <div className="row">

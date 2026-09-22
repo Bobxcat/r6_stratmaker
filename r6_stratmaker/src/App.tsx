@@ -613,11 +613,11 @@ class ToolStates {
 
 class StratEditingLoadout {
   static readonly defaultPalette: [number, number, number][] = [
-    [175, 43, 191],
-    [161, 78, 191],
-    [108, 145, 191],
-    [95, 176, 183],
-    [91, 200, 175],
+    [150, 245, 80],
+    [229, 99, 153],
+    [127, 150, 255],
+    [166, 207, 213],
+    [255, 188, 66],
   ];
 
   operator: string = "ace";

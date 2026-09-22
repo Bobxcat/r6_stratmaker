@@ -8,10 +8,6 @@ import WebSocket from "@tauri-apps/plugin-websocket";
 import "./App.css";
 import * as protos from "./generated_protos/primary"
 import * as uuid from 'uuid';
-import {
-  stringifyCSSProperties,
-  stringifyStyleMap,
-} from "react-style-stringify";
 import * as js_toml from 'js-toml';
 
 class Uuid {
@@ -680,34 +676,6 @@ class StratEditingState {
   }
 }
 
-class StratEditingDisplayPhase {
-  phaseName: string = "";
-}
-
-class StratEditingDisplayLoadout {
-  operator: string = "ace";
-  util: string = "";
-}
-
-/** This contains a subset of `StratEditingState` to be used as reactive state for the UI.
- * In order to modify this state, always edit `StratEditingState` and call `updateStratEditingStateDisplay()`
- */
-class StratEditingStateDisplay {
-  teamLoadouts: StratEditingDisplayLoadout[] = newArrayOfSize(5, () => new StratEditingDisplayLoadout());
-  selectedDrawColor: [number, number, number] = StratEditingState.freeDrawPalette[0];
-  selectedDrawTool: DrawTool = DrawTool.FreeDraw;
-
-  stratName: string = "";
-  map: string = "";
-  mapFloors: string[] = [];
-  mapImgWidth: number = 1600;
-  mapImgHeight: number = 900;
-  activeFloor: number = 0;
-
-  phases: StratEditingDisplayPhase[] = [];
-  selectedPhase: number = 0;
-}
-
 const stratEditingState = new StratEditingState();
 let redrawFreeDrawCanvasQueued: boolean = false;
 
@@ -859,7 +827,7 @@ function colorFromProto(color: protos.Color): [number, number, number] {
 }
 
 function App() {
-  const [stratEditingStateDisplay, setStratEditingStateDisplay] = useState<StratEditingStateDisplay>(new StratEditingStateDisplay());
+  const [stratEditingStateDisplay, setStratEditingStateDisplay] = useState<StratEditingState>(new StratEditingState());
 
   const [currPage, setCurrPage] = useState<Page>(Page.ConnectToServerPage);
 
@@ -903,19 +871,8 @@ function App() {
   }
 
   function updateStratEditingStateDisplay() {
-    const newDisplayState: StratEditingStateDisplay = {
-      teamLoadouts: stratEditingState.teamLoadouts.map((l) => { return { operator: l.operator, util: l.util } }),
-      selectedDrawColor: stratEditingState.selectedDrawColor,
-      selectedDrawTool: stratEditingState.selectedDrawTool,
-      stratName: stratEditingState.stratName,
-      map: stratEditingState.map,
-      mapFloors: stratEditingState.mapFloors,
-      activeFloor: stratEditingState.selectedFloor,
-      mapImgWidth: stratEditingState.mapImgWidth,
-      mapImgHeight: stratEditingState.mapImgHeight,
-      phases: stratEditingState.phases.map((phase) => { return { phaseName: phase.phaseName }; }),
-      selectedPhase: stratEditingState.selectedPhase,
-    };
+    // If we don't create a new object, then it won't be detected as a change
+    const newDisplayState: StratEditingState = Object.assign(new StratEditingState(), stratEditingState);
     setStratEditingStateDisplay(newDisplayState);
   }
 
@@ -1842,17 +1799,27 @@ function App() {
       <>
         {/* Menuing buttons */}
         <button onClick={(_) => {
-          saveProgress().then((_) => {
+          let gotoStratList = () => {
             stratEditingState.reset();
             updateStratEditingStateDisplay();
             sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
             setCurrPage(Page.StratListPage);
-          });
+          };
+          switch (stratEditingState.mode) {
+            case StratEditingMode.Singleplayer: {
+              saveProgress().then(gotoStratList);
+              break;
+            }
+            case StratEditingMode.Lobby: {
+              gotoStratList();
+              break;
+            }
+          }
         }}>Back to Strat list</button>
 
-        <button onClick={(_) => {
+        {stratEditingStateDisplay.mode == StratEditingMode.Singleplayer && (<button onClick={(_) => {
           saveProgress()
-        }}>Save Progress</button>
+        }}>Save Progress</button>)}
 
         {/* Edit strat name */}
         <div className="row">
@@ -1897,7 +1864,7 @@ function App() {
         </div>
 
         {/* List of floors */}
-        <p>Current Floor: {stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.activeFloor]}</p>
+        <p>Current Floor: {stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.selectedFloor]}</p>
         <div className="row">
           {stratEditingStateDisplay.mapFloors.map((floor_name, i) =>
             <button key={i} onClick={(e) => {
@@ -2028,7 +1995,7 @@ function App() {
 
           {/* Draw Area */}
           <div id="draw-area" style={{ margin: 8, display: "grid", gridTemplateColumns: "1", gridTemplateRows: "1" }}>
-            <img src={getFloorImgPath(stratEditingStateDisplay.map, stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.activeFloor])}
+            <img src={getFloorImgPath(stratEditingStateDisplay.map, stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.selectedFloor])}
               style={{ gridColumn: 1, gridRow: 1, zIndex: 0 }} />
             {freeDrawCanvas(stratEditorFreeDrawCanvasId)}
             <canvas id={placementPreviewCanvasId}

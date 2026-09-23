@@ -2,18 +2,18 @@ use std::{
     collections::HashMap,
     ops::Deref,
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, anyhow, bail};
 use fjall::{Database, Keyspace, KeyspaceCreateOptions};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{FutureExt, SinkExt, StreamExt, TryStreamExt};
 use json::JsonValue;
 use protobuf::{Message, MessageField, SpecialFields};
 use serde::{Deserialize, Serialize};
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::oneshot,
+    sync::{mpsc, oneshot},
 };
 use tokio_websockets::{ServerBuilder, WebSocketStream};
 use uuid::Uuid;
@@ -81,6 +81,7 @@ trait WsStreamExt {
     async fn send_proto(&mut self, msg: S2CInner) -> anyhow::Result<()>;
 
     async fn next_proto(&mut self) -> anyhow::Result<ReceivedMsg>;
+    fn try_next_proto(&mut self) -> anyhow::Result<Option<ReceivedMsg>>;
 }
 
 impl WsStreamExt for WebSocketStream<TcpStream> {
@@ -96,10 +97,7 @@ impl WsStreamExt for WebSocketStream<TcpStream> {
     }
 
     async fn next_proto(&mut self) -> anyhow::Result<ReceivedMsg> {
-        let raw = self
-            .next()
-            .await
-            .ok_or(anyhow!("Message failed to be received"))??;
+        let raw = self.next().await.ok_or(anyhow!("Stream exhausted"))??;
 
         let msg = Client2Server::parse_from_bytes(&raw.as_payload())?;
         let msg = msg.C2SInner.ok_or(anyhow!("Empty message!"))?;
@@ -109,12 +107,28 @@ impl WsStreamExt for WebSocketStream<TcpStream> {
             msg,
         })
     }
+
+    fn try_next_proto(&mut self) -> anyhow::Result<Option<ReceivedMsg>> {
+        let Some(raw) = self.next().now_or_never() else {
+            return Ok(None);
+        };
+        let raw = raw.ok_or(anyhow!("Stream exhausted"))??;
+
+        let msg = Client2Server::parse_from_bytes(&raw.as_payload())?;
+        let msg = msg.C2SInner.ok_or(anyhow!("Empty message!"))?;
+
+        Ok(Some(ReceivedMsg {
+            length: raw.as_payload().len(),
+            msg,
+        }))
+    }
 }
 
 #[derive(Debug)]
 struct SharedState {
     /// `host -> members (incl. host)`
-    pub lobbies: HashMap<String, Vec<String>>,
+    pub lobbies: HashMap<ClientHandlerId, Vec<ClientHandlerId>>,
+    pub usernames: HashMap<ClientHandlerId, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -128,10 +142,13 @@ impl Deref for SharedStateHandle {
     }
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ClientHandlerId(pub Uuid);
+
 async fn accept_client(
+    client_handler_id: ClientHandlerId,
     mut ws_stream: WebSocketStream<TcpStream>,
     database: DatabaseHandle,
-    username_tx: oneshot::Sender<String>,
     shared_state: SharedStateHandle,
 ) -> Result<(), anyhow::Error> {
     // Handshake
@@ -164,257 +181,317 @@ async fn accept_client(
             .send_proto(S2CInner::LoginResponse(primary::LoginResponse::new()))
             .await?;
 
-        username_tx.send(user.0.clone()).unwrap();
+        let mut state = shared_state.lock().unwrap();
+        state.usernames.insert(client_handler_id, user.0.clone());
 
         user
     };
 
     println!("[{user}] Client finished login");
 
-    // Loop
-    while let Ok(ReceivedMsg {
-        length: message_length,
-        msg,
-    }) = ws_stream.next_proto().await
-    {
-        println!(
-            "[{user}] received message ({}): {}",
-            bytesize::ByteSize::b(message_length as u64),
+    let mut loop_interval = tokio::time::interval(Duration::from_micros(500));
+
+    let mut curr_lobby_host: Option<ClientHandlerId> = None;
+    let mut curr_lobby_members_state: Vec<ClientHandlerId> = Vec::new();
+
+    loop {
+        // Not strictly necessary since we yield whenever there's no message received
+        tokio::task::yield_now().await;
+
+        // Update client's lobby list
+        if let Some(host) = curr_lobby_host {
+            // Due to a compiler bug, calling `drop(mutex_guard)` does not let you use an `await` afterwards.
+            // So, we need to hoist the message we're sending outside of the `lock()` like this (which is super ugly):
+            let mut update_lobby_members_msg = None;
             {
-                let mut msg_str = format!("{msg:?}");
-                msg_str.truncate(msg_str.floor_char_boundary(100));
-                msg_str
-            },
-        );
-        match msg {
-            C2SInner::GetStratList(_msg) => {
-                let Some(user_info) = database.get::<UsersKeyspace>(&user).await? else {
-                    continue;
-                };
+                let state = shared_state.lock().unwrap();
+                if let Some(new_lobby_members_state) = state.lobbies.get(&host) {
+                    if *new_lobby_members_state != curr_lobby_members_state {
+                        curr_lobby_members_state = new_lobby_members_state.clone();
+                        let members = curr_lobby_members_state
+                            .iter()
+                            .map(|id| state.usernames[id].clone())
+                            .collect();
 
-                let mut strats_response: Vec<primary::GetStratListResponseEntry> = vec![];
-
-                for strat_id in &user_info.strats {
-                    let strat_info = database.get::<StratsKeyspace>(strat_id).await?.unwrap();
-
-                    strats_response.push(primary::GetStratListResponseEntry {
-                        strat_id: strat_id.to_string(),
-                        strat_name: strat_info.strat_name,
-                        map: strat_info.map,
-                        special_fields: SpecialFields::new(),
-                    });
-                }
-
-                ws_stream
-                    .send_proto(S2CInner::GetStratListResponse(
-                        primary::GetStratListResponse {
-                            strats: strats_response,
+                        update_lobby_members_msg =
+                            Some(S2CInner::UpdateLobbyMembers(primary::UpdateLobbyMembers {
+                                members,
+                                special_fields: SpecialFields::new(),
+                            }));
+                    }
+                } else {
+                    curr_lobby_host = None;
+                    curr_lobby_members_state = Vec::new();
+                    update_lobby_members_msg =
+                        Some(S2CInner::UpdateLobbyMembers(primary::UpdateLobbyMembers {
+                            members: vec![],
                             special_fields: SpecialFields::new(),
-                        },
-                    ))
-                    .await?;
+                        }));
+                };
             }
-            C2SInner::CreateEmptyStrat(msg) => {
-                let strat_id = StratId::new();
 
-                let mut user_info = database.get::<UsersKeyspace>(&user).await?.unwrap();
-                user_info.strats.push(strat_id.clone());
-                database.insert::<UsersKeyspace>(&user, &user_info).await?;
-
-                database
-                    .insert::<StratsKeyspace>(
-                        &strat_id,
-                        &StratEntry {
-                            strat_name: "unnamed".into(),
-                            map: msg.map,
-                            phases: vec![],
-                            teammates: vec![Teammate::default(); 5],
-                        },
-                    )
-                    .await?;
-
-                ws_stream
-                    .send_proto(S2CInner::CreateEmptyStratResponse(
-                        primary::CreateEmptyStratResponse {
-                            strat_id: strat_id.to_string(),
-                            special_fields: SpecialFields::new(),
-                        },
-                    ))
-                    .await?;
+            if let Some(msg) = update_lobby_members_msg {
+                ws_stream.send_proto(msg).await?;
             }
-            C2SInner::GetMapMetadata(msg) => {
-                let map_id = MapId::from_map_name(&msg.map).unwrap();
-                let MapMetadata { name: _, floors } = *map_id.metadata();
+        };
 
-                ws_stream
-                    .send_proto(S2CInner::GetMapMetadataResponse(
-                        primary::GetMapMetadataResponse {
-                            floors: floors.iter().map(|&s| String::from(s)).collect(),
-                            special_fields: SpecialFields::new(),
-                        },
-                    ))
-                    .await?;
-            }
-            C2SInner::GetStratInfo(msg) => {
-                println!("Get the info: strat={}", msg.strat_id);
-                let strat_id = StratId(Uuid::try_parse(&msg.strat_id)?);
-
-                let Some(strat) = database.get::<StratsKeyspace>(&strat_id).await? else {
-                    continue;
-                };
-
-                let state = primary::StratState {
-                    strat_name: strat.strat_name,
-                    phases: strat
-                        .phases
-                        .into_iter()
-                        .map(|phase| primary::StratPhase {
-                            phase_name: phase.phase_name,
-                            floors: phase
-                                .floors
-                                .into_iter()
-                                .map(|floor| primary::StratFloor {
-                                    drawPaths: floor
-                                        .draw_paths
-                                        .into_iter()
-                                        .map(|(id, path)| (id, path.to_proto()))
-                                        .collect(),
-                                    arrows: floor
-                                        .arrows
-                                        .into_iter()
-                                        .map(|(id, arrow)| (id, arrow.to_proto()))
-                                        .collect(),
-                                    icons: floor
-                                        .icons
-                                        .into_iter()
-                                        .map(|(id, icon)| (id, icon.to_proto()))
-                                        .collect(),
-
-                                    special_fields: SpecialFields::new(),
-                                })
-                                .collect(),
-                            special_fields: SpecialFields::new(),
-                        })
-                        .collect(),
-                    teammates: strat
-                        .teammates
-                        .into_iter()
-                        .map(|teammate| primary::Teammate {
-                            operator: teammate.operator,
-                            color: MessageField::some(teammate.color.to_proto()),
-                            util: teammate.util,
-                            special_fields: SpecialFields::new(),
-                        })
-                        .collect(),
-                    special_fields: SpecialFields::new(),
-                };
-
-                ws_stream
-                    .send_proto(S2CInner::GetStratInfoResponse(
-                        primary::GetStratInfoResponse {
-                            state: protobuf::MessageField(Some(Box::new(state))),
-                            special_fields: SpecialFields::new(),
-                        },
-                    ))
-                    .await?;
-            }
-            C2SInner::SaveStrat(msg) => {
-                let strat_id = StratId(Uuid::try_parse(&msg.strat_id).context(format!(
-                    "{}: {}",
-                    line!(),
-                    msg.strat_id
-                ))?);
-                let Some(state) = msg.state.into_option() else {
-                    continue;
-                };
-
-                let Some(mut strat) = database.get::<StratsKeyspace>(&strat_id).await? else {
-                    continue;
-                };
-
-                strat = StratEntry {
-                    strat_name: state.strat_name,
-                    map: strat.map,
-                    teammates: state
-                        .teammates
-                        .into_iter()
-                        .map(|teammate| Teammate {
-                            operator: teammate.operator,
-                            color: Color::from_proto(teammate.color.unwrap()),
-                            util: teammate.util,
-                        })
-                        .collect(),
-                    phases: state
-                        .phases
-                        .into_iter()
-                        .map(|phase| StratPhase {
-                            phase_name: phase.phase_name,
-                            floors: phase
-                                .floors
-                                .into_iter()
-                                .map(|f| PhaseFloor {
-                                    draw_paths: f
-                                        .drawPaths
-                                        .into_iter()
-                                        .map(|(id, path)| (id, DrawPath::from_proto(path)))
-                                        .collect(),
-                                    arrows: f
-                                        .arrows
-                                        .into_iter()
-                                        .map(|(id, path)| (id, Arrow::from_proto(path)))
-                                        .collect(),
-                                    icons: f
-                                        .icons
-                                        .into_iter()
-                                        .map(|(id, path)| (id, PlacedIcon::from_proto(path)))
-                                        .collect(),
-                                })
-                                .collect(),
-                        })
-                        .collect(),
-                };
-                database.insert::<StratsKeyspace>(&strat_id, &strat).await?;
-            }
-            C2SInner::CreateLobby(_msg) => {
+        // Handle message
+        if let Some(ReceivedMsg {
+            length: message_length,
+            msg,
+        }) = ws_stream
+            .try_next_proto()
+            .context("Failed to receive message")?
+        {
+            println!(
+                "[{user}] received message ({}): {}",
+                bytesize::ByteSize::b(message_length as u64),
                 {
-                    let mut state = shared_state.lock().unwrap();
-                    state.lobbies.insert(user.0.clone(), vec![user.0.clone()]);
+                    let mut msg_str = format!("{msg:?}");
+                    msg_str.truncate(msg_str.floor_char_boundary(100));
+                    msg_str
+                },
+            );
+            match msg {
+                C2SInner::GetStratList(_msg) => {
+                    let Some(user_info) = database.get::<UsersKeyspace>(&user).await? else {
+                        continue;
+                    };
+
+                    let mut strats_response: Vec<primary::GetStratListResponseEntry> = vec![];
+
+                    for strat_id in &user_info.strats {
+                        let strat_info = database.get::<StratsKeyspace>(strat_id).await?.unwrap();
+
+                        strats_response.push(primary::GetStratListResponseEntry {
+                            strat_id: strat_id.to_string(),
+                            strat_name: strat_info.strat_name,
+                            map: strat_info.map,
+                            special_fields: SpecialFields::new(),
+                        });
+                    }
+
+                    ws_stream
+                        .send_proto(S2CInner::GetStratListResponse(
+                            primary::GetStratListResponse {
+                                strats: strats_response,
+                                special_fields: SpecialFields::new(),
+                            },
+                        ))
+                        .await?;
                 }
+                C2SInner::CreateEmptyStrat(msg) => {
+                    let strat_id = StratId::new();
 
-                ws_stream
-                    .send_proto(S2CInner::CreateLobbyResponse(
-                        primary::CreateLobbyResponse {
-                            special_fields: SpecialFields::new(),
-                        },
-                    ))
-                    .await?;
-                ws_stream
-                    .send_proto(S2CInner::UpdateLobbyMembers(primary::UpdateLobbyMembers {
-                        members: vec![user.0.clone()],
+                    let mut user_info = database.get::<UsersKeyspace>(&user).await?.unwrap();
+                    user_info.strats.push(strat_id.clone());
+                    database.insert::<UsersKeyspace>(&user, &user_info).await?;
+
+                    database
+                        .insert::<StratsKeyspace>(
+                            &strat_id,
+                            &StratEntry {
+                                strat_name: "unnamed".into(),
+                                map: msg.map,
+                                phases: vec![],
+                                teammates: vec![Teammate::default(); 5],
+                            },
+                        )
+                        .await?;
+
+                    ws_stream
+                        .send_proto(S2CInner::CreateEmptyStratResponse(
+                            primary::CreateEmptyStratResponse {
+                                strat_id: strat_id.to_string(),
+                                special_fields: SpecialFields::new(),
+                            },
+                        ))
+                        .await?;
+                }
+                C2SInner::GetMapMetadata(msg) => {
+                    let map_id = MapId::from_map_name(&msg.map).unwrap();
+                    let MapMetadata { name: _, floors } = *map_id.metadata();
+
+                    ws_stream
+                        .send_proto(S2CInner::GetMapMetadataResponse(
+                            primary::GetMapMetadataResponse {
+                                floors: floors.iter().map(|&s| String::from(s)).collect(),
+                                special_fields: SpecialFields::new(),
+                            },
+                        ))
+                        .await?;
+                }
+                C2SInner::GetStratInfo(msg) => {
+                    println!("Get the info: strat={}", msg.strat_id);
+                    let strat_id = StratId(Uuid::try_parse(&msg.strat_id)?);
+
+                    let Some(strat) = database.get::<StratsKeyspace>(&strat_id).await? else {
+                        continue;
+                    };
+
+                    let state = primary::StratState {
+                        strat_name: strat.strat_name,
+                        phases: strat
+                            .phases
+                            .into_iter()
+                            .map(|phase| primary::StratPhase {
+                                phase_name: phase.phase_name,
+                                floors: phase
+                                    .floors
+                                    .into_iter()
+                                    .map(|floor| primary::StratFloor {
+                                        drawPaths: floor
+                                            .draw_paths
+                                            .into_iter()
+                                            .map(|(id, path)| (id, path.to_proto()))
+                                            .collect(),
+                                        arrows: floor
+                                            .arrows
+                                            .into_iter()
+                                            .map(|(id, arrow)| (id, arrow.to_proto()))
+                                            .collect(),
+                                        icons: floor
+                                            .icons
+                                            .into_iter()
+                                            .map(|(id, icon)| (id, icon.to_proto()))
+                                            .collect(),
+
+                                        special_fields: SpecialFields::new(),
+                                    })
+                                    .collect(),
+                                special_fields: SpecialFields::new(),
+                            })
+                            .collect(),
+                        teammates: strat
+                            .teammates
+                            .into_iter()
+                            .map(|teammate| primary::Teammate {
+                                operator: teammate.operator,
+                                color: MessageField::some(teammate.color.to_proto()),
+                                util: teammate.util,
+                                special_fields: SpecialFields::new(),
+                            })
+                            .collect(),
                         special_fields: SpecialFields::new(),
-                    }))
-                    .await?;
-            }
-            C2SInner::GetLobbyList(_msg) => {
-                let hosts = {
-                    let state = shared_state.lock().unwrap();
-                    state.lobbies.keys().cloned().collect()
-                };
+                    };
 
-                ws_stream
-                    .send_proto(S2CInner::GetLobbyListResponse(
-                        primary::GetLobbyListResponse {
-                            hosts,
+                    ws_stream
+                        .send_proto(S2CInner::GetStratInfoResponse(
+                            primary::GetStratInfoResponse {
+                                state: protobuf::MessageField(Some(Box::new(state))),
+                                special_fields: SpecialFields::new(),
+                            },
+                        ))
+                        .await?;
+                }
+                C2SInner::SaveStrat(msg) => {
+                    let strat_id = StratId(Uuid::try_parse(&msg.strat_id).context(format!(
+                        "{}: {}",
+                        line!(),
+                        msg.strat_id
+                    ))?);
+                    let Some(state) = msg.state.into_option() else {
+                        continue;
+                    };
+
+                    let Some(mut strat) = database.get::<StratsKeyspace>(&strat_id).await? else {
+                        continue;
+                    };
+
+                    strat = StratEntry {
+                        strat_name: state.strat_name,
+                        map: strat.map,
+                        teammates: state
+                            .teammates
+                            .into_iter()
+                            .map(|teammate| Teammate {
+                                operator: teammate.operator,
+                                color: Color::from_proto(teammate.color.unwrap()),
+                                util: teammate.util,
+                            })
+                            .collect(),
+                        phases: state
+                            .phases
+                            .into_iter()
+                            .map(|phase| StratPhase {
+                                phase_name: phase.phase_name,
+                                floors: phase
+                                    .floors
+                                    .into_iter()
+                                    .map(|f| PhaseFloor {
+                                        draw_paths: f
+                                            .drawPaths
+                                            .into_iter()
+                                            .map(|(id, path)| (id, DrawPath::from_proto(path)))
+                                            .collect(),
+                                        arrows: f
+                                            .arrows
+                                            .into_iter()
+                                            .map(|(id, path)| (id, Arrow::from_proto(path)))
+                                            .collect(),
+                                        icons: f
+                                            .icons
+                                            .into_iter()
+                                            .map(|(id, path)| (id, PlacedIcon::from_proto(path)))
+                                            .collect(),
+                                    })
+                                    .collect(),
+                            })
+                            .collect(),
+                    };
+                    database.insert::<StratsKeyspace>(&strat_id, &strat).await?;
+                }
+                C2SInner::CreateLobby(_msg) => {
+                    {
+                        let mut state = shared_state.lock().unwrap();
+                        state
+                            .lobbies
+                            .insert(client_handler_id, vec![client_handler_id]);
+                    }
+
+                    ws_stream
+                        .send_proto(S2CInner::CreateLobbyResponse(
+                            primary::CreateLobbyResponse {
+                                special_fields: SpecialFields::new(),
+                            },
+                        ))
+                        .await?;
+                    ws_stream
+                        .send_proto(S2CInner::UpdateLobbyMembers(primary::UpdateLobbyMembers {
+                            members: vec![user.0.clone()],
                             special_fields: SpecialFields::new(),
-                        },
-                    ))
-                    .await?;
+                        }))
+                        .await?;
+                }
+                C2SInner::GetLobbyList(_msg) => {
+                    let hosts = {
+                        let state = shared_state.lock().unwrap();
+                        state
+                            .lobbies
+                            .keys()
+                            .map(|cl_id| state.usernames[cl_id].clone())
+                            .collect()
+                    };
+
+                    ws_stream
+                        .send_proto(S2CInner::GetLobbyListResponse(
+                            primary::GetLobbyListResponse {
+                                hosts,
+                                special_fields: SpecialFields::new(),
+                            },
+                        ))
+                        .await?;
+                }
+                C2SInner::Hello(_) | C2SInner::LoginRequest(_) => {
+                    println!("Unexpected message: `{msg:?}`",)
+                }
             }
-            msg => println!("Unexpected message: `{msg:?}`",),
+        } else {
+            // Sleep when there's no messages received
+            // This way, we can handle bursts of messages without hogging the resources
+            loop_interval.tick().await;
         }
     }
-
-    Ok(())
 }
 
 #[tokio::main]
@@ -424,6 +501,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let shared_state = SharedState {
         lobbies: HashMap::new(),
+        usernames: HashMap::new(),
     };
     let shared_state = SharedStateHandle(Arc::new(Mutex::new(shared_state)));
     println!("Started!");
@@ -437,16 +515,17 @@ async fn main() -> Result<(), anyhow::Error> {
             let db_clone = database.clone();
             let state_clone = shared_state.clone();
             tokio::spawn(async move {
-                let (user_tx, user_rx) = oneshot::channel();
-                let res = accept_client(ws_stream, db_clone, user_tx, state_clone.clone()).await;
-                let user = user_rx.await?;
+                let client_handler_id = ClientHandlerId(Uuid::new_v4());
+                let res =
+                    accept_client(client_handler_id, ws_stream, db_clone, state_clone.clone())
+                        .await;
 
                 if let Ok(mut state) = state_clone.lock() {
-                    state.lobbies.remove(&user);
+                    state.lobbies.remove(&client_handler_id);
+                    state.usernames.remove(&client_handler_id);
                 }
-                drop(state_clone);
 
-                println!("Client Exited: (user: {user}) {res:?}");
+                println!("Client Exited: (user: {client_handler_id:?}) {res:?}");
                 res
             });
         }

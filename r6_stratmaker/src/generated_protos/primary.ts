@@ -1682,8 +1682,8 @@ export const StratPhase: MessageFns<StratPhase> = {
       phaseName: isSet(object.phaseName)
         ? globalThis.String(object.phaseName)
         : isSet(object.phase_name)
-        ? globalThis.String(object.phase_name)
-        : "",
+          ? globalThis.String(object.phase_name)
+          : "",
       floors: globalThis.Array.isArray(object?.floors) ? object.floors.map((e: any) => StratFloor.fromJSON(e)) : [],
     };
   },
@@ -1883,8 +1883,8 @@ export const StratState: MessageFns<StratState> = {
       stratName: isSet(object.stratName)
         ? globalThis.String(object.stratName)
         : isSet(object.strat_name)
-        ? globalThis.String(object.strat_name)
-        : "",
+          ? globalThis.String(object.strat_name)
+          : "",
       phases: globalThis.Array.isArray(object?.phases) ? object.phases.map((e: any) => StratPhase.fromJSON(e)) : [],
       teammates: globalThis.Array.isArray(object?.teammates)
         ? object.teammates.map((e: any) => Teammate.fromJSON(e))
@@ -2265,13 +2265,13 @@ export const GetStratListResponseEntry: MessageFns<GetStratListResponseEntry> = 
       stratId: isSet(object.stratId)
         ? globalThis.String(object.stratId)
         : isSet(object.strat_id)
-        ? globalThis.String(object.strat_id)
-        : "",
+          ? globalThis.String(object.strat_id)
+          : "",
       stratName: isSet(object.stratName)
         ? globalThis.String(object.stratName)
         : isSet(object.strat_name)
-        ? globalThis.String(object.strat_name)
-        : "",
+          ? globalThis.String(object.strat_name)
+          : "",
       map: isSet(object.map) ? globalThis.String(object.map) : "",
     };
   },
@@ -2490,8 +2490,8 @@ export const CreateEmptyStratResponse: MessageFns<CreateEmptyStratResponse> = {
       stratId: isSet(object.stratId)
         ? globalThis.String(object.stratId)
         : isSet(object.strat_id)
-        ? globalThis.String(object.strat_id)
-        : "",
+          ? globalThis.String(object.strat_id)
+          : "",
     };
   },
 
@@ -2699,8 +2699,8 @@ export const GetStratInfo: MessageFns<GetStratInfo> = {
       stratId: isSet(object.stratId)
         ? globalThis.String(object.stratId)
         : isSet(object.strat_id)
-        ? globalThis.String(object.strat_id)
-        : "",
+          ? globalThis.String(object.strat_id)
+          : "",
     };
   },
 
@@ -2852,8 +2852,8 @@ export const SaveStrat: MessageFns<SaveStrat> = {
       stratId: isSet(object.stratId)
         ? globalThis.String(object.stratId)
         : isSet(object.strat_id)
-        ? globalThis.String(object.strat_id)
-        : "",
+          ? globalThis.String(object.strat_id)
+          : "",
       state: isSet(object.state) ? StratState.fromJSON(object.state) : undefined,
     };
   },

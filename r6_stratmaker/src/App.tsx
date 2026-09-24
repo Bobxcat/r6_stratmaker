@@ -3,10 +3,11 @@
 // Credit to Ubisoft for map blueprints
 
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import WebSocket from "@tauri-apps/plugin-websocket";
+import { isTauri, invoke } from "@tauri-apps/api/core";
+// import WebSocket from "@tauri-apps/plugin-websocket";
+import { WS as WebSocket } from "./websocket.ts";
 import "./App.css";
-import * as protos from "./generated_protos/primary"
+import * as protos from "./generated_protos/primary.ts"
 import * as uuid from 'uuid';
 import * as js_toml from 'js-toml';
 
@@ -23,6 +24,11 @@ class Uuid {
 
 interface DrawElement {
   asEnum(): AnyDrawElementData;
+
+  asDrawPath(): DrawPath | undefined;
+  asArrow(): Arrow | undefined;
+  asIcon(): IconPlacement | undefined;
+
   isHovered(mousePos: Vec2): boolean;
   boundingBox(): Aabb;
   drawToCtx(ctx: CanvasRenderingContext2D): void;
@@ -82,6 +88,7 @@ enum Page {
   LoginPage,
   StratListPage,
   LobbyListPage,
+  InLobbySelectStratPage,
   CreateNewStratMapSelectionPage,
   StratEditorPage,
 }
@@ -247,6 +254,15 @@ class DrawPath implements DrawElement {
   asEnum(): AnyDrawElementData {
     return { kind: DrawElementKind.DrawPath, data: this };
   }
+  asDrawPath(): DrawPath | undefined {
+    return this;
+  }
+  asArrow(): Arrow | undefined {
+    return undefined;
+  }
+  asIcon(): IconPlacement | undefined {
+    return undefined;
+  }
   isHovered(mousePos: Vec2): boolean {
     for (let i = 0; i < this.points.length - 1; i += 1) {
       const distToLine = mousePos.distanceToLine(this.points[i], this.points[i + 1], false, false).distance;
@@ -292,6 +308,15 @@ class Arrow implements DrawElement {
 
   asEnum(): AnyDrawElementData {
     return { kind: DrawElementKind.Arrow, data: this };
+  }
+  asDrawPath(): DrawPath | undefined {
+    return undefined;
+  }
+  asArrow(): Arrow | undefined {
+    return this;
+  }
+  asIcon(): IconPlacement | undefined {
+    return undefined;
   }
   isHovered(mousePos: Vec2): boolean {
     return mousePos.distanceToLine(this.start, this.end, false, false).distance < 5;
@@ -377,6 +402,15 @@ class IconPlacement implements DrawElement {
 
   asEnum(): AnyDrawElementData {
     return { kind: DrawElementKind.Icon, data: this };
+  }
+  asDrawPath(): DrawPath | undefined {
+    return undefined;
+  }
+  asArrow(): Arrow | undefined {
+    return undefined;
+  }
+  asIcon(): IconPlacement | undefined {
+    return this;
   }
   isHovered(mousePos: Vec2): boolean {
     return this.boundingBox().containsPoint(mousePos);
@@ -484,26 +518,6 @@ class StratEditingPhaseFloor {
   arrows: Map<Uuid, Arrow> = new Map();
   icons: Map<Uuid, IconPlacement> = new Map();
 
-  pushDrawElement(drawElement: DrawElement): Uuid {
-    const id = new Uuid();
-    const elem = drawElement.asEnum();
-    switch (elem.kind) {
-      case DrawElementKind.DrawPath: {
-        this.drawPaths.set(id, elem.data);
-        break;
-      }
-      case DrawElementKind.Arrow: {
-        this.arrows.set(id, elem.data);
-        break;
-      }
-      case DrawElementKind.Icon: {
-        this.icons.set(id, elem.data);
-        break;
-      }
-    }
-    return id;
-  }
-
   allDrawElements(): Uuid[] {
     return Array.from(this.drawPaths.keys())
       .concat(Array.from(this.arrows.keys()))
@@ -543,6 +557,12 @@ class StratEditingPhaseFloor {
         break;
       }
     }
+  }
+
+  pushDrawElement(drawElement: DrawElement): Uuid {
+    const id = new Uuid();
+    this.setDrawElement(id, drawElement);
+    return id;
   }
 
   deleteDrawElement(id: Uuid): boolean {
@@ -658,7 +678,7 @@ class StratEditingState {
   mapImgHeight: number = 900;
   selectedFloor: number = 0;
 
-  phases: StratEditingPhase[] = [];
+  private phases: StratEditingPhase[] = [];
   selectedPhase: number = 0;
 
   reset() {
@@ -672,8 +692,94 @@ class StratEditingState {
     this.phases.push(phase);
   }
 
-  currentPhaseFloor(): StratEditingPhaseFloor | null {
-    return this.phases[this.selectedPhase]?.floors[this.selectedFloor];
+  pushDrawElement(phase: number, floor: number, drawElement: DrawElement): Uuid {
+    const id = new Uuid();
+    this.setDrawElement(phase, floor, id, drawElement);
+    return id;
+  }
+
+  /** Use with care! Does not notify server of changes */
+  getDrawElementRef(phase: number, floor: number, id: Uuid): DrawElement | undefined {
+    const phaseFloor = this.phases[phase]?.floors[floor];
+    if (!phaseFloor) {
+      return undefined;
+    }
+
+    return phaseFloor.getDrawElement(id);
+  }
+
+  setDrawElement(phase: number, floor: number, id: Uuid, drawElement: DrawElement) {
+    const phaseFloor = this.phases[phase]?.floors[floor];
+    if (!phaseFloor) {
+      return;
+    }
+
+    if (this.mode == StratEditingMode.Lobby) {
+      //
+      console.log("TODO: Notify server of draw element changes");
+    }
+
+    phaseFloor.setDrawElement(id, drawElement);
+  }
+
+  setPhaseName(phase: number, newName: string) {
+    const phaseRef = this.phases[phase];
+    if (!phaseRef) {
+      return;
+    }
+
+    if (this.mode == StratEditingMode.Lobby) {
+      console.log("TODO: Notify server of phase name changes");
+    }
+
+    phaseRef.phaseName = newName;
+  }
+
+  deleteDrawElement(phase: number, floor: number, id: Uuid) {
+    const phaseFloor = this.phases[phase]?.floors[floor];
+    if (!phaseFloor) {
+      return;
+    }
+
+    if (phaseFloor.deleteDrawElement(id)) {
+      if (this.mode == StratEditingMode.Lobby) {
+        //
+        console.log("TODO: Notify server of draw element changes");
+      }
+      //
+    }
+  }
+
+  pushPreviousDrawAction(phase: number, action: DrawAction) {
+    const phaseRef = this.phases[phase];
+    if (!phaseRef) {
+      return;
+    }
+
+    phaseRef.pushPreviousDrawAction(action);
+  }
+
+  getPreviousDrawActionsRef(phase: number): DrawAction[] {
+    const phaseRef = this.phases[phase];
+    if (!phaseRef) {
+      return [];
+    }
+
+    return phaseRef.getPreviousDrawActionsRef();
+  }
+
+  /** Use with care! Does not activate any side effects, just gives a raw reference to the phases*/
+  getPhasesRef(): StratEditingPhase[] {
+    return this.phases;
+  }
+
+  /** Use with care! */
+  setPhasesRaw(phases: StratEditingPhase[]) {
+    this.phases = phases;
+  }
+
+  currentPhaseFloorIsValid(): boolean {
+    return this.selectedPhase < this.phases.length && this.selectedFloor < this.phases[this.selectedPhase].floors.length;
   }
 }
 
@@ -864,7 +970,11 @@ function App() {
   }, []);
 
   function println(msg: string) {
-    invoke("console_println", { msg })
+    if (isTauri()) {
+      invoke("console_println", { msg })
+    } else {
+      console.log(msg);
+    }
   }
 
   function getFloorImgPath(map: string, floor: string): string {
@@ -911,7 +1021,7 @@ function App() {
       stratEditingState.teamLoadouts = state.teammates.map((teammate) => {
         return { operator: teammate.operator, color: colorFromProto(teammate.color!), util: teammate.util }
       });
-      stratEditingState.phases = state.phases.map((protoPhase) => {
+      stratEditingState.setPhasesRaw(state.phases.map((protoPhase) => {
         let phase = new StratEditingPhase();
         phase.phaseName = protoPhase.phaseName;
         phase.floors = protoPhase.floors.map((protoFloor) => {
@@ -979,7 +1089,7 @@ function App() {
           return floor;
         });
         return phase;
-      });
+      }));
       setCurrPage(Page.StratEditorPage);
       updateStratEditingStateDisplay();
       redrawFreeDrawCanvasQueued = true;
@@ -991,7 +1101,7 @@ function App() {
     } else if (msg.saveStratResponse) {
       // Yay!
     } else if (msg.createLobbyResponse) {
-      // Yay!
+      setCurrPage(Page.InLobbySelectStratPage)
     } else {
       println(`  Unhandled message!!!`);
     }
@@ -1061,21 +1171,26 @@ function App() {
       websocket = ws;
 
       ws.addListener((msg) => {
-        switch (msg.type) {
-          case "Text":
-            println("Network messages must be in binary!");
-            break;
-          case "Binary":
-            handleNetworkMessage(Uint8Array.from(msg.data));
-            break;
-          case "Ping":
-            break;
-          case "Pong":
-            break;
-          case "Close":
-            break;
-        }
-      });
+        handleNetworkMessage(msg);
+      })
+
+      // ws
+      // ws.addListener((msg) => {
+      //   switch (msg.type) {
+      //     case "Text":
+      //       println("Network messages must be in binary!");
+      //       break;
+      //     case "Binary":
+      //       handleNetworkMessage(Uint8Array.from(msg.data));
+      //       break;
+      //     case "Ping":
+      //       break;
+      //     case "Pong":
+      //       break;
+      //     case "Close":
+      //       break;
+      //   }
+      // });
       await sendNetworkMessage(protos.Client2Server.create({ hello: {} }));
 
       setConnectionState(ConnectionState.Connected);
@@ -1169,6 +1284,18 @@ function App() {
         <button key={host}>{host}</button>
       </>)}
     </>);
+  }
+
+  function inLobbySelectStratPageComponent() {
+    return (<>
+      <div className="col" style={{ border: "2px solid #0f0f0f", borderRadius: "8px" }}>
+        <p>Lobby members: </p>
+        {stratEditingStateDisplay.lobbyMembers.map((memberName) => <>
+          <p>{memberName}</p>
+        </>)}
+      </div>
+      <p>Select a strat!</p>
+    </>)
   }
 
   function createNewStratMapSelectionPageComponent() {
@@ -1286,7 +1413,7 @@ function App() {
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const phase = stratEditingState.phases[stratEditingState.selectedPhase];
+      const phase = stratEditingState.getPhasesRef()[stratEditingState.selectedPhase];
 
       if (!phase) {
         return;
@@ -1342,14 +1469,16 @@ function App() {
           redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
         }
 
-        const phaseFloor = stratEditingState.currentPhaseFloor();
+        const phase = stratEditingState.selectedPhase;
+        const floor = stratEditingState.selectedFloor;
+        if (!stratEditingState.currentPhaseFloorIsValid()) {
+          return;
+        }
+
         const placementPreviewCanvas = document.getElementById(placementPreviewCanvasId)! as HTMLCanvasElement;
         const placementPreviewCtx = placementPreviewCanvas.getContext("2d")!;
         placementPreviewCtx.clearRect(0, 0, placementPreviewCanvas.width, placementPreviewCanvas.height);
 
-        if (!phaseFloor) {
-          return;
-        }
 
         if (stratEditingState.prevSelectedDrawTool != stratEditingState.selectedDrawTool) {
           // A common pattern is:
@@ -1381,14 +1510,23 @@ function App() {
             const toolState = stratEditingState.toolStates.freeDraw;
 
             if (inputCanvasState.mouseClicked) {
-              if (toolState.currentPath && phaseFloor.drawPaths.get(toolState.currentPath)?.color == stratEditingState.selectedDrawColor) {
+              const prevColor = stratEditingState.getDrawElementRef(phase, floor, toolState.currentPath!)?.asDrawPath()?.color;
+
+              if (toolState.currentPath && prevColor! == stratEditingState.selectedDrawColor) {
                 // Continue existing path
-                phaseFloor.drawPaths.get(toolState.currentPath)?.points.push(inputCanvasState.mousePos.clone());
+                if (inputCanvasState.mousePos.distance(inputCanvasState.prevMousePos) > 0.001) {
+                  const elem = stratEditingState.getDrawElementRef(phase, floor, toolState.currentPath!)?.asDrawPath();
+                  if (elem) {
+                    elem.points.push(inputCanvasState.mousePos.clone());
+                    // TODO: only call `setDrawElement` on *finishing* a path
+                    stratEditingState.setDrawElement(phase, floor, toolState.currentPath!, elem);
+                  }
+                }
               } else {
                 // Create new path
                 var path = new DrawPath([inputCanvasState.mousePos.clone()], stratEditingState.selectedDrawColor);
-                const id = phaseFloor.pushDrawElement(path);
-                stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({
+                const id = stratEditingState.pushDrawElement(phase, floor, path);
+                stratEditingState.pushPreviousDrawAction(stratEditingState.selectedPhase, {
                   kind: DrawActionKind.PlaceDrawElement,
                   data: path,
                   floor: stratEditingState.selectedFloor,
@@ -1414,8 +1552,8 @@ function App() {
               if (toolState.arrowHasBeenStarted) {
                 const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone(), stratEditingState.selectedDrawColor);
                 drawElementToCanvas(stratEditorFreeDrawCanvasId, arrow, stratEditingState.selectedFloor);
-                const id = phaseFloor.pushDrawElement(arrow);
-                stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({
+                const id = stratEditingState.pushDrawElement(phase, floor, arrow);
+                stratEditingState.pushPreviousDrawAction(stratEditingState.selectedPhase, {
                   kind: DrawActionKind.PlaceDrawElement,
                   data: arrow,
                   floor: stratEditingState.selectedFloor,
@@ -1469,8 +1607,8 @@ function App() {
 
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
               drawElementToCanvas(stratEditorFreeDrawCanvasId, icon, stratEditingState.selectedFloor);
-              const id = phaseFloor.pushDrawElement(icon);
-              stratEditingState.phases[stratEditingState.selectedPhase].pushPreviousDrawAction({
+              const id = stratEditingState.pushDrawElement(phase, floor, icon);
+              stratEditingState.pushPreviousDrawAction(stratEditingState.selectedPhase, {
                 kind: DrawActionKind.PlaceDrawElement,
                 data: icon,
                 floor: stratEditingState.selectedFloor,
@@ -1483,7 +1621,8 @@ function App() {
           }
           case DrawTool.SelectAndEdit: {
             const toolState = stratEditingState.toolStates.selectAndEdit;
-            const phase = stratEditingState.phases[stratEditingState.selectedPhase];
+            const phase = stratEditingState.selectedPhase;
+            const phaseRawRef = stratEditingState.getPhasesRef()[stratEditingState.selectedPhase];
 
             const prevSelected = toolState.selected?.clone();
 
@@ -1491,21 +1630,21 @@ function App() {
             if (toolState.selected) {
               switch (toolState.selected.kind) {
                 case DrawElementKind.DrawPath: {
-                  const path = phase.floors[toolState.selected.floor].drawPaths.get(toolState.selected.id);
+                  const path = phaseRawRef.floors[toolState.selected.floor].drawPaths.get(toolState.selected.id);
                   if (!path) {
                     toolState.selected = undefined;
                   }
                   break;
                 }
                 case DrawElementKind.Arrow: {
-                  const arrow = phase.floors[toolState.selected.floor].arrows.get(toolState.selected.id);
+                  const arrow = phaseRawRef.floors[toolState.selected.floor].arrows.get(toolState.selected.id);
                   if (!arrow) {
                     toolState.selected = undefined;
                   }
                   break;
                 }
                 case DrawElementKind.Icon: {
-                  const icon = phase.floors[toolState.selected.floor].icons.get(toolState.selected.id);
+                  const icon = phaseRawRef.floors[toolState.selected.floor].icons.get(toolState.selected.id);
                   if (!icon) {
                     toolState.selected = undefined;
                   }
@@ -1517,8 +1656,8 @@ function App() {
             // Update selection
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
               function pickFloor(floor: number): AnyDrawElementId | undefined {
-                for (const id of phase.floors[floor].allDrawElements().slice().reverse()) {
-                  const item = phase.floors[floor].getDrawElement(id);
+                for (const id of phaseRawRef.floors[floor].allDrawElements().slice().reverse()) {
+                  const item = phaseRawRef.floors[floor].getDrawElement(id);
                   if (item?.isHovered(inputCanvasState.mousePos)) {
                     return new AnyDrawElementId(item.asEnum().kind, floor, id);
                   }
@@ -1559,9 +1698,9 @@ function App() {
               }
             })();
 
-            if (toolState.selected && toolState.selected.get(phase)) {
+            if (toolState.selected && toolState.selected.get(phaseRawRef)) {
               // Draw border around selection
-              const boundingBox: Aabb = toolState.selected.get(phase)!.boundingBox();
+              const boundingBox: Aabb = toolState.selected.get(phaseRawRef)!.boundingBox();
 
               placementPreviewCtx.beginPath();
 
@@ -1584,7 +1723,7 @@ function App() {
                 toolState.isDragging = true;
               } else if (!inputCanvasState.mouseClicked) {
                 if (toolState.isDragging && !toolState.currDragTotalDelta.approxEq(new Vec2(0, 0))) {
-                  phase.pushPreviousDrawAction({
+                  stratEditingState.pushPreviousDrawAction(phase, {
                     kind: DrawActionKind.MoveDrawElement,
                     delta: toolState.currDragTotalDelta.clone(),
                     floor: toolState.selected.floor,
@@ -1599,8 +1738,10 @@ function App() {
               // Drag the selection
               if (toolState.isDragging) {
                 const posDelta = inputCanvasState.mousePos.sub(inputCanvasState.prevMousePos);
-                toolState.selected.get(phase)!.mapPoints((pt) => pt.add(posDelta));
+                const drawElem = toolState.selected.get(phaseRawRef)!;
+                drawElem.mapPoints((pt) => pt.add(posDelta));
                 toolState.currDragTotalDelta = toolState.currDragTotalDelta.add(posDelta);
+                stratEditingState.setDrawElement(phase, toolState.selected.floor, toolState.selected.id, drawElem);
 
                 // Somehow this isn't *that* bad for performance??
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
@@ -1608,13 +1749,13 @@ function App() {
 
               // Delete the selection
               if (toolState.isDeleteQueued) {
-                phase.pushPreviousDrawAction({
+                stratEditingState.pushPreviousDrawAction(phase, {
                   kind: DrawActionKind.DeleteDrawElement,
-                  data: toolState.selected.get(phase)!,
+                  data: toolState.selected.get(phaseRawRef)!,
                   floor: toolState.selected.floor,
                   id: toolState.selected.id,
                 });
-                phase.floors[toolState.selected.floor].deleteDrawElement(toolState.selected.id);
+                stratEditingState.deleteDrawElement(phase, toolState.selected.floor, toolState.selected.id);
                 toolState.isDeleteQueued = false;
                 toolState.selected = undefined;
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
@@ -1635,7 +1776,7 @@ function App() {
       requestAnimationFrame(onUpdate);
 
       function triggerUndo() {
-        const previousDrawActionsList = stratEditingState.phases[stratEditingState.selectedPhase]?.getPreviousDrawActionsRef();
+        const previousDrawActionsList = stratEditingState.getPreviousDrawActionsRef(stratEditingState.selectedPhase);
         if (!previousDrawActionsList) {
           return;
         }
@@ -1646,27 +1787,34 @@ function App() {
 
         const previousDrawAction = previousDrawActionsList.pop()!;
 
-        const phase = stratEditingState.phases[stratEditingState.selectedPhase];
-        phase.redoStack.push(previousDrawAction);
+        const phase = stratEditingState.selectedPhase;
+        const floor = previousDrawAction.floor;
+        const id = previousDrawAction.id;
+
+        // Update redo stack
+        {
+          const phase = stratEditingState.getPhasesRef()[stratEditingState.selectedPhase];
+          phase.redoStack.push(previousDrawAction);
+        }
 
         switch (previousDrawAction.kind) {
           case DrawActionKind.PlaceDrawElement: {
-            const phaseFloor = phase?.floors[previousDrawAction.floor];
-            phaseFloor.deleteDrawElement(previousDrawAction.id);
+            stratEditingState.deleteDrawElement(phase, floor, id);
             if (previousDrawAction.data.asEnum().kind = DrawElementKind.DrawPath) {
               stratEditingState.toolStates.freeDraw.currentPath = undefined;
             }
             break;
           }
           case DrawActionKind.DeleteDrawElement: {
-            const phaseFloor = phase?.floors[previousDrawAction.floor];
-            phaseFloor.setDrawElement(previousDrawAction.id, previousDrawAction.data);
+            stratEditingState.setDrawElement(phase, floor, id, previousDrawAction.data);
             break;
           }
           case DrawActionKind.MoveDrawElement: {
-            const phaseFloor = phase?.floors[previousDrawAction.floor];
-            const elem = phaseFloor.getDrawElement(previousDrawAction.id);
-            elem?.mapPoints((pt) => pt.sub(previousDrawAction.delta));
+            const elem = stratEditingState.getDrawElementRef(phase, floor, id);
+            if (elem) {
+              elem.mapPoints((pt) => pt.sub(previousDrawAction.delta));
+              stratEditingState.setDrawElement(phase, floor, id, elem);
+            }
             break;
           }
         }
@@ -1674,35 +1822,39 @@ function App() {
       }
 
       function triggerRedo() {
-        const phase = stratEditingState.phases[stratEditingState.selectedPhase];
-        if (!phase) {
-          return;
-        }
+        const phase = stratEditingState.selectedPhase;
 
-        const redoAction = phase.redoStack.pop();
-        if (!redoAction) {
-          return;
+        let redoAction = undefined;
+        {
+          const phaseRef = stratEditingState.getPhasesRef()[phase];
+          if (!phaseRef) {
+            return;
+          }
+          redoAction = phaseRef.redoStack.pop();
+          if (!redoAction) {
+            return;
+          }
+          phaseRef.getPreviousDrawActionsRef().push(redoAction);
         }
-        phase.getPreviousDrawActionsRef().push(redoAction);
 
         switch (redoAction.kind) {
           case DrawActionKind.PlaceDrawElement: {
-            const phaseFloor = phase.floors[redoAction.floor];
-            phaseFloor.setDrawElement(redoAction.id, redoAction.data);
+            stratEditingState.setDrawElement(phase, redoAction.floor, redoAction.id, redoAction.data);
             drawElementToCanvas(stratEditorFreeDrawCanvasId, redoAction.data, stratEditingState.selectedFloor);
             break;
           }
           case DrawActionKind.DeleteDrawElement: {
-            const phaseFloor = phase.floors[redoAction.floor];
-            phaseFloor.deleteDrawElement(redoAction.id);
+            stratEditingState.deleteDrawElement(phase, redoAction.floor, redoAction.id);
             redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
             break;
           }
           case DrawActionKind.MoveDrawElement: {
-            const phaseFloor = phase.floors[redoAction.floor];
-            const elem = phaseFloor.getDrawElement(redoAction.id);
-            elem?.mapPoints((pt) => pt.add(redoAction.delta));
-            redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+            const elem = stratEditingState.getDrawElementRef(phase, redoAction.floor, redoAction.id);
+            if (elem) {
+              elem.mapPoints((pt) => pt.add(redoAction.delta));
+              stratEditingState.setDrawElement(phase, redoAction.floor, redoAction.id, elem);
+              redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+            }
             break;
           }
         }
@@ -1744,7 +1896,7 @@ function App() {
     }
 
     async function saveProgress() {
-      const phases: protos.StratPhase[] = stratEditingState.phases.map((phase) => {
+      const phases: protos.StratPhase[] = stratEditingState.getPhasesRef().map((phase) => {
         return {
           phaseName: phase.phaseName, floors: phase.floors.map((floor) => {
             return {
@@ -1846,14 +1998,14 @@ function App() {
         <div className="row">
           <p>Current Phase: </p>
           <input
-            value={stratEditingStateDisplay.phases[stratEditingState.selectedPhase]?.phaseName}
+            value={stratEditingStateDisplay.getPhasesRef()[stratEditingState.selectedPhase]?.phaseName}
             onChange={(e) => {
-              stratEditingState.phases[stratEditingState.selectedPhase].phaseName = e.target.value;
+              stratEditingState.setPhaseName(stratEditingState.selectedPhase, e.target.value);
               updateStratEditingStateDisplay();
             }} />
         </div>
         <div className="row">
-          {stratEditingStateDisplay.phases.map((phase, i) =>
+          {stratEditingStateDisplay.getPhasesRef().map((phase, i) =>
             <button key={i} onClick={(e) => {
               e.preventDefault();
               stratEditingState.selectedPhase = i;
@@ -2029,6 +2181,8 @@ function App() {
         return stratListPageComponent()
       case Page.LobbyListPage:
         return lobbyListPageComponent()
+      case Page.InLobbySelectStratPage:
+        return inLobbySelectStratPageComponent()
       case Page.CreateNewStratMapSelectionPage:
         return createNewStratMapSelectionPageComponent()
       case Page.StratEditorPage:

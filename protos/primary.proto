@@ -144,7 +144,11 @@ message CreateLobbyResponse {}
 message GetLobbyList {}
 
 message GetLobbyListResponse {
-    repeated string hosts = 1;
+    message LobbyInfo {
+        string id = 1;
+        string hostName = 2;
+    }
+    repeated LobbyInfo lobbies = 1;
 }
 
 // UpdateLobbyMembers
@@ -154,7 +158,7 @@ message UpdateLobbyMembers {
 
 // JoinLobby
 message JoinLobby {
-    string host = 1;
+    string id = 1;
 }
 
 message JoinLobbyResponse {}

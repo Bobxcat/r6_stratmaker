@@ -878,6 +878,11 @@ class OperatorsIndex {
 }
 let operatorsIndexNonReactive = new OperatorsIndex();
 
+interface LobbyListInfo {
+  lobbyName: string;
+  lobbyId: string;
+}
+
 let websocket: WebSocket | null = null;
 
 function arrayChunk<T>(array: T[], chunkSize: number): T[][] {
@@ -940,7 +945,7 @@ function App() {
 
   const [stratList, setStratList] = useState<Array<StratMetadata>>([]);
 
-  const [lobbyList, setLobbyList] = useState<Array<string>>([]);
+  const [lobbyList, setLobbyList] = useState<Array<LobbyListInfo>>([]);
 
   const [operatorsIndexReactive, setOperatorsIndexReactive] = useState<OperatorsIndex>(new OperatorsIndex());
 
@@ -1094,7 +1099,9 @@ function App() {
       updateStratEditingStateDisplay();
       redrawFreeDrawCanvasQueued = true;
     } else if (msg.getLobbyListResponse) {
-      setLobbyList(msg.getLobbyListResponse.hosts);
+      setLobbyList(msg.getLobbyListResponse.lobbies.map((lobby) => {
+        return { lobbyName: lobby.hostName, lobbyId: lobby.id };
+      }));
     } else if (msg.joinLobbyResponse) {
       setCurrPage(Page.InLobbySelectStratPage);
     } else if (msg.updateLobbyMembers) {
@@ -1282,10 +1289,10 @@ function App() {
       <button onClick={(_) => {
         sendNetworkMessage(protos.Client2Server.create({ createLobby: {} }));
       }}>Create Lobby</button>
-      {lobbyList.map((host) => <>
-        <button key={host} onClick={(_) => {
-          sendNetworkMessage(protos.Client2Server.create({ joinLobby: { host } }))
-        }}>{host}</button>
+      {lobbyList.map((lobby) => <>
+        <button key={lobby.lobbyId} onClick={(_) => {
+          sendNetworkMessage(protos.Client2Server.create({ joinLobby: { id: lobby.lobbyId } }))
+        }}>{lobby.lobbyName}</button>
       </>)}
     </>);
   }

@@ -181,7 +181,12 @@ export interface GetLobbyList {
 }
 
 export interface GetLobbyListResponse {
-  hosts: string[];
+  lobbies: GetLobbyListResponse_LobbyInfo[];
+}
+
+export interface GetLobbyListResponse_LobbyInfo {
+  id: string;
+  hostName: string;
 }
 
 /** UpdateLobbyMembers */
@@ -191,7 +196,7 @@ export interface UpdateLobbyMembers {
 
 /** JoinLobby */
 export interface JoinLobby {
-  host: string;
+  id: string;
 }
 
 export interface JoinLobbyResponse {
@@ -3101,13 +3106,13 @@ export const GetLobbyList: MessageFns<GetLobbyList> = {
 };
 
 function createBaseGetLobbyListResponse(): GetLobbyListResponse {
-  return { hosts: [] };
+  return { lobbies: [] };
 }
 
 export const GetLobbyListResponse: MessageFns<GetLobbyListResponse> = {
   encode(message: GetLobbyListResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    for (const v of message.hosts) {
-      writer.uint32(10).string(v!);
+    for (const v of message.lobbies) {
+      GetLobbyListResponse_LobbyInfo.encode(v!, writer.uint32(10).fork()).join();
     }
     return writer;
   },
@@ -3130,7 +3135,7 @@ export const GetLobbyListResponse: MessageFns<GetLobbyListResponse> = {
               break;
             }
 
-            message.hosts.push(reader.string());
+            message.lobbies.push(GetLobbyListResponse_LobbyInfo.decode(reader, reader.uint32()));
             continue;
           }
         }
@@ -3146,13 +3151,17 @@ export const GetLobbyListResponse: MessageFns<GetLobbyListResponse> = {
   },
 
   fromJSON(object: any): GetLobbyListResponse {
-    return { hosts: globalThis.Array.isArray(object?.hosts) ? object.hosts.map((e: any) => globalThis.String(e)) : [] };
+    return {
+      lobbies: globalThis.Array.isArray(object?.lobbies)
+        ? object.lobbies.map((e: any) => GetLobbyListResponse_LobbyInfo.fromJSON(e))
+        : [],
+    };
   },
 
   toJSON(message: GetLobbyListResponse): unknown {
     const obj: any = {};
-    if (message.hosts?.length) {
-      obj.hosts = message.hosts;
+    if (message.lobbies?.length) {
+      obj.lobbies = message.lobbies.map((e) => GetLobbyListResponse_LobbyInfo.toJSON(e));
     }
     return obj;
   },
@@ -3162,7 +3171,94 @@ export const GetLobbyListResponse: MessageFns<GetLobbyListResponse> = {
   },
   fromPartial<I extends Exact<DeepPartial<GetLobbyListResponse>, I>>(object: I): GetLobbyListResponse {
     const message = createBaseGetLobbyListResponse();
-    message.hosts = object.hosts?.map((e) => e) || [];
+    message.lobbies = object.lobbies?.map((e) => GetLobbyListResponse_LobbyInfo.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseGetLobbyListResponse_LobbyInfo(): GetLobbyListResponse_LobbyInfo {
+  return { id: "", hostName: "" };
+}
+
+export const GetLobbyListResponse_LobbyInfo: MessageFns<GetLobbyListResponse_LobbyInfo> = {
+  encode(message: GetLobbyListResponse_LobbyInfo, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    if (message.hostName !== "") {
+      writer.uint32(18).string(message.hostName);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GetLobbyListResponse_LobbyInfo {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseGetLobbyListResponse_LobbyInfo();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.id = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.hostName = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): GetLobbyListResponse_LobbyInfo {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      hostName: isSet(object.hostName) ? globalThis.String(object.hostName) : "",
+    };
+  },
+
+  toJSON(message: GetLobbyListResponse_LobbyInfo): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.hostName !== "") {
+      obj.hostName = message.hostName;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetLobbyListResponse_LobbyInfo>, I>>(base?: I): GetLobbyListResponse_LobbyInfo {
+    return GetLobbyListResponse_LobbyInfo.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetLobbyListResponse_LobbyInfo>, I>>(
+    object: I,
+  ): GetLobbyListResponse_LobbyInfo {
+    const message = createBaseGetLobbyListResponse_LobbyInfo();
+    message.id = object.id ?? "";
+    message.hostName = object.hostName ?? "";
     return message;
   },
 };
@@ -3237,13 +3333,13 @@ export const UpdateLobbyMembers: MessageFns<UpdateLobbyMembers> = {
 };
 
 function createBaseJoinLobby(): JoinLobby {
-  return { host: "" };
+  return { id: "" };
 }
 
 export const JoinLobby: MessageFns<JoinLobby> = {
   encode(message: JoinLobby, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.host !== "") {
-      writer.uint32(10).string(message.host);
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
     }
     return writer;
   },
@@ -3266,7 +3362,7 @@ export const JoinLobby: MessageFns<JoinLobby> = {
               break;
             }
 
-            message.host = reader.string();
+            message.id = reader.string();
             continue;
           }
         }
@@ -3282,13 +3378,13 @@ export const JoinLobby: MessageFns<JoinLobby> = {
   },
 
   fromJSON(object: any): JoinLobby {
-    return { host: isSet(object.host) ? globalThis.String(object.host) : "" };
+    return { id: isSet(object.id) ? globalThis.String(object.id) : "" };
   },
 
   toJSON(message: JoinLobby): unknown {
     const obj: any = {};
-    if (message.host !== "") {
-      obj.host = message.host;
+    if (message.id !== "") {
+      obj.id = message.id;
     }
     return obj;
   },
@@ -3298,7 +3394,7 @@ export const JoinLobby: MessageFns<JoinLobby> = {
   },
   fromPartial<I extends Exact<DeepPartial<JoinLobby>, I>>(object: I): JoinLobby {
     const message = createBaseJoinLobby();
-    message.host = object.host ?? "";
+    message.id = object.id ?? "";
     return message;
   },
 };

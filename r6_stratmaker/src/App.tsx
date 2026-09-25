@@ -1095,6 +1095,8 @@ function App() {
       redrawFreeDrawCanvasQueued = true;
     } else if (msg.getLobbyListResponse) {
       setLobbyList(msg.getLobbyListResponse.hosts);
+    } else if (msg.joinLobbyResponse) {
+      setCurrPage(Page.InLobbySelectStratPage);
     } else if (msg.updateLobbyMembers) {
       stratEditingState.lobbyMembers = msg.updateLobbyMembers.members;
       updateStratEditingStateDisplay();
@@ -1281,7 +1283,9 @@ function App() {
         sendNetworkMessage(protos.Client2Server.create({ createLobby: {} }));
       }}>Create Lobby</button>
       {lobbyList.map((host) => <>
-        <button key={host}>{host}</button>
+        <button key={host} onClick={(_) => {
+          sendNetworkMessage(protos.Client2Server.create({ joinLobby: { host } }))
+        }}>{host}</button>
       </>)}
     </>);
   }

@@ -152,7 +152,12 @@ message UpdateLobbyMembers {
     repeated string members = 1;
 }
 
-// 
+// JoinLobby
+message JoinLobby {
+    string host = 1;
+}
+
+message JoinLobbyResponse {}
 
 message Client2Server {
     oneof C2SInner {
@@ -166,6 +171,7 @@ message Client2Server {
 
         CreateLobby createLobby = 101;
         GetLobbyList getLobbyList = 102;
+        JoinLobby joinLobby = 104;
     }
 }
 
@@ -182,5 +188,6 @@ message Server2Client {
         CreateLobbyResponse createLobbyResponse = 101;
         GetLobbyListResponse getLobbyListResponse = 102;
         UpdateLobbyMembers updateLobbyMembers = 103;
+        JoinLobbyResponse joinLobbyResponse = 104;
     }
 }

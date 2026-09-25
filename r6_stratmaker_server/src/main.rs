@@ -456,12 +456,8 @@ async fn accept_client(
                             },
                         ))
                         .await?;
-                    ws_stream
-                        .send_proto(S2CInner::UpdateLobbyMembers(primary::UpdateLobbyMembers {
-                            members: vec![user.0.clone()],
-                            special_fields: SpecialFields::new(),
-                        }))
-                        .await?;
+                    curr_lobby_host = Some(client_handler_id);
+                    curr_lobby_members_state = vec![];
                 }
                 C2SInner::GetLobbyList(_msg) => {
                     let hosts = {
@@ -481,6 +477,32 @@ async fn accept_client(
                             },
                         ))
                         .await?;
+                }
+                C2SInner::JoinLobby(msg) => {
+                    let mut success = false;
+                    {
+                        let mut state = shared_state.lock().unwrap();
+                        let host = state
+                            .usernames
+                            .iter()
+                            .find_map(|(id, user)| (user == &msg.host).then_some(*id));
+                        if let Some((host, lobby)) =
+                            host.and_then(|host| Some((host, state.lobbies.get_mut(&host)?)))
+                        {
+                            success = true;
+                            lobby.push(client_handler_id);
+
+                            curr_lobby_host = Some(host);
+                            curr_lobby_members_state = vec![];
+                        }
+                    }
+                    if success {
+                        ws_stream
+                            .send_proto(S2CInner::JoinLobbyResponse(primary::JoinLobbyResponse {
+                                special_fields: SpecialFields::new(),
+                            }))
+                            .await?;
+                    }
                 }
                 C2SInner::Hello(_) | C2SInner::LoginRequest(_) => {
                     println!("Unexpected message: `{msg:?}`",)

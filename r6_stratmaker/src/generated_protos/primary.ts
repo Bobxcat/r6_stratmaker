@@ -189,6 +189,14 @@ export interface UpdateLobbyMembers {
   members: string[];
 }
 
+/** JoinLobby */
+export interface JoinLobby {
+  host: string;
+}
+
+export interface JoinLobbyResponse {
+}
+
 export interface Client2Server {
   hello?: Hello | undefined;
   loginRequest?: LoginRequest | undefined;
@@ -199,6 +207,7 @@ export interface Client2Server {
   saveStrat?: SaveStrat | undefined;
   createLobby?: CreateLobby | undefined;
   getLobbyList?: GetLobbyList | undefined;
+  joinLobby?: JoinLobby | undefined;
 }
 
 export interface Server2Client {
@@ -212,6 +221,7 @@ export interface Server2Client {
   createLobbyResponse?: CreateLobbyResponse | undefined;
   getLobbyListResponse?: GetLobbyListResponse | undefined;
   updateLobbyMembers?: UpdateLobbyMembers | undefined;
+  joinLobbyResponse?: JoinLobbyResponse | undefined;
 }
 
 function createBasePoint(): Point {
@@ -1682,8 +1692,8 @@ export const StratPhase: MessageFns<StratPhase> = {
       phaseName: isSet(object.phaseName)
         ? globalThis.String(object.phaseName)
         : isSet(object.phase_name)
-          ? globalThis.String(object.phase_name)
-          : "",
+        ? globalThis.String(object.phase_name)
+        : "",
       floors: globalThis.Array.isArray(object?.floors) ? object.floors.map((e: any) => StratFloor.fromJSON(e)) : [],
     };
   },
@@ -1883,8 +1893,8 @@ export const StratState: MessageFns<StratState> = {
       stratName: isSet(object.stratName)
         ? globalThis.String(object.stratName)
         : isSet(object.strat_name)
-          ? globalThis.String(object.strat_name)
-          : "",
+        ? globalThis.String(object.strat_name)
+        : "",
       phases: globalThis.Array.isArray(object?.phases) ? object.phases.map((e: any) => StratPhase.fromJSON(e)) : [],
       teammates: globalThis.Array.isArray(object?.teammates)
         ? object.teammates.map((e: any) => Teammate.fromJSON(e))
@@ -2265,13 +2275,13 @@ export const GetStratListResponseEntry: MessageFns<GetStratListResponseEntry> = 
       stratId: isSet(object.stratId)
         ? globalThis.String(object.stratId)
         : isSet(object.strat_id)
-          ? globalThis.String(object.strat_id)
-          : "",
+        ? globalThis.String(object.strat_id)
+        : "",
       stratName: isSet(object.stratName)
         ? globalThis.String(object.stratName)
         : isSet(object.strat_name)
-          ? globalThis.String(object.strat_name)
-          : "",
+        ? globalThis.String(object.strat_name)
+        : "",
       map: isSet(object.map) ? globalThis.String(object.map) : "",
     };
   },
@@ -2490,8 +2500,8 @@ export const CreateEmptyStratResponse: MessageFns<CreateEmptyStratResponse> = {
       stratId: isSet(object.stratId)
         ? globalThis.String(object.stratId)
         : isSet(object.strat_id)
-          ? globalThis.String(object.strat_id)
-          : "",
+        ? globalThis.String(object.strat_id)
+        : "",
     };
   },
 
@@ -2699,8 +2709,8 @@ export const GetStratInfo: MessageFns<GetStratInfo> = {
       stratId: isSet(object.stratId)
         ? globalThis.String(object.stratId)
         : isSet(object.strat_id)
-          ? globalThis.String(object.strat_id)
-          : "",
+        ? globalThis.String(object.strat_id)
+        : "",
     };
   },
 
@@ -2852,8 +2862,8 @@ export const SaveStrat: MessageFns<SaveStrat> = {
       stratId: isSet(object.stratId)
         ? globalThis.String(object.stratId)
         : isSet(object.strat_id)
-          ? globalThis.String(object.strat_id)
-          : "",
+        ? globalThis.String(object.strat_id)
+        : "",
       state: isSet(object.state) ? StratState.fromJSON(object.state) : undefined,
     };
   },
@@ -3226,6 +3236,125 @@ export const UpdateLobbyMembers: MessageFns<UpdateLobbyMembers> = {
   },
 };
 
+function createBaseJoinLobby(): JoinLobby {
+  return { host: "" };
+}
+
+export const JoinLobby: MessageFns<JoinLobby> = {
+  encode(message: JoinLobby, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.host !== "") {
+      writer.uint32(10).string(message.host);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): JoinLobby {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseJoinLobby();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.host = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): JoinLobby {
+    return { host: isSet(object.host) ? globalThis.String(object.host) : "" };
+  },
+
+  toJSON(message: JoinLobby): unknown {
+    const obj: any = {};
+    if (message.host !== "") {
+      obj.host = message.host;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<JoinLobby>, I>>(base?: I): JoinLobby {
+    return JoinLobby.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<JoinLobby>, I>>(object: I): JoinLobby {
+    const message = createBaseJoinLobby();
+    message.host = object.host ?? "";
+    return message;
+  },
+};
+
+function createBaseJoinLobbyResponse(): JoinLobbyResponse {
+  return {};
+}
+
+export const JoinLobbyResponse: MessageFns<JoinLobbyResponse> = {
+  encode(_: JoinLobbyResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): JoinLobbyResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseJoinLobbyResponse();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(_: any): JoinLobbyResponse {
+    return {};
+  },
+
+  toJSON(_: JoinLobbyResponse): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<JoinLobbyResponse>, I>>(base?: I): JoinLobbyResponse {
+    return JoinLobbyResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<JoinLobbyResponse>, I>>(_: I): JoinLobbyResponse {
+    const message = createBaseJoinLobbyResponse();
+    return message;
+  },
+};
+
 function createBaseClient2Server(): Client2Server {
   return {
     hello: undefined,
@@ -3237,6 +3366,7 @@ function createBaseClient2Server(): Client2Server {
     saveStrat: undefined,
     createLobby: undefined,
     getLobbyList: undefined,
+    joinLobby: undefined,
   };
 }
 
@@ -3268,6 +3398,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.getLobbyList !== undefined) {
       GetLobbyList.encode(message.getLobbyList, writer.uint32(818).fork()).join();
+    }
+    if (message.joinLobby !== undefined) {
+      JoinLobby.encode(message.joinLobby, writer.uint32(834).fork()).join();
     }
     return writer;
   },
@@ -3357,6 +3490,14 @@ export const Client2Server: MessageFns<Client2Server> = {
             message.getLobbyList = GetLobbyList.decode(reader, reader.uint32());
             continue;
           }
+          case 104: {
+            if (tag !== 834) {
+              break;
+            }
+
+            message.joinLobby = JoinLobby.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -3380,6 +3521,7 @@ export const Client2Server: MessageFns<Client2Server> = {
       saveStrat: isSet(object.saveStrat) ? SaveStrat.fromJSON(object.saveStrat) : undefined,
       createLobby: isSet(object.createLobby) ? CreateLobby.fromJSON(object.createLobby) : undefined,
       getLobbyList: isSet(object.getLobbyList) ? GetLobbyList.fromJSON(object.getLobbyList) : undefined,
+      joinLobby: isSet(object.joinLobby) ? JoinLobby.fromJSON(object.joinLobby) : undefined,
     };
   },
 
@@ -3411,6 +3553,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.getLobbyList !== undefined) {
       obj.getLobbyList = GetLobbyList.toJSON(message.getLobbyList);
+    }
+    if (message.joinLobby !== undefined) {
+      obj.joinLobby = JoinLobby.toJSON(message.joinLobby);
     }
     return obj;
   },
@@ -3445,6 +3590,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     message.getLobbyList = (object.getLobbyList !== undefined && object.getLobbyList !== null)
       ? GetLobbyList.fromPartial(object.getLobbyList)
       : undefined;
+    message.joinLobby = (object.joinLobby !== undefined && object.joinLobby !== null)
+      ? JoinLobby.fromPartial(object.joinLobby)
+      : undefined;
     return message;
   },
 };
@@ -3461,6 +3609,7 @@ function createBaseServer2Client(): Server2Client {
     createLobbyResponse: undefined,
     getLobbyListResponse: undefined,
     updateLobbyMembers: undefined,
+    joinLobbyResponse: undefined,
   };
 }
 
@@ -3495,6 +3644,9 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.updateLobbyMembers !== undefined) {
       UpdateLobbyMembers.encode(message.updateLobbyMembers, writer.uint32(826).fork()).join();
+    }
+    if (message.joinLobbyResponse !== undefined) {
+      JoinLobbyResponse.encode(message.joinLobbyResponse, writer.uint32(834).fork()).join();
     }
     return writer;
   },
@@ -3592,6 +3744,14 @@ export const Server2Client: MessageFns<Server2Client> = {
             message.updateLobbyMembers = UpdateLobbyMembers.decode(reader, reader.uint32());
             continue;
           }
+          case 104: {
+            if (tag !== 834) {
+              break;
+            }
+
+            message.joinLobbyResponse = JoinLobbyResponse.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -3632,6 +3792,9 @@ export const Server2Client: MessageFns<Server2Client> = {
       updateLobbyMembers: isSet(object.updateLobbyMembers)
         ? UpdateLobbyMembers.fromJSON(object.updateLobbyMembers)
         : undefined,
+      joinLobbyResponse: isSet(object.joinLobbyResponse)
+        ? JoinLobbyResponse.fromJSON(object.joinLobbyResponse)
+        : undefined,
     };
   },
 
@@ -3666,6 +3829,9 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.updateLobbyMembers !== undefined) {
       obj.updateLobbyMembers = UpdateLobbyMembers.toJSON(message.updateLobbyMembers);
+    }
+    if (message.joinLobbyResponse !== undefined) {
+      obj.joinLobbyResponse = JoinLobbyResponse.toJSON(message.joinLobbyResponse);
     }
     return obj;
   },
@@ -3706,6 +3872,9 @@ export const Server2Client: MessageFns<Server2Client> = {
       : undefined;
     message.updateLobbyMembers = (object.updateLobbyMembers !== undefined && object.updateLobbyMembers !== null)
       ? UpdateLobbyMembers.fromPartial(object.updateLobbyMembers)
+      : undefined;
+    message.joinLobbyResponse = (object.joinLobbyResponse !== undefined && object.joinLobbyResponse !== null)
+      ? JoinLobbyResponse.fromPartial(object.joinLobbyResponse)
       : undefined;
     return message;
   },

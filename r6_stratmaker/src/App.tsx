@@ -373,6 +373,15 @@ class StratMetadata {
   }
 }
 
+class LobbyStratMetadata {
+  author: string;
+  strat: StratMetadata;
+  constructor(author: string, strat: StratMetadata) {
+    this.author = author;
+    this.strat = strat;
+  }
+}
+
 enum IconKind {
   TeamOperator,
   TeamAbility,
@@ -946,6 +955,7 @@ function App() {
   const [stratList, setStratList] = useState<Array<StratMetadata>>([]);
 
   const [lobbyList, setLobbyList] = useState<Array<LobbyListInfo>>([]);
+  const [lobbyStratList, setLobbyStratList] = useState<Array<LobbyStratMetadata>>([]);
 
   const [operatorsIndexReactive, setOperatorsIndexReactive] = useState<OperatorsIndex>(new OperatorsIndex());
 
@@ -1107,6 +1117,21 @@ function App() {
     } else if (msg.updateLobbyMembers) {
       stratEditingState.lobbyMembers = msg.updateLobbyMembers.members;
       updateStratEditingStateDisplay();
+    } else if (msg.updateLobbyStratList) {
+      setLobbyStratList(msg.updateLobbyStratList.strats.map((strat) =>
+        new LobbyStratMetadata(
+          strat.authorName,
+          new StratMetadata(strat.stratId, strat.stratName, strat.map)
+        )
+      ));
+    } else if (msg.lobbySetCurrentStrat) {
+      stratEditingState.stratId = msg.lobbySetCurrentStrat.stratId;
+      stratEditingState.map = msg.lobbySetCurrentStrat.map;
+      stratEditingState.mode = StratEditingMode.Lobby;
+      updateStratEditingStateDisplay();
+
+      await sendNetworkMessage(protos.Client2Server.create({ getStratInfo: { stratId: msg.lobbySetCurrentStrat.stratId } }));
+      await sendNetworkMessage(protos.Client2Server.create({ getMapMetadata: { map: msg.lobbySetCurrentStrat.map } }));
     } else if (msg.saveStratResponse) {
       // Yay!
     } else if (msg.createLobbyResponse) {
@@ -1264,6 +1289,7 @@ function App() {
         sendNetworkMessage(protos.Client2Server.create({ getLobbyList: {} }));
         setCurrPage(Page.LobbyListPage);
       }} style={{ width: "fit-content" }}>Join Lobby</button>
+
       <p>List of strats!</p>
       <button onClick={(_) => {
         setCurrPage(Page.CreateNewStratMapSelectionPage);
@@ -1298,6 +1324,10 @@ function App() {
   }
 
   function inLobbySelectStratPageComponent() {
+    async function loadStrat(strat: LobbyStratMetadata) {
+      await sendNetworkMessage(protos.Client2Server.create({ lobbyLoadStrat: { stratId: strat.strat.uuid } }));
+    }
+
     return (<>
       <div className="col" style={{ border: "2px solid #0f0f0f", borderRadius: "8px" }}>
         <p>Lobby members: </p>
@@ -1306,6 +1336,16 @@ function App() {
         </>)}
       </div>
       <p>Select a strat!</p>
+      {lobbyStratList.map((strat) => <>
+        <div key={strat.strat.uuid} className="strat-list-strat-container">
+          <p>{strat.author}</p>
+          <p>{strat.strat.strat_name}</p>
+          <p>{strat.strat.map}</p>
+          <button onClick={(_) => {
+            loadStrat(strat);
+          }}>Load</button>
+        </div>
+      </>)}
     </>)
   }
 
@@ -1422,9 +1462,13 @@ function App() {
       const canvas = document.getElementById(canvasId)! as HTMLCanvasElement;
       const ctx = canvas.getContext("2d")!;
 
+      console.log(canvas);
+      console.log(ctx);
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const phase = stratEditingState.getPhasesRef()[stratEditingState.selectedPhase];
+      console.log(phase);
 
       if (!phase) {
         return;
@@ -1478,6 +1522,12 @@ function App() {
         if (document.getElementById(stratEditorFreeDrawCanvasId) && redrawFreeDrawCanvasQueued) {
           redrawFreeDrawCanvasQueued = false;
           redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+          // FIXME: For some reason, a client in a lobby that initiates loading a strat will fail to
+          // redraw the canvas when `redrawFreeDrawCanvas` is called immediately, while the others will succeed.
+          // For this reason, we need to trigger a second redraw with a slight delay
+          setTimeout(() => {
+            redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+          }, 50);
         }
 
         const phase = stratEditingState.selectedPhase;

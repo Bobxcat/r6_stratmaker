@@ -52,7 +52,6 @@ export class WS {
             });
         } else {
             this.backendWeb!.addEventListener("message", (ev) => {
-                console.log(ev.data);
                 let data = ev.data as Blob;
                 data.bytes().then(cb);
             })

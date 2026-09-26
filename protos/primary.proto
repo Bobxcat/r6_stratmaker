@@ -25,13 +25,13 @@ message Arrow {
 
 message Icon {
     message TeamOperator {
-        uint32 teammateIdx = 1;
+        uint32 teammate_idx = 1;
     }
     message TeamAbility {
-        uint32 teammateIdx = 1;
+        uint32 teammate_idx = 1;
     }
     message TeamUtility {
-        uint32 teammateIdx = 1;
+        uint32 teammate_idx = 1;
     }
     message FreeOperator {
         string operator = 1;
@@ -45,16 +45,16 @@ message Icon {
 
     Point pos = 1;
     oneof IconKind {
-        TeamOperator teamOperator = 11;
-        TeamAbility teamAbility = 12;
-        TeamUtility teamUtility = 13;
-        FreeOperator freeOperator = 14;
-        FreeAbility freeAbility = 15;
-        FreeUtility freeUtility = 16;
+        TeamOperator team_operator = 11;
+        TeamAbility team_ability = 12;
+        TeamUtility team_utility = 13;
+        FreeOperator free_operator = 14;
+        FreeAbility free_ability = 15;
+        FreeUtility free_utility = 16;
     }
 }
 message StratFloor {
-    map<string, DrawPath> drawPaths = 1;
+    map<string, DrawPath> draw_paths = 1;
     map<string, Arrow> arrows = 2;
     map<string, Icon> icons = 3;
 }
@@ -146,7 +146,7 @@ message GetLobbyList {}
 message GetLobbyListResponse {
     message LobbyInfo {
         string id = 1;
-        string hostName = 2;
+        string host_name = 2;
     }
     repeated LobbyInfo lobbies = 1;
 }
@@ -163,35 +163,60 @@ message JoinLobby {
 
 message JoinLobbyResponse {}
 
+// UpdateLobbyStratList
+message UpdateLobbyStratList {
+    message LobbyStratInfo {
+        string strat_id = 1;
+        string strat_name = 2;
+        string author_name = 3;
+        string map = 4;
+    }
+    repeated LobbyStratInfo strats = 1; 
+}
+
+// LobbyLoadStrat
+message LobbyLoadStrat {
+    string strat_id = 1;
+}
+
+// LobbySetCurrentStrat
+message LobbySetCurrentStrat {
+    string strat_id = 1;
+    string map = 2;
+}
+
 message Client2Server {
     oneof C2SInner {
         Hello hello = 1;
-        LoginRequest loginRequest = 2;
-        GetStratList getStratList = 3;
-        CreateEmptyStrat createEmptyStrat = 4;
-        GetMapMetadata getMapMetadata = 5;
-        GetStratInfo getStratInfo = 6;
-        SaveStrat saveStrat = 7;
+        LoginRequest login_request = 2;
+        GetStratList get_strat_list = 3;
+        CreateEmptyStrat create_empty_strat = 4;
+        GetMapMetadata get_map_metadata = 5;
+        GetStratInfo get_strat_info = 6;
+        SaveStrat save_strat = 7;
 
-        CreateLobby createLobby = 101;
-        GetLobbyList getLobbyList = 102;
-        JoinLobby joinLobby = 104;
+        CreateLobby create_lobby = 101;
+        GetLobbyList get_lobby_list = 102;
+        JoinLobby join_lobby = 104;
+        LobbyLoadStrat lobby_load_strat = 106;
     }
 }
 
 message Server2Client {
     oneof S2CInner {
-        HelloResponse helloResponse = 1;
-        LoginResponse loginResponse = 2;
-        GetStratListResponse getStratListResponse = 3;
-        CreateEmptyStratResponse createEmptyStratResponse = 4;
-        GetMapMetadataResponse getMapMetadataResponse = 5;
-        GetStratInfoResponse getStratInfoResponse = 6;
-        SaveStratResponse saveStratResponse = 7;
+        HelloResponse hello_response = 1;
+        LoginResponse login_response = 2;
+        GetStratListResponse get_strat_list_response = 3;
+        CreateEmptyStratResponse create_empty_strat_response = 4;
+        GetMapMetadataResponse get_map_metadata_response = 5;
+        GetStratInfoResponse get_strat_info_response = 6;
+        SaveStratResponse save_strat_response = 7;
 
-        CreateLobbyResponse createLobbyResponse = 101;
-        GetLobbyListResponse getLobbyListResponse = 102;
-        UpdateLobbyMembers updateLobbyMembers = 103;
-        JoinLobbyResponse joinLobbyResponse = 104;
+        CreateLobbyResponse create_lobby_response = 101;
+        GetLobbyListResponse get_lobby_list_response = 102;
+        UpdateLobbyMembers update_lobby_members = 103;
+        JoinLobbyResponse join_lobby_response = 104;
+        UpdateLobbyStratList update_lobby_strat_list = 105;
+        LobbySetCurrentStrat lobby_set_current_strat = 106;
     }
 }

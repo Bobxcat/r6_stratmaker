@@ -174,17 +174,17 @@ impl ProtoConvert for PlacedIcon {
             kind: match proto.IconKind.unwrap() {
                 protos::primary::icon::IconKind::TeamOperator(team_operator) => {
                     IconKind::TeamOperator {
-                        teammate_idx: team_operator.teammateIdx,
+                        teammate_idx: team_operator.teammate_idx,
                     }
                 }
                 protos::primary::icon::IconKind::TeamAbility(team_ability) => {
                     IconKind::TeamAbility {
-                        teammate_idx: team_ability.teammateIdx,
+                        teammate_idx: team_ability.teammate_idx,
                     }
                 }
                 protos::primary::icon::IconKind::TeamUtility(team_utility) => {
                     IconKind::TeamUtility {
-                        teammate_idx: team_utility.teammateIdx,
+                        teammate_idx: team_utility.teammate_idx,
                     }
                 }
                 protos::primary::icon::IconKind::FreeOperator(free_operator) => {
@@ -213,7 +213,7 @@ impl ProtoConvert for PlacedIcon {
                 IconKind::TeamOperator { teammate_idx } => {
                     protos::primary::icon::IconKind::TeamOperator(
                         protos::primary::icon::TeamOperator {
-                            teammateIdx: teammate_idx,
+                            teammate_idx,
                             special_fields: SpecialFields::new(),
                         },
                     )
@@ -221,7 +221,7 @@ impl ProtoConvert for PlacedIcon {
                 IconKind::TeamAbility { teammate_idx } => {
                     protos::primary::icon::IconKind::TeamAbility(
                         protos::primary::icon::TeamAbility {
-                            teammateIdx: teammate_idx,
+                            teammate_idx,
                             special_fields: SpecialFields::new(),
                         },
                     )
@@ -229,7 +229,7 @@ impl ProtoConvert for PlacedIcon {
                 IconKind::TeamUtility { teammate_idx } => {
                     protos::primary::icon::IconKind::TeamUtility(
                         protos::primary::icon::TeamUtility {
-                            teammateIdx: teammate_idx,
+                            teammate_idx,
                             special_fields: SpecialFields::new(),
                         },
                     )

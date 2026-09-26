@@ -202,6 +202,29 @@ export interface JoinLobby {
 export interface JoinLobbyResponse {
 }
 
+/** UpdateLobbyStratList */
+export interface UpdateLobbyStratList {
+  strats: UpdateLobbyStratList_LobbyStratInfo[];
+}
+
+export interface UpdateLobbyStratList_LobbyStratInfo {
+  stratId: string;
+  stratName: string;
+  authorName: string;
+  map: string;
+}
+
+/** LobbyLoadStrat */
+export interface LobbyLoadStrat {
+  stratId: string;
+}
+
+/** LobbySetCurrentStrat */
+export interface LobbySetCurrentStrat {
+  stratId: string;
+  map: string;
+}
+
 export interface Client2Server {
   hello?: Hello | undefined;
   loginRequest?: LoginRequest | undefined;
@@ -213,6 +236,7 @@ export interface Client2Server {
   createLobby?: CreateLobby | undefined;
   getLobbyList?: GetLobbyList | undefined;
   joinLobby?: JoinLobby | undefined;
+  lobbyLoadStrat?: LobbyLoadStrat | undefined;
 }
 
 export interface Server2Client {
@@ -227,6 +251,8 @@ export interface Server2Client {
   getLobbyListResponse?: GetLobbyListResponse | undefined;
   updateLobbyMembers?: UpdateLobbyMembers | undefined;
   joinLobbyResponse?: JoinLobbyResponse | undefined;
+  updateLobbyStratList?: UpdateLobbyStratList | undefined;
+  lobbySetCurrentStrat?: LobbySetCurrentStrat | undefined;
 }
 
 function createBasePoint(): Point {
@@ -723,12 +749,36 @@ export const Icon: MessageFns<Icon> = {
   fromJSON(object: any): Icon {
     return {
       pos: isSet(object.pos) ? Point.fromJSON(object.pos) : undefined,
-      teamOperator: isSet(object.teamOperator) ? Icon_TeamOperator.fromJSON(object.teamOperator) : undefined,
-      teamAbility: isSet(object.teamAbility) ? Icon_TeamAbility.fromJSON(object.teamAbility) : undefined,
-      teamUtility: isSet(object.teamUtility) ? Icon_TeamUtility.fromJSON(object.teamUtility) : undefined,
-      freeOperator: isSet(object.freeOperator) ? Icon_FreeOperator.fromJSON(object.freeOperator) : undefined,
-      freeAbility: isSet(object.freeAbility) ? Icon_FreeAbility.fromJSON(object.freeAbility) : undefined,
-      freeUtility: isSet(object.freeUtility) ? Icon_FreeUtility.fromJSON(object.freeUtility) : undefined,
+      teamOperator: isSet(object.teamOperator)
+        ? Icon_TeamOperator.fromJSON(object.teamOperator)
+        : isSet(object.team_operator)
+        ? Icon_TeamOperator.fromJSON(object.team_operator)
+        : undefined,
+      teamAbility: isSet(object.teamAbility)
+        ? Icon_TeamAbility.fromJSON(object.teamAbility)
+        : isSet(object.team_ability)
+        ? Icon_TeamAbility.fromJSON(object.team_ability)
+        : undefined,
+      teamUtility: isSet(object.teamUtility)
+        ? Icon_TeamUtility.fromJSON(object.teamUtility)
+        : isSet(object.team_utility)
+        ? Icon_TeamUtility.fromJSON(object.team_utility)
+        : undefined,
+      freeOperator: isSet(object.freeOperator)
+        ? Icon_FreeOperator.fromJSON(object.freeOperator)
+        : isSet(object.free_operator)
+        ? Icon_FreeOperator.fromJSON(object.free_operator)
+        : undefined,
+      freeAbility: isSet(object.freeAbility)
+        ? Icon_FreeAbility.fromJSON(object.freeAbility)
+        : isSet(object.free_ability)
+        ? Icon_FreeAbility.fromJSON(object.free_ability)
+        : undefined,
+      freeUtility: isSet(object.freeUtility)
+        ? Icon_FreeUtility.fromJSON(object.freeUtility)
+        : isSet(object.free_utility)
+        ? Icon_FreeUtility.fromJSON(object.free_utility)
+        : undefined,
     };
   },
 
@@ -832,7 +882,13 @@ export const Icon_TeamOperator: MessageFns<Icon_TeamOperator> = {
   },
 
   fromJSON(object: any): Icon_TeamOperator {
-    return { teammateIdx: isSet(object.teammateIdx) ? globalThis.Number(object.teammateIdx) : 0 };
+    return {
+      teammateIdx: isSet(object.teammateIdx)
+        ? globalThis.Number(object.teammateIdx)
+        : isSet(object.teammate_idx)
+        ? globalThis.Number(object.teammate_idx)
+        : 0,
+    };
   },
 
   toJSON(message: Icon_TeamOperator): unknown {
@@ -899,7 +955,13 @@ export const Icon_TeamAbility: MessageFns<Icon_TeamAbility> = {
   },
 
   fromJSON(object: any): Icon_TeamAbility {
-    return { teammateIdx: isSet(object.teammateIdx) ? globalThis.Number(object.teammateIdx) : 0 };
+    return {
+      teammateIdx: isSet(object.teammateIdx)
+        ? globalThis.Number(object.teammateIdx)
+        : isSet(object.teammate_idx)
+        ? globalThis.Number(object.teammate_idx)
+        : 0,
+    };
   },
 
   toJSON(message: Icon_TeamAbility): unknown {
@@ -966,7 +1028,13 @@ export const Icon_TeamUtility: MessageFns<Icon_TeamUtility> = {
   },
 
   fromJSON(object: any): Icon_TeamUtility {
-    return { teammateIdx: isSet(object.teammateIdx) ? globalThis.Number(object.teammateIdx) : 0 };
+    return {
+      teammateIdx: isSet(object.teammateIdx)
+        ? globalThis.Number(object.teammateIdx)
+        : isSet(object.teammate_idx)
+        ? globalThis.Number(object.teammate_idx)
+        : 0,
+    };
   },
 
   toJSON(message: Icon_TeamUtility): unknown {
@@ -1268,6 +1336,19 @@ export const StratFloor: MessageFns<StratFloor> = {
     return {
       drawPaths: isObject(object.drawPaths)
         ? (globalThis.Object.entries(object.drawPaths) as [string, any][]).reduce(
+          (acc: { [key: string]: DrawPath }, [key, value]: [string, any]) => {
+            globalThis.Object.defineProperty(acc, key, {
+              value: DrawPath.fromJSON(value),
+              enumerable: true,
+              configurable: true,
+              writable: true,
+            });
+            return acc;
+          },
+          {},
+        )
+        : isObject(object.draw_paths)
+        ? (globalThis.Object.entries(object.draw_paths) as [string, any][]).reduce(
           (acc: { [key: string]: DrawPath }, [key, value]: [string, any]) => {
             globalThis.Object.defineProperty(acc, key, {
               value: DrawPath.fromJSON(value),
@@ -3235,7 +3316,11 @@ export const GetLobbyListResponse_LobbyInfo: MessageFns<GetLobbyListResponse_Lob
   fromJSON(object: any): GetLobbyListResponse_LobbyInfo {
     return {
       id: isSet(object.id) ? globalThis.String(object.id) : "",
-      hostName: isSet(object.hostName) ? globalThis.String(object.hostName) : "",
+      hostName: isSet(object.hostName)
+        ? globalThis.String(object.hostName)
+        : isSet(object.host_name)
+        ? globalThis.String(object.host_name)
+        : "",
     };
   },
 
@@ -3451,6 +3536,372 @@ export const JoinLobbyResponse: MessageFns<JoinLobbyResponse> = {
   },
 };
 
+function createBaseUpdateLobbyStratList(): UpdateLobbyStratList {
+  return { strats: [] };
+}
+
+export const UpdateLobbyStratList: MessageFns<UpdateLobbyStratList> = {
+  encode(message: UpdateLobbyStratList, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.strats) {
+      UpdateLobbyStratList_LobbyStratInfo.encode(v!, writer.uint32(10).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): UpdateLobbyStratList {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseUpdateLobbyStratList();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.strats.push(UpdateLobbyStratList_LobbyStratInfo.decode(reader, reader.uint32()));
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): UpdateLobbyStratList {
+    return {
+      strats: globalThis.Array.isArray(object?.strats)
+        ? object.strats.map((e: any) => UpdateLobbyStratList_LobbyStratInfo.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: UpdateLobbyStratList): unknown {
+    const obj: any = {};
+    if (message.strats?.length) {
+      obj.strats = message.strats.map((e) => UpdateLobbyStratList_LobbyStratInfo.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UpdateLobbyStratList>, I>>(base?: I): UpdateLobbyStratList {
+    return UpdateLobbyStratList.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UpdateLobbyStratList>, I>>(object: I): UpdateLobbyStratList {
+    const message = createBaseUpdateLobbyStratList();
+    message.strats = object.strats?.map((e) => UpdateLobbyStratList_LobbyStratInfo.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseUpdateLobbyStratList_LobbyStratInfo(): UpdateLobbyStratList_LobbyStratInfo {
+  return { stratId: "", stratName: "", authorName: "", map: "" };
+}
+
+export const UpdateLobbyStratList_LobbyStratInfo: MessageFns<UpdateLobbyStratList_LobbyStratInfo> = {
+  encode(message: UpdateLobbyStratList_LobbyStratInfo, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.stratId !== "") {
+      writer.uint32(10).string(message.stratId);
+    }
+    if (message.stratName !== "") {
+      writer.uint32(18).string(message.stratName);
+    }
+    if (message.authorName !== "") {
+      writer.uint32(26).string(message.authorName);
+    }
+    if (message.map !== "") {
+      writer.uint32(34).string(message.map);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): UpdateLobbyStratList_LobbyStratInfo {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseUpdateLobbyStratList_LobbyStratInfo();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.stratId = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.stratName = reader.string();
+            continue;
+          }
+          case 3: {
+            if (tag !== 26) {
+              break;
+            }
+
+            message.authorName = reader.string();
+            continue;
+          }
+          case 4: {
+            if (tag !== 34) {
+              break;
+            }
+
+            message.map = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): UpdateLobbyStratList_LobbyStratInfo {
+    return {
+      stratId: isSet(object.stratId)
+        ? globalThis.String(object.stratId)
+        : isSet(object.strat_id)
+        ? globalThis.String(object.strat_id)
+        : "",
+      stratName: isSet(object.stratName)
+        ? globalThis.String(object.stratName)
+        : isSet(object.strat_name)
+        ? globalThis.String(object.strat_name)
+        : "",
+      authorName: isSet(object.authorName)
+        ? globalThis.String(object.authorName)
+        : isSet(object.author_name)
+        ? globalThis.String(object.author_name)
+        : "",
+      map: isSet(object.map) ? globalThis.String(object.map) : "",
+    };
+  },
+
+  toJSON(message: UpdateLobbyStratList_LobbyStratInfo): unknown {
+    const obj: any = {};
+    if (message.stratId !== "") {
+      obj.stratId = message.stratId;
+    }
+    if (message.stratName !== "") {
+      obj.stratName = message.stratName;
+    }
+    if (message.authorName !== "") {
+      obj.authorName = message.authorName;
+    }
+    if (message.map !== "") {
+      obj.map = message.map;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UpdateLobbyStratList_LobbyStratInfo>, I>>(
+    base?: I,
+  ): UpdateLobbyStratList_LobbyStratInfo {
+    return UpdateLobbyStratList_LobbyStratInfo.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UpdateLobbyStratList_LobbyStratInfo>, I>>(
+    object: I,
+  ): UpdateLobbyStratList_LobbyStratInfo {
+    const message = createBaseUpdateLobbyStratList_LobbyStratInfo();
+    message.stratId = object.stratId ?? "";
+    message.stratName = object.stratName ?? "";
+    message.authorName = object.authorName ?? "";
+    message.map = object.map ?? "";
+    return message;
+  },
+};
+
+function createBaseLobbyLoadStrat(): LobbyLoadStrat {
+  return { stratId: "" };
+}
+
+export const LobbyLoadStrat: MessageFns<LobbyLoadStrat> = {
+  encode(message: LobbyLoadStrat, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.stratId !== "") {
+      writer.uint32(10).string(message.stratId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LobbyLoadStrat {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLobbyLoadStrat();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.stratId = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LobbyLoadStrat {
+    return {
+      stratId: isSet(object.stratId)
+        ? globalThis.String(object.stratId)
+        : isSet(object.strat_id)
+        ? globalThis.String(object.strat_id)
+        : "",
+    };
+  },
+
+  toJSON(message: LobbyLoadStrat): unknown {
+    const obj: any = {};
+    if (message.stratId !== "") {
+      obj.stratId = message.stratId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LobbyLoadStrat>, I>>(base?: I): LobbyLoadStrat {
+    return LobbyLoadStrat.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LobbyLoadStrat>, I>>(object: I): LobbyLoadStrat {
+    const message = createBaseLobbyLoadStrat();
+    message.stratId = object.stratId ?? "";
+    return message;
+  },
+};
+
+function createBaseLobbySetCurrentStrat(): LobbySetCurrentStrat {
+  return { stratId: "", map: "" };
+}
+
+export const LobbySetCurrentStrat: MessageFns<LobbySetCurrentStrat> = {
+  encode(message: LobbySetCurrentStrat, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.stratId !== "") {
+      writer.uint32(10).string(message.stratId);
+    }
+    if (message.map !== "") {
+      writer.uint32(18).string(message.map);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LobbySetCurrentStrat {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLobbySetCurrentStrat();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.stratId = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.map = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LobbySetCurrentStrat {
+    return {
+      stratId: isSet(object.stratId)
+        ? globalThis.String(object.stratId)
+        : isSet(object.strat_id)
+        ? globalThis.String(object.strat_id)
+        : "",
+      map: isSet(object.map) ? globalThis.String(object.map) : "",
+    };
+  },
+
+  toJSON(message: LobbySetCurrentStrat): unknown {
+    const obj: any = {};
+    if (message.stratId !== "") {
+      obj.stratId = message.stratId;
+    }
+    if (message.map !== "") {
+      obj.map = message.map;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LobbySetCurrentStrat>, I>>(base?: I): LobbySetCurrentStrat {
+    return LobbySetCurrentStrat.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LobbySetCurrentStrat>, I>>(object: I): LobbySetCurrentStrat {
+    const message = createBaseLobbySetCurrentStrat();
+    message.stratId = object.stratId ?? "";
+    message.map = object.map ?? "";
+    return message;
+  },
+};
+
 function createBaseClient2Server(): Client2Server {
   return {
     hello: undefined,
@@ -3463,6 +3914,7 @@ function createBaseClient2Server(): Client2Server {
     createLobby: undefined,
     getLobbyList: undefined,
     joinLobby: undefined,
+    lobbyLoadStrat: undefined,
   };
 }
 
@@ -3497,6 +3949,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.joinLobby !== undefined) {
       JoinLobby.encode(message.joinLobby, writer.uint32(834).fork()).join();
+    }
+    if (message.lobbyLoadStrat !== undefined) {
+      LobbyLoadStrat.encode(message.lobbyLoadStrat, writer.uint32(850).fork()).join();
     }
     return writer;
   },
@@ -3594,6 +4049,14 @@ export const Client2Server: MessageFns<Client2Server> = {
             message.joinLobby = JoinLobby.decode(reader, reader.uint32());
             continue;
           }
+          case 106: {
+            if (tag !== 850) {
+              break;
+            }
+
+            message.lobbyLoadStrat = LobbyLoadStrat.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -3609,15 +4072,56 @@ export const Client2Server: MessageFns<Client2Server> = {
   fromJSON(object: any): Client2Server {
     return {
       hello: isSet(object.hello) ? Hello.fromJSON(object.hello) : undefined,
-      loginRequest: isSet(object.loginRequest) ? LoginRequest.fromJSON(object.loginRequest) : undefined,
-      getStratList: isSet(object.getStratList) ? GetStratList.fromJSON(object.getStratList) : undefined,
-      createEmptyStrat: isSet(object.createEmptyStrat) ? CreateEmptyStrat.fromJSON(object.createEmptyStrat) : undefined,
-      getMapMetadata: isSet(object.getMapMetadata) ? GetMapMetadata.fromJSON(object.getMapMetadata) : undefined,
-      getStratInfo: isSet(object.getStratInfo) ? GetStratInfo.fromJSON(object.getStratInfo) : undefined,
-      saveStrat: isSet(object.saveStrat) ? SaveStrat.fromJSON(object.saveStrat) : undefined,
-      createLobby: isSet(object.createLobby) ? CreateLobby.fromJSON(object.createLobby) : undefined,
-      getLobbyList: isSet(object.getLobbyList) ? GetLobbyList.fromJSON(object.getLobbyList) : undefined,
-      joinLobby: isSet(object.joinLobby) ? JoinLobby.fromJSON(object.joinLobby) : undefined,
+      loginRequest: isSet(object.loginRequest)
+        ? LoginRequest.fromJSON(object.loginRequest)
+        : isSet(object.login_request)
+        ? LoginRequest.fromJSON(object.login_request)
+        : undefined,
+      getStratList: isSet(object.getStratList)
+        ? GetStratList.fromJSON(object.getStratList)
+        : isSet(object.get_strat_list)
+        ? GetStratList.fromJSON(object.get_strat_list)
+        : undefined,
+      createEmptyStrat: isSet(object.createEmptyStrat)
+        ? CreateEmptyStrat.fromJSON(object.createEmptyStrat)
+        : isSet(object.create_empty_strat)
+        ? CreateEmptyStrat.fromJSON(object.create_empty_strat)
+        : undefined,
+      getMapMetadata: isSet(object.getMapMetadata)
+        ? GetMapMetadata.fromJSON(object.getMapMetadata)
+        : isSet(object.get_map_metadata)
+        ? GetMapMetadata.fromJSON(object.get_map_metadata)
+        : undefined,
+      getStratInfo: isSet(object.getStratInfo)
+        ? GetStratInfo.fromJSON(object.getStratInfo)
+        : isSet(object.get_strat_info)
+        ? GetStratInfo.fromJSON(object.get_strat_info)
+        : undefined,
+      saveStrat: isSet(object.saveStrat)
+        ? SaveStrat.fromJSON(object.saveStrat)
+        : isSet(object.save_strat)
+        ? SaveStrat.fromJSON(object.save_strat)
+        : undefined,
+      createLobby: isSet(object.createLobby)
+        ? CreateLobby.fromJSON(object.createLobby)
+        : isSet(object.create_lobby)
+        ? CreateLobby.fromJSON(object.create_lobby)
+        : undefined,
+      getLobbyList: isSet(object.getLobbyList)
+        ? GetLobbyList.fromJSON(object.getLobbyList)
+        : isSet(object.get_lobby_list)
+        ? GetLobbyList.fromJSON(object.get_lobby_list)
+        : undefined,
+      joinLobby: isSet(object.joinLobby)
+        ? JoinLobby.fromJSON(object.joinLobby)
+        : isSet(object.join_lobby)
+        ? JoinLobby.fromJSON(object.join_lobby)
+        : undefined,
+      lobbyLoadStrat: isSet(object.lobbyLoadStrat)
+        ? LobbyLoadStrat.fromJSON(object.lobbyLoadStrat)
+        : isSet(object.lobby_load_strat)
+        ? LobbyLoadStrat.fromJSON(object.lobby_load_strat)
+        : undefined,
     };
   },
 
@@ -3652,6 +4156,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.joinLobby !== undefined) {
       obj.joinLobby = JoinLobby.toJSON(message.joinLobby);
+    }
+    if (message.lobbyLoadStrat !== undefined) {
+      obj.lobbyLoadStrat = LobbyLoadStrat.toJSON(message.lobbyLoadStrat);
     }
     return obj;
   },
@@ -3689,6 +4196,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     message.joinLobby = (object.joinLobby !== undefined && object.joinLobby !== null)
       ? JoinLobby.fromPartial(object.joinLobby)
       : undefined;
+    message.lobbyLoadStrat = (object.lobbyLoadStrat !== undefined && object.lobbyLoadStrat !== null)
+      ? LobbyLoadStrat.fromPartial(object.lobbyLoadStrat)
+      : undefined;
     return message;
   },
 };
@@ -3706,6 +4216,8 @@ function createBaseServer2Client(): Server2Client {
     getLobbyListResponse: undefined,
     updateLobbyMembers: undefined,
     joinLobbyResponse: undefined,
+    updateLobbyStratList: undefined,
+    lobbySetCurrentStrat: undefined,
   };
 }
 
@@ -3743,6 +4255,12 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.joinLobbyResponse !== undefined) {
       JoinLobbyResponse.encode(message.joinLobbyResponse, writer.uint32(834).fork()).join();
+    }
+    if (message.updateLobbyStratList !== undefined) {
+      UpdateLobbyStratList.encode(message.updateLobbyStratList, writer.uint32(842).fork()).join();
+    }
+    if (message.lobbySetCurrentStrat !== undefined) {
+      LobbySetCurrentStrat.encode(message.lobbySetCurrentStrat, writer.uint32(850).fork()).join();
     }
     return writer;
   },
@@ -3848,6 +4366,22 @@ export const Server2Client: MessageFns<Server2Client> = {
             message.joinLobbyResponse = JoinLobbyResponse.decode(reader, reader.uint32());
             continue;
           }
+          case 105: {
+            if (tag !== 842) {
+              break;
+            }
+
+            message.updateLobbyStratList = UpdateLobbyStratList.decode(reader, reader.uint32());
+            continue;
+          }
+          case 106: {
+            if (tag !== 850) {
+              break;
+            }
+
+            message.lobbySetCurrentStrat = LobbySetCurrentStrat.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -3862,34 +4396,70 @@ export const Server2Client: MessageFns<Server2Client> = {
 
   fromJSON(object: any): Server2Client {
     return {
-      helloResponse: isSet(object.helloResponse) ? HelloResponse.fromJSON(object.helloResponse) : undefined,
-      loginResponse: isSet(object.loginResponse) ? LoginResponse.fromJSON(object.loginResponse) : undefined,
+      helloResponse: isSet(object.helloResponse)
+        ? HelloResponse.fromJSON(object.helloResponse)
+        : isSet(object.hello_response)
+        ? HelloResponse.fromJSON(object.hello_response)
+        : undefined,
+      loginResponse: isSet(object.loginResponse)
+        ? LoginResponse.fromJSON(object.loginResponse)
+        : isSet(object.login_response)
+        ? LoginResponse.fromJSON(object.login_response)
+        : undefined,
       getStratListResponse: isSet(object.getStratListResponse)
         ? GetStratListResponse.fromJSON(object.getStratListResponse)
+        : isSet(object.get_strat_list_response)
+        ? GetStratListResponse.fromJSON(object.get_strat_list_response)
         : undefined,
       createEmptyStratResponse: isSet(object.createEmptyStratResponse)
         ? CreateEmptyStratResponse.fromJSON(object.createEmptyStratResponse)
+        : isSet(object.create_empty_strat_response)
+        ? CreateEmptyStratResponse.fromJSON(object.create_empty_strat_response)
         : undefined,
       getMapMetadataResponse: isSet(object.getMapMetadataResponse)
         ? GetMapMetadataResponse.fromJSON(object.getMapMetadataResponse)
+        : isSet(object.get_map_metadata_response)
+        ? GetMapMetadataResponse.fromJSON(object.get_map_metadata_response)
         : undefined,
       getStratInfoResponse: isSet(object.getStratInfoResponse)
         ? GetStratInfoResponse.fromJSON(object.getStratInfoResponse)
+        : isSet(object.get_strat_info_response)
+        ? GetStratInfoResponse.fromJSON(object.get_strat_info_response)
         : undefined,
       saveStratResponse: isSet(object.saveStratResponse)
         ? SaveStratResponse.fromJSON(object.saveStratResponse)
+        : isSet(object.save_strat_response)
+        ? SaveStratResponse.fromJSON(object.save_strat_response)
         : undefined,
       createLobbyResponse: isSet(object.createLobbyResponse)
         ? CreateLobbyResponse.fromJSON(object.createLobbyResponse)
+        : isSet(object.create_lobby_response)
+        ? CreateLobbyResponse.fromJSON(object.create_lobby_response)
         : undefined,
       getLobbyListResponse: isSet(object.getLobbyListResponse)
         ? GetLobbyListResponse.fromJSON(object.getLobbyListResponse)
+        : isSet(object.get_lobby_list_response)
+        ? GetLobbyListResponse.fromJSON(object.get_lobby_list_response)
         : undefined,
       updateLobbyMembers: isSet(object.updateLobbyMembers)
         ? UpdateLobbyMembers.fromJSON(object.updateLobbyMembers)
+        : isSet(object.update_lobby_members)
+        ? UpdateLobbyMembers.fromJSON(object.update_lobby_members)
         : undefined,
       joinLobbyResponse: isSet(object.joinLobbyResponse)
         ? JoinLobbyResponse.fromJSON(object.joinLobbyResponse)
+        : isSet(object.join_lobby_response)
+        ? JoinLobbyResponse.fromJSON(object.join_lobby_response)
+        : undefined,
+      updateLobbyStratList: isSet(object.updateLobbyStratList)
+        ? UpdateLobbyStratList.fromJSON(object.updateLobbyStratList)
+        : isSet(object.update_lobby_strat_list)
+        ? UpdateLobbyStratList.fromJSON(object.update_lobby_strat_list)
+        : undefined,
+      lobbySetCurrentStrat: isSet(object.lobbySetCurrentStrat)
+        ? LobbySetCurrentStrat.fromJSON(object.lobbySetCurrentStrat)
+        : isSet(object.lobby_set_current_strat)
+        ? LobbySetCurrentStrat.fromJSON(object.lobby_set_current_strat)
         : undefined,
     };
   },
@@ -3928,6 +4498,12 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.joinLobbyResponse !== undefined) {
       obj.joinLobbyResponse = JoinLobbyResponse.toJSON(message.joinLobbyResponse);
+    }
+    if (message.updateLobbyStratList !== undefined) {
+      obj.updateLobbyStratList = UpdateLobbyStratList.toJSON(message.updateLobbyStratList);
+    }
+    if (message.lobbySetCurrentStrat !== undefined) {
+      obj.lobbySetCurrentStrat = LobbySetCurrentStrat.toJSON(message.lobbySetCurrentStrat);
     }
     return obj;
   },
@@ -3971,6 +4547,12 @@ export const Server2Client: MessageFns<Server2Client> = {
       : undefined;
     message.joinLobbyResponse = (object.joinLobbyResponse !== undefined && object.joinLobbyResponse !== null)
       ? JoinLobbyResponse.fromPartial(object.joinLobbyResponse)
+      : undefined;
+    message.updateLobbyStratList = (object.updateLobbyStratList !== undefined && object.updateLobbyStratList !== null)
+      ? UpdateLobbyStratList.fromPartial(object.updateLobbyStratList)
+      : undefined;
+    message.lobbySetCurrentStrat = (object.lobbySetCurrentStrat !== undefined && object.lobbySetCurrentStrat !== null)
+      ? LobbySetCurrentStrat.fromPartial(object.lobbySetCurrentStrat)
       : undefined;
     return message;
   },

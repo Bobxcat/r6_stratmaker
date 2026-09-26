@@ -127,10 +127,10 @@ impl WsStreamExt for WebSocketStream<TcpStream> {
 }
 
 trait MpscRxExt<T> {
-    async fn try_recv_many(&mut self) -> Option<Vec<T>>;
+    fn try_recv_many(&mut self) -> Option<Vec<T>>;
 }
 impl<T> MpscRxExt<T> for mpsc::Receiver<T> {
-    async fn try_recv_many(&mut self) -> Option<Vec<T>> {
+    fn try_recv_many(&mut self) -> Option<Vec<T>> {
         let mut v = vec![];
         loop {
             match self.try_recv() {
@@ -157,7 +157,6 @@ struct LobbyInfo {
 
 #[derive(Debug)]
 struct SharedState {
-    /// `host -> members (incl. host)`
     pub lobbies: HashMap<LobbyId, LobbyInfo>,
     pub usernames: HashMap<ClientId, String>,
 }
@@ -300,7 +299,7 @@ async fn handle_generic_message(
                             .floors
                             .into_iter()
                             .map(|floor| primary::StratFloor {
-                                drawPaths: floor
+                                draw_paths: floor
                                     .draw_paths
                                     .into_iter()
                                     .map(|(id, path)| (id, path.to_proto()))
@@ -381,7 +380,7 @@ async fn handle_generic_message(
                             .into_iter()
                             .map(|f| PhaseFloor {
                                 draw_paths: f
-                                    .drawPaths
+                                    .draw_paths
                                     .into_iter()
                                     .map(|(id, path)| (id, DrawPath::from_proto(path)))
                                     .collect(),
@@ -411,7 +410,7 @@ async fn handle_generic_message(
                     .map(
                         |(lobby_id, lobby_info)| primary::get_lobby_list_response::LobbyInfo {
                             id: lobby_id.0.to_string(),
-                            hostName: state.usernames[&lobby_info.host].clone(),
+                            host_name: state.usernames[&lobby_info.host].clone(),
                             special_fields: SpecialFields::new(),
                         },
                     )
@@ -432,7 +431,8 @@ async fn handle_generic_message(
         C2SInner::Hello(_)
         | C2SInner::LoginRequest(_)
         | C2SInner::CreateLobby(_)
-        | C2SInner::JoinLobby(_) => return Ok(Some(msg_received)),
+        | C2SInner::JoinLobby(_)
+        | C2SInner::LobbyLoadStrat(_) => return Ok(Some(msg_received)),
     }
 
     Ok(None)
@@ -454,13 +454,6 @@ fn lobby_loop(
             ))
             .await?;
 
-        host.ws
-            .send_proto(S2CInner::UpdateLobbyMembers(primary::UpdateLobbyMembers {
-                members: vec![host.username.0.clone()],
-                special_fields: SpecialFields::new(),
-            }))
-            .await?;
-
         let mut join_rx = {
             let (join_tx, join_rx) = mpsc::channel(8);
             let lobby_info = LobbyInfo {
@@ -474,32 +467,36 @@ fn lobby_loop(
         };
 
         let mut clients = vec![host];
+        let mut members_list_is_changed = true;
 
         loop {
             tokio::task::yield_now().await;
 
             // --- Handle clients leaving and entering ---
 
-            let mut members_list_is_updated = false;
             // Reject disconnected clients
             for idx in (0..clients.len()).rev() {
                 if clients[idx].is_disconnected {
-                    members_list_is_updated = true;
+                    members_list_is_changed = true;
                     clients.remove(idx);
                 }
             }
 
             // Accept new clients
-            if let Some(new_clients) = join_rx.try_recv_many().await
+            if let Some(new_clients) = join_rx.try_recv_many()
                 && new_clients.len() > 0
             {
                 clients.extend(new_clients);
-                members_list_is_updated = true;
+                members_list_is_changed = true;
             }
 
-            if members_list_is_updated {
+            if members_list_is_changed {
+                members_list_is_changed = false;
+
                 if clients.is_empty() {
                     println!("Shutting down empty lobby");
+                    let mut ss = shared_state.lock().unwrap();
+                    ss.lobbies.remove(&lobby_id);
                     return Ok(());
                 }
 
@@ -508,12 +505,44 @@ fn lobby_loop(
                     .map(|cl| cl.username.0.clone())
                     .collect::<Vec<_>>();
 
+                let strat_list = {
+                    let mut strats = vec![];
+
+                    for cl in &clients {
+                        if let Some(x) = database.get::<UsersKeyspace>(&cl.username).await? {
+                            for strat_id in &x.strats {
+                                let strat_db =
+                                    database.get::<StratsKeyspace>(strat_id).await?.unwrap();
+                                strats.push(primary::update_lobby_strat_list::LobbyStratInfo {
+                                    strat_id: strat_id.to_string(),
+                                    strat_name: strat_db.strat_name,
+                                    author_name: cl.username.0.clone(),
+                                    map: strat_db.map,
+                                    special_fields: SpecialFields::new(),
+                                });
+                            }
+                        }
+                    }
+                    strats
+                };
+
                 for cl in &mut clients {
-                    cl.ws
+                    let _ = cl
+                        .ws
                         .send_proto(S2CInner::UpdateLobbyMembers(primary::UpdateLobbyMembers {
                             members: member_names.clone(),
                             special_fields: SpecialFields::new(),
                         }))
+                        .await?;
+
+                    let _ = cl
+                        .ws
+                        .send_proto(S2CInner::UpdateLobbyStratList(
+                            primary::UpdateLobbyStratList {
+                                strats: strat_list.clone(),
+                                special_fields: SpecialFields::new(),
+                            },
+                        ))
                         .await?;
                 }
 
@@ -523,16 +552,40 @@ fn lobby_loop(
             }
 
             // --- Handle client messages ---
-            for cl in &mut clients {
-                match cl.ws.try_next_proto() {
+            for cl_idx in 0..clients.len() {
+                match clients[cl_idx].ws.try_next_proto() {
                     Ok(Some(msg)) => {
-                        if let Some(ReceivedMsg { length: _, msg }) =
-                            handle_generic_message(cl, msg, database.clone(), shared_state.clone())
-                                .await?
+                        if let Some(ReceivedMsg { length: _, msg }) = handle_generic_message(
+                            &mut clients[cl_idx],
+                            msg,
+                            database.clone(),
+                            shared_state.clone(),
+                        )
+                        .await?
                         {
                             match msg {
                                 C2SInner::CreateLobby(_msg) => todo!(),
                                 C2SInner::JoinLobby(_msg) => todo!(),
+                                C2SInner::LobbyLoadStrat(msg) => {
+                                    let Ok(strat_id) = StratId::from_str(&msg.strat_id) else {
+                                        continue;
+                                    };
+                                    if let Some(strat_db) =
+                                        database.get::<StratsKeyspace>(&strat_id).await?
+                                    {
+                                        for cl in &mut clients {
+                                            cl.ws
+                                                .send_proto(S2CInner::LobbySetCurrentStrat(
+                                                    primary::LobbySetCurrentStrat {
+                                                        strat_id: strat_id.to_string(),
+                                                        map: strat_db.map.clone(),
+                                                        special_fields: SpecialFields::new(),
+                                                    },
+                                                ))
+                                                .await?;
+                                        }
+                                    }
+                                }
 
                                 C2SInner::Hello(..)
                                 | C2SInner::LoginRequest(..)
@@ -549,8 +602,11 @@ fn lobby_loop(
                     }
                     Ok(None) => (),
                     Err(e) => {
-                        println!("[{}] Client disconnected with error `{e}`", cl.username);
-                        cl.is_disconnected = true;
+                        println!(
+                            "[{}] Client disconnected with error `{e}`",
+                            clients[cl_idx].username
+                        );
+                        clients[cl_idx].is_disconnected = true;
                     }
                 }
             }
@@ -622,7 +678,8 @@ async fn client_loop(
                     | C2SInner::GetMapMetadata(..)
                     | C2SInner::GetStratInfo(..)
                     | C2SInner::SaveStrat(..)
-                    | C2SInner::GetLobbyList(..) => {
+                    | C2SInner::GetLobbyList(..)
+                    | C2SInner::LobbyLoadStrat(..) => {
                         unreachable!("{msg:?} Should be handled generically")
                     }
                 }

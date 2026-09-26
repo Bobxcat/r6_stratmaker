@@ -241,16 +241,23 @@ async fn handle_generic_message(
         length: message_length,
         msg,
     } = &msg_received;
-    println!(
-        "[{}] received message ({}): {}",
-        cl_state.username,
-        bytesize::ByteSize::b(*message_length as u64),
-        {
-            let mut msg_str = format!("{msg:?}");
-            msg_str.truncate(msg_str.floor_char_boundary(100));
-            msg_str
-        },
-    );
+
+    match msg {
+        C2SInner::LobbyDrawCommand(..) => (),
+        _ => {
+            println!(
+                "[{}] received message ({}): {}",
+                cl_state.username,
+                bytesize::ByteSize::b(*message_length as u64),
+                {
+                    let mut msg_str = format!("{msg:?}");
+                    msg_str.truncate(msg_str.floor_char_boundary(100));
+                    msg_str
+                },
+            );
+        }
+    }
+
     match msg {
         C2SInner::GetStratList(_msg) => {
             let Some(user_info) = database.get::<UsersKeyspace>(&cl_state.username).await? else {
@@ -438,7 +445,8 @@ async fn handle_generic_message(
         | C2SInner::LoginRequest(_)
         | C2SInner::CreateLobby(_)
         | C2SInner::JoinLobby(_)
-        | C2SInner::LobbyLoadStrat(_) => return Ok(Some(msg_received)),
+        | C2SInner::LobbyLoadStrat(_)
+        | C2SInner::LobbyDrawCommand(_) => return Ok(Some(msg_received)),
     }
 
     Ok(None)
@@ -577,65 +585,102 @@ fn lobby_loop(
 
             // --- Handle client messages ---
             for cl_idx in 0..clients.len() {
-                match clients[cl_idx].ws.try_next_proto() {
-                    Ok(Some(msg)) => {
-                        if let Some(ReceivedMsg { length: _, msg }) = handle_generic_message(
-                            &mut clients[cl_idx],
-                            msg,
-                            database.clone(),
-                            shared_state.clone(),
-                        )
-                        .await?
-                        {
-                            match msg {
-                                C2SInner::CreateLobby(_msg) => todo!(),
-                                C2SInner::JoinLobby(_msg) => todo!(),
-                                C2SInner::LobbyLoadStrat(msg) => {
-                                    let Ok(strat_id) = StratId::from_str(&msg.strat_id) else {
-                                        continue;
-                                    };
-                                    if let Some(strat_db) =
-                                        database.get::<StratsKeyspace>(&strat_id).await?
-                                    {
-                                        for cl in &mut clients {
-                                            cl.ws
-                                                .send_proto(S2CInner::LobbySetCurrentStrat(
-                                                    primary::LobbySetCurrentStrat {
-                                                        strat: MessageField::some(
-                                                            db_strat_state_to_proto(
-                                                                strat_db.clone(),
-                                                            ),
-                                                        ),
-                                                        map: strat_db.map.clone(),
-                                                        special_fields: SpecialFields::new(),
-                                                    },
-                                                ))
-                                                .await?;
-                                        }
-                                        curr_strat_state = Some(strat_db);
-                                    }
-                                }
+                loop {
+                    let msg = match clients[cl_idx].ws.try_next_proto() {
+                        Ok(Some(msg)) => msg,
+                        Ok(None) => break,
+                        Err(e) => {
+                            println!(
+                                "[{}] Client disconnected with error `{e}`",
+                                clients[cl_idx].username
+                            );
+                            clients[cl_idx].is_disconnected = true;
+                            break;
+                        }
+                    };
 
-                                C2SInner::Hello(..)
-                                | C2SInner::LoginRequest(..)
-                                | C2SInner::GetStratList(..)
-                                | C2SInner::CreateEmptyStrat(..)
-                                | C2SInner::GetMapMetadata(..)
-                                | C2SInner::GetStratInfo(..)
-                                | C2SInner::SaveStrat(..)
-                                | C2SInner::GetLobbyList(..) => {
-                                    unreachable!("{msg:?} Should be handled generically")
+                    if let Some(ReceivedMsg { length: _, msg }) = handle_generic_message(
+                        &mut clients[cl_idx],
+                        msg,
+                        database.clone(),
+                        shared_state.clone(),
+                    )
+                    .await?
+                    {
+                        match msg {
+                            C2SInner::CreateLobby(_msg) => todo!(),
+                            C2SInner::JoinLobby(_msg) => todo!(),
+                            C2SInner::LobbyLoadStrat(msg) => {
+                                let Ok(strat_id) = StratId::from_str(&msg.strat_id) else {
+                                    continue;
+                                };
+                                if let Some(strat_db) =
+                                    database.get::<StratsKeyspace>(&strat_id).await?
+                                {
+                                    for cl in &mut clients {
+                                        cl.ws
+                                            .send_proto(S2CInner::LobbySetCurrentStrat(
+                                                primary::LobbySetCurrentStrat {
+                                                    strat: MessageField::some(
+                                                        db_strat_state_to_proto(strat_db.clone()),
+                                                    ),
+                                                    map: strat_db.map.clone(),
+                                                    special_fields: SpecialFields::new(),
+                                                },
+                                            ))
+                                            .await?;
+                                    }
+                                    curr_strat_state = Some(strat_db);
                                 }
                             }
+                            C2SInner::LobbyDrawCommand(msg) => {
+                                // match msg.Kind.unwrap() {
+                                //     primary::lobby_draw_command::Kind::SetDrawPath(msg) => {
+                                //         todo!()
+                                //     }
+                                //     primary::lobby_draw_command::Kind::SetArrow(msg) => {
+                                //         todo!()
+                                //     }
+                                //     primary::lobby_draw_command::Kind::SetIcon(msg) => {
+                                //         todo!()
+                                //     }
+                                //     primary::lobby_draw_command::Kind::DeleteDrawPath(msg) => {
+                                //         todo!()
+                                //     }
+                                //     primary::lobby_draw_command::Kind::DeleteArrow(msg) => {
+                                //         todo!()
+                                //     }
+                                //     primary::lobby_draw_command::Kind::DeleteIcon(msg) => {
+                                //         todo!()
+                                //     }
+                                // }
+
+                                // Send the draw state change to all clients other than the one that notfied us
+                                for to_send_client in 0..clients.len() {
+                                    if to_send_client == cl_idx {
+                                        continue;
+                                    }
+                                    // FIXME: We don't verify that the client is sending a valid draw command
+                                    let _ = clients[to_send_client]
+                                        .ws
+                                        .send_proto(S2CInner::LobbyDrawCommand(msg.clone()))
+                                        .await;
+                                }
+
+                                //
+                            }
+
+                            C2SInner::Hello(..)
+                            | C2SInner::LoginRequest(..)
+                            | C2SInner::GetStratList(..)
+                            | C2SInner::CreateEmptyStrat(..)
+                            | C2SInner::GetMapMetadata(..)
+                            | C2SInner::GetStratInfo(..)
+                            | C2SInner::SaveStrat(..)
+                            | C2SInner::GetLobbyList(..) => {
+                                unreachable!("{msg:?} Should be handled generically")
+                            }
                         }
-                    }
-                    Ok(None) => (),
-                    Err(e) => {
-                        println!(
-                            "[{}] Client disconnected with error `{e}`",
-                            clients[cl_idx].username
-                        );
-                        clients[cl_idx].is_disconnected = true;
                     }
                 }
             }
@@ -708,7 +753,8 @@ async fn client_loop(
                     | C2SInner::GetStratInfo(..)
                     | C2SInner::SaveStrat(..)
                     | C2SInner::GetLobbyList(..)
-                    | C2SInner::LobbyLoadStrat(..) => {
+                    | C2SInner::LobbyLoadStrat(..)
+                    | C2SInner::LobbyDrawCommand(..) => {
                         unreachable!("{msg:?} Should be handled generically")
                     }
                 }

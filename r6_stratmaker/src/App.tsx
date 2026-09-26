@@ -251,6 +251,14 @@ class DrawPath implements DrawElement {
     this.color = color;
   }
 
+  static fromProto(proto: protos.DrawPath): DrawPath {
+    return new DrawPath(proto.points.map((pt) => Vec2.fromProto(pt)), colorFromProto(proto.color!));
+  }
+
+  toProto(): protos.DrawPath {
+    return { points: this.points, color: colorToProto(this.color) };
+  }
+
   asEnum(): AnyDrawElementData {
     return { kind: DrawElementKind.DrawPath, data: this };
   }
@@ -304,6 +312,14 @@ class Arrow implements DrawElement {
     this.start = start;
     this.end = end;
     this.color = color;
+  }
+
+  static fromProto(proto: protos.Arrow): Arrow {
+    return new Arrow(Vec2.fromProto(proto.start!), Vec2.fromProto(proto.end!), colorFromProto(proto.color!));
+  }
+
+  toProto(): protos.Arrow {
+    return { start: this.start, end: this.end, color: colorToProto(this.color) };
   }
 
   asEnum(): AnyDrawElementData {
@@ -407,6 +423,87 @@ class IconPlacement implements DrawElement {
     this.pos = pos;
     this.size = size;
     this.info = info;
+  }
+
+  static fromProto(icon: protos.Icon): IconPlacement {
+    let parsedIconInfo: IconInfo;
+    if (icon.teamOperator) {
+      parsedIconInfo = { kind: IconKind.TeamOperator, teammateIndex: icon.teamOperator.teammateIdx };
+    } else if (icon.teamAbility) {
+      parsedIconInfo = { kind: IconKind.TeamAbility, teammateIndex: icon.teamAbility.teammateIdx };
+    } else if (icon.teamUtility) {
+      parsedIconInfo = { kind: IconKind.TeamUtility, teammateIndex: icon.teamUtility.teammateIdx };
+    } else if (icon.freeOperator) {
+      parsedIconInfo = { kind: IconKind.FreeOperator, operator: icon.freeOperator.operator };
+    } else if (icon.freeAbility) {
+      parsedIconInfo = { kind: IconKind.FreeAbility, operator: icon.freeAbility.ability };
+    } else if (icon.freeUtility) {
+      parsedIconInfo = { kind: IconKind.FreeUtility, util: icon.freeUtility.util };
+    } else {
+      let e = "UNHANDLED BRANCH: parsedIconInfo";
+      println(e);
+      throw new Error(e);
+    };
+
+    let iconSize;
+    switch (parsedIconInfo.kind) {
+      case IconKind.TeamOperator: {
+        iconSize = 50;
+        break;
+      }
+      case IconKind.TeamAbility: {
+        iconSize = 30;
+        break;
+      }
+      case IconKind.TeamUtility: {
+        iconSize = 30;
+        break;
+      }
+      case IconKind.FreeOperator: {
+        iconSize = 50;
+        break;
+      }
+      case IconKind.FreeAbility: {
+        iconSize = 30;
+        break;
+      }
+      case IconKind.FreeUtility: {
+        iconSize = 30;
+        break;
+      }
+    }
+    return new IconPlacement(Vec2.fromProto(icon.pos!), iconSize, parsedIconInfo)
+  }
+
+  toProto(): protos.Icon {
+    let proto = { pos: this.pos };
+    switch (this.info.kind) {
+      case IconKind.TeamOperator: {
+        Object.assign(proto, { teamOperator: { teammateIdx: this.info.teammateIndex } })
+        break;
+      }
+      case IconKind.TeamAbility: {
+        Object.assign(proto, { teamAbility: { teammateIdx: this.info.teammateIndex } })
+        break;
+      }
+      case IconKind.TeamUtility: {
+        Object.assign(proto, { teamUtility: { teammateIdx: this.info.teammateIndex } })
+        break;
+      }
+      case IconKind.FreeOperator: {
+        Object.assign(proto, { freeOperator: { operator: this.info.operator } })
+        break;
+      }
+      case IconKind.FreeAbility: {
+        Object.assign(proto, { freeAbility: { ability: this.info.operator } })
+        break;
+      }
+      case IconKind.FreeUtility: {
+        Object.assign(proto, { freeUtility: { util: this.info.util } })
+        break;
+      }
+    }
+    return proto;
   }
 
   asEnum(): AnyDrawElementData {
@@ -701,6 +798,7 @@ class StratEditingState {
     this.phases.push(phase);
   }
 
+  /** NETWORKED */
   pushDrawElement(phase: number, floor: number, drawElement: DrawElement): Uuid {
     const id = new Uuid();
     this.setDrawElement(phase, floor, id, drawElement);
@@ -717,6 +815,7 @@ class StratEditingState {
     return phaseFloor.getDrawElement(id);
   }
 
+  /** NETWORKED */
   setDrawElement(phase: number, floor: number, id: Uuid, drawElement: DrawElement) {
     const phaseFloor = this.phases[phase]?.floors[floor];
     if (!phaseFloor) {
@@ -724,13 +823,45 @@ class StratEditingState {
     }
 
     if (this.mode == StratEditingMode.Lobby) {
-      //
-      console.log("TODO: Notify server of draw element changes");
+      const drawEnum = drawElement.asEnum();
+      switch (drawEnum.kind) {
+        case DrawElementKind.DrawPath: {
+          sendNetworkMessage(protos.Client2Server.create({
+            lobbyDrawCommand: {
+              phase,
+              floor,
+              setDrawPath: { id: id.data, data: drawEnum.data.toProto() }
+            }
+          }));
+          break;
+        }
+        case DrawElementKind.Arrow: {
+          sendNetworkMessage(protos.Client2Server.create({
+            lobbyDrawCommand: {
+              phase,
+              floor,
+              setArrow: { id: id.data, data: drawEnum.data.toProto() }
+            }
+          }));
+          break;
+        }
+        case DrawElementKind.Icon: {
+          sendNetworkMessage(protos.Client2Server.create({
+            lobbyDrawCommand: {
+              phase,
+              floor,
+              setIcon: { id: id.data, data: drawEnum.data.toProto() }
+            }
+          }));
+          break;
+        }
+      }
     }
 
     phaseFloor.setDrawElement(id, drawElement);
   }
 
+  /** NETWORKED */
   setPhaseName(phase: number, newName: string) {
     const phaseRef = this.phases[phase];
     if (!phaseRef) {
@@ -738,22 +869,55 @@ class StratEditingState {
     }
 
     if (this.mode == StratEditingMode.Lobby) {
-      console.log("TODO: Notify server of phase name changes");
+      println("TODO: Notify server of phase name changes");
     }
 
     phaseRef.phaseName = newName;
   }
 
+  /** NETWORKED */
   deleteDrawElement(phase: number, floor: number, id: Uuid) {
     const phaseFloor = this.phases[phase]?.floors[floor];
     if (!phaseFloor) {
       return;
     }
 
+    const elemKind = phaseFloor.getDrawElement(id)?.asEnum().kind;
+
     if (phaseFloor.deleteDrawElement(id)) {
       if (this.mode == StratEditingMode.Lobby) {
-        //
-        console.log("TODO: Notify server of draw element changes");
+        switch (elemKind!) {
+          case DrawElementKind.DrawPath: {
+            sendNetworkMessage(protos.Client2Server.create({
+              lobbyDrawCommand: {
+                phase,
+                floor,
+                deleteDrawPath: { id: id.data }
+              }
+            }));
+            break;
+          }
+          case DrawElementKind.Arrow: {
+            sendNetworkMessage(protos.Client2Server.create({
+              lobbyDrawCommand: {
+                phase,
+                floor,
+                deleteArrow: { id: id.data }
+              }
+            }));
+            break;
+          }
+          case DrawElementKind.Icon: {
+            sendNetworkMessage(protos.Client2Server.create({
+              lobbyDrawCommand: {
+                phase,
+                floor,
+                deleteIcon: { id: id.data }
+              }
+            }));
+            break;
+          }
+        }
       }
       //
     }
@@ -947,6 +1111,19 @@ function colorFromProto(color: protos.Color): [number, number, number] {
   return [color.r, color.g, color.b];
 }
 
+function println(msg: string) {
+  if (isTauri()) {
+    invoke("console_println", { msg })
+  } else {
+    console.log(msg);
+  }
+}
+
+async function sendNetworkMessage(msg: protos.Client2Server) {
+  const msgRaw = protos.Client2Server.encode(msg).finish();
+  await websocket?.send(Array.from(msgRaw));
+}
+
 function App() {
   const [stratEditingStateDisplay, setStratEditingStateDisplay] = useState<StratEditingState>(new StratEditingState());
 
@@ -984,14 +1161,6 @@ function App() {
     loadOperatorsIndex();
   }, []);
 
-  function println(msg: string) {
-    if (isTauri()) {
-      invoke("console_println", { msg })
-    } else {
-      console.log(msg);
-    }
-  }
-
   function getFloorImgPath(map: string, floor: string): string {
     return `/maps/${map}/${floor}.jpg`
   }
@@ -1000,11 +1169,6 @@ function App() {
     // If we don't create a new object, then it won't be detected as a change
     const newDisplayState: StratEditingState = Object.assign(new StratEditingState(), stratEditingState);
     setStratEditingStateDisplay(newDisplayState);
-  }
-
-  async function sendNetworkMessage(msg: protos.Client2Server) {
-    const msgRaw = protos.Client2Server.encode(msg).finish();
-    await websocket?.send(Array.from(msgRaw));
   }
 
   function updateStratEditingStateFromProto(state: protos.StratState) {
@@ -1018,63 +1182,13 @@ function App() {
       phase.floors = protoPhase.floors.map((protoFloor) => {
         let floor = new StratEditingPhaseFloor();
         for (const id in protoFloor.drawPaths) {
-          let path = protoFloor.drawPaths[id];
-          floor.drawPaths.set(new Uuid(id), new DrawPath(path.points.map((pt) => Vec2.fromProto(pt)), colorFromProto(path.color!)));
+          floor.drawPaths.set(new Uuid(id), DrawPath.fromProto(protoFloor.drawPaths[id]));
         }
         for (const id in protoFloor.arrows) {
-          let arrow = protoFloor.arrows[id];
-          floor.arrows.set(new Uuid(id), new Arrow(Vec2.fromProto(arrow.start!), Vec2.fromProto(arrow.end!), colorFromProto(arrow.color!)));
+          floor.arrows.set(new Uuid(id), Arrow.fromProto(protoFloor.arrows[id]));
         }
         for (const id in protoFloor.icons) {
-          let icon = protoFloor.icons[id];
-
-          let parsedIconInfo: IconInfo;
-          if (icon.teamOperator) {
-            parsedIconInfo = { kind: IconKind.TeamOperator, teammateIndex: icon.teamOperator.teammateIdx };
-          } else if (icon.teamAbility) {
-            parsedIconInfo = { kind: IconKind.TeamAbility, teammateIndex: icon.teamAbility.teammateIdx };
-          } else if (icon.teamUtility) {
-            parsedIconInfo = { kind: IconKind.TeamUtility, teammateIndex: icon.teamUtility.teammateIdx };
-          } else if (icon.freeOperator) {
-            parsedIconInfo = { kind: IconKind.FreeOperator, operator: icon.freeOperator.operator };
-          } else if (icon.freeAbility) {
-            parsedIconInfo = { kind: IconKind.FreeAbility, operator: icon.freeAbility.ability };
-          } else if (icon.freeUtility) {
-            parsedIconInfo = { kind: IconKind.FreeUtility, util: icon.freeUtility.util };
-          } else {
-            let e = "UNHANDLED BRANCH: parsedIconInfo";
-            println(e);
-            throw new Error(e);
-          };
-
-          let iconSize;
-          switch (parsedIconInfo.kind) {
-            case IconKind.TeamOperator: {
-              iconSize = 50;
-              break;
-            }
-            case IconKind.TeamAbility: {
-              iconSize = 30;
-              break;
-            }
-            case IconKind.TeamUtility: {
-              iconSize = 30;
-              break;
-            }
-            case IconKind.FreeOperator: {
-              iconSize = 50;
-              break;
-            }
-            case IconKind.FreeAbility: {
-              iconSize = 30;
-              break;
-            }
-            case IconKind.FreeUtility: {
-              iconSize = 30;
-              break;
-            }
-          }
-          floor.icons.set(new Uuid(id), new IconPlacement(Vec2.fromProto(icon.pos!), iconSize, parsedIconInfo));
+          floor.icons.set(new Uuid(id), IconPlacement.fromProto(protoFloor.icons[id]));
         }
 
         return floor;
@@ -1088,7 +1202,9 @@ function App() {
   async function handleNetworkMessage(msgRaw: Uint8Array) {
     const msg = protos.Server2Client.decode(msgRaw);
 
-    println(`Received Message: ${JSON.stringify(msg)}`);
+    if (!msg.lobbyDrawCommand) {
+      println(`Received Message: ${JSON.stringify(msg)}`);
+    }
 
     if (msg.helloResponse) {
       setCurrPage(Page.LoginPage);
@@ -1136,6 +1252,24 @@ function App() {
       updateStratEditingStateFromProto(msg.lobbySetCurrentStrat.strat!);
 
       await sendNetworkMessage(protos.Client2Server.create({ getMapMetadata: { map: msg.lobbySetCurrentStrat.map } }));
+    } else if (msg.lobbyDrawCommand) {
+      let cmd = msg.lobbyDrawCommand;
+      let phaseFloor = stratEditingState.getPhasesRef()[cmd.phase].floors[cmd.floor];
+      if (cmd.setDrawPath) {
+        phaseFloor.drawPaths.set(new Uuid(cmd.setDrawPath.id), DrawPath.fromProto(cmd.setDrawPath.data!));
+      } else if (cmd.setArrow) {
+        phaseFloor.arrows.set(new Uuid(cmd.setArrow.id), Arrow.fromProto(cmd.setArrow.data!));
+      } else if (cmd.setIcon) {
+        phaseFloor.icons.set(new Uuid(cmd.setIcon.id), IconPlacement.fromProto(cmd.setIcon.data!));
+      } else if (cmd.deleteDrawPath) {
+        phaseFloor.drawPaths.delete(new Uuid(cmd.deleteDrawPath.id));
+      } else if (cmd.deleteArrow) {
+        phaseFloor.arrows.delete(new Uuid(cmd.deleteArrow.id));
+      } else if (cmd.deleteIcon) {
+        phaseFloor.icons.delete(new Uuid(cmd.deleteIcon.id));
+      }
+      redrawFreeDrawCanvasQueued = true;
+      updateStratEditingStateDisplay();
     } else if (msg.saveStratResponse) {
       // Yay!
     } else if (msg.createLobbyResponse) {
@@ -1466,13 +1600,9 @@ function App() {
       const canvas = document.getElementById(canvasId)! as HTMLCanvasElement;
       const ctx = canvas.getContext("2d")!;
 
-      console.log(canvas);
-      console.log(ctx);
-
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const phase = stratEditingState.getPhasesRef()[stratEditingState.selectedPhase];
-      console.log(phase);
 
       if (!phase) {
         return;
@@ -1966,40 +2096,13 @@ function App() {
           phaseName: phase.phaseName, floors: phase.floors.map((floor) => {
             return {
               drawPaths: mapMapToObject(floor.drawPaths, (id, path) => {
-                return [id.data, { points: path.points, color: colorToProto(path.color) }]
+                return [id.data, path.toProto()]
               }),
               arrows: mapMapToObject(floor.arrows, (id, arrow) => {
-                return [id.data, { start: arrow.start, end: arrow.end, color: colorToProto(arrow.color) }]
+                return [id.data, arrow.toProto()]
               }),
               icons: mapMapToObject(floor.icons, (id, icon) => {
-                let protoIcon = { pos: icon.pos };
-                switch (icon.info.kind) {
-                  case IconKind.TeamOperator: {
-                    Object.assign(protoIcon, { teamOperator: { teammateIdx: icon.info.teammateIndex } })
-                    break;
-                  }
-                  case IconKind.TeamAbility: {
-                    Object.assign(protoIcon, { teamAbility: { teammateIdx: icon.info.teammateIndex } })
-                    break;
-                  }
-                  case IconKind.TeamUtility: {
-                    Object.assign(protoIcon, { teamUtility: { teammateIdx: icon.info.teammateIndex } })
-                    break;
-                  }
-                  case IconKind.FreeOperator: {
-                    Object.assign(protoIcon, { freeOperator: { operator: icon.info.operator } })
-                    break;
-                  }
-                  case IconKind.FreeAbility: {
-                    Object.assign(protoIcon, { freeAbility: { ability: icon.info.operator } })
-                    break;
-                  }
-                  case IconKind.FreeUtility: {
-                    Object.assign(protoIcon, { freeUtility: { util: icon.info.util } })
-                    break;
-                  }
-                }
-                return [id.data, protoIcon]
+                return [id.data, icon.toProto()]
               }),
             };
           })

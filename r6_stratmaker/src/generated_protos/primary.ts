@@ -225,6 +225,44 @@ export interface LobbySetCurrentStrat {
   map: string;
 }
 
+export interface LobbyDrawCommand {
+  phase: number;
+  floor: number;
+  setDrawPath?: LobbyDrawCommand_SetDrawPath | undefined;
+  setArrow?: LobbyDrawCommand_SetArrow | undefined;
+  setIcon?: LobbyDrawCommand_SetIcon | undefined;
+  deleteDrawPath?: LobbyDrawCommand_DeleteDrawPath | undefined;
+  deleteArrow?: LobbyDrawCommand_DeleteArrow | undefined;
+  deleteIcon?: LobbyDrawCommand_DeleteIcon | undefined;
+}
+
+export interface LobbyDrawCommand_SetDrawPath {
+  id: string;
+  data: DrawPath | undefined;
+}
+
+export interface LobbyDrawCommand_SetArrow {
+  id: string;
+  data: Arrow | undefined;
+}
+
+export interface LobbyDrawCommand_SetIcon {
+  id: string;
+  data: Icon | undefined;
+}
+
+export interface LobbyDrawCommand_DeleteDrawPath {
+  id: string;
+}
+
+export interface LobbyDrawCommand_DeleteArrow {
+  id: string;
+}
+
+export interface LobbyDrawCommand_DeleteIcon {
+  id: string;
+}
+
 export interface Client2Server {
   hello?: Hello | undefined;
   loginRequest?: LoginRequest | undefined;
@@ -237,6 +275,7 @@ export interface Client2Server {
   getLobbyList?: GetLobbyList | undefined;
   joinLobby?: JoinLobby | undefined;
   lobbyLoadStrat?: LobbyLoadStrat | undefined;
+  lobbyDrawCommand?: LobbyDrawCommand | undefined;
 }
 
 export interface Server2Client {
@@ -253,6 +292,7 @@ export interface Server2Client {
   joinLobbyResponse?: JoinLobbyResponse | undefined;
   updateLobbyStratList?: UpdateLobbyStratList | undefined;
   lobbySetCurrentStrat?: LobbySetCurrentStrat | undefined;
+  lobbyDrawCommand?: LobbyDrawCommand | undefined;
 }
 
 function createBasePoint(): Point {
@@ -3900,6 +3940,690 @@ export const LobbySetCurrentStrat: MessageFns<LobbySetCurrentStrat> = {
   },
 };
 
+function createBaseLobbyDrawCommand(): LobbyDrawCommand {
+  return {
+    phase: 0,
+    floor: 0,
+    setDrawPath: undefined,
+    setArrow: undefined,
+    setIcon: undefined,
+    deleteDrawPath: undefined,
+    deleteArrow: undefined,
+    deleteIcon: undefined,
+  };
+}
+
+export const LobbyDrawCommand: MessageFns<LobbyDrawCommand> = {
+  encode(message: LobbyDrawCommand, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.phase !== 0) {
+      writer.uint32(8).uint32(message.phase);
+    }
+    if (message.floor !== 0) {
+      writer.uint32(16).uint32(message.floor);
+    }
+    if (message.setDrawPath !== undefined) {
+      LobbyDrawCommand_SetDrawPath.encode(message.setDrawPath, writer.uint32(82).fork()).join();
+    }
+    if (message.setArrow !== undefined) {
+      LobbyDrawCommand_SetArrow.encode(message.setArrow, writer.uint32(90).fork()).join();
+    }
+    if (message.setIcon !== undefined) {
+      LobbyDrawCommand_SetIcon.encode(message.setIcon, writer.uint32(98).fork()).join();
+    }
+    if (message.deleteDrawPath !== undefined) {
+      LobbyDrawCommand_DeleteDrawPath.encode(message.deleteDrawPath, writer.uint32(162).fork()).join();
+    }
+    if (message.deleteArrow !== undefined) {
+      LobbyDrawCommand_DeleteArrow.encode(message.deleteArrow, writer.uint32(178).fork()).join();
+    }
+    if (message.deleteIcon !== undefined) {
+      LobbyDrawCommand_DeleteIcon.encode(message.deleteIcon, writer.uint32(186).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LobbyDrawCommand {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLobbyDrawCommand();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 8) {
+              break;
+            }
+
+            message.phase = reader.uint32();
+            continue;
+          }
+          case 2: {
+            if (tag !== 16) {
+              break;
+            }
+
+            message.floor = reader.uint32();
+            continue;
+          }
+          case 10: {
+            if (tag !== 82) {
+              break;
+            }
+
+            message.setDrawPath = LobbyDrawCommand_SetDrawPath.decode(reader, reader.uint32());
+            continue;
+          }
+          case 11: {
+            if (tag !== 90) {
+              break;
+            }
+
+            message.setArrow = LobbyDrawCommand_SetArrow.decode(reader, reader.uint32());
+            continue;
+          }
+          case 12: {
+            if (tag !== 98) {
+              break;
+            }
+
+            message.setIcon = LobbyDrawCommand_SetIcon.decode(reader, reader.uint32());
+            continue;
+          }
+          case 20: {
+            if (tag !== 162) {
+              break;
+            }
+
+            message.deleteDrawPath = LobbyDrawCommand_DeleteDrawPath.decode(reader, reader.uint32());
+            continue;
+          }
+          case 22: {
+            if (tag !== 178) {
+              break;
+            }
+
+            message.deleteArrow = LobbyDrawCommand_DeleteArrow.decode(reader, reader.uint32());
+            continue;
+          }
+          case 23: {
+            if (tag !== 186) {
+              break;
+            }
+
+            message.deleteIcon = LobbyDrawCommand_DeleteIcon.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LobbyDrawCommand {
+    return {
+      phase: isSet(object.phase) ? globalThis.Number(object.phase) : 0,
+      floor: isSet(object.floor) ? globalThis.Number(object.floor) : 0,
+      setDrawPath: isSet(object.setDrawPath)
+        ? LobbyDrawCommand_SetDrawPath.fromJSON(object.setDrawPath)
+        : isSet(object.set_draw_path)
+        ? LobbyDrawCommand_SetDrawPath.fromJSON(object.set_draw_path)
+        : undefined,
+      setArrow: isSet(object.setArrow)
+        ? LobbyDrawCommand_SetArrow.fromJSON(object.setArrow)
+        : isSet(object.set_arrow)
+        ? LobbyDrawCommand_SetArrow.fromJSON(object.set_arrow)
+        : undefined,
+      setIcon: isSet(object.setIcon)
+        ? LobbyDrawCommand_SetIcon.fromJSON(object.setIcon)
+        : isSet(object.set_icon)
+        ? LobbyDrawCommand_SetIcon.fromJSON(object.set_icon)
+        : undefined,
+      deleteDrawPath: isSet(object.deleteDrawPath)
+        ? LobbyDrawCommand_DeleteDrawPath.fromJSON(object.deleteDrawPath)
+        : isSet(object.delete_draw_path)
+        ? LobbyDrawCommand_DeleteDrawPath.fromJSON(object.delete_draw_path)
+        : undefined,
+      deleteArrow: isSet(object.deleteArrow)
+        ? LobbyDrawCommand_DeleteArrow.fromJSON(object.deleteArrow)
+        : isSet(object.delete_arrow)
+        ? LobbyDrawCommand_DeleteArrow.fromJSON(object.delete_arrow)
+        : undefined,
+      deleteIcon: isSet(object.deleteIcon)
+        ? LobbyDrawCommand_DeleteIcon.fromJSON(object.deleteIcon)
+        : isSet(object.delete_icon)
+        ? LobbyDrawCommand_DeleteIcon.fromJSON(object.delete_icon)
+        : undefined,
+    };
+  },
+
+  toJSON(message: LobbyDrawCommand): unknown {
+    const obj: any = {};
+    if (message.phase !== 0) {
+      obj.phase = Math.round(message.phase);
+    }
+    if (message.floor !== 0) {
+      obj.floor = Math.round(message.floor);
+    }
+    if (message.setDrawPath !== undefined) {
+      obj.setDrawPath = LobbyDrawCommand_SetDrawPath.toJSON(message.setDrawPath);
+    }
+    if (message.setArrow !== undefined) {
+      obj.setArrow = LobbyDrawCommand_SetArrow.toJSON(message.setArrow);
+    }
+    if (message.setIcon !== undefined) {
+      obj.setIcon = LobbyDrawCommand_SetIcon.toJSON(message.setIcon);
+    }
+    if (message.deleteDrawPath !== undefined) {
+      obj.deleteDrawPath = LobbyDrawCommand_DeleteDrawPath.toJSON(message.deleteDrawPath);
+    }
+    if (message.deleteArrow !== undefined) {
+      obj.deleteArrow = LobbyDrawCommand_DeleteArrow.toJSON(message.deleteArrow);
+    }
+    if (message.deleteIcon !== undefined) {
+      obj.deleteIcon = LobbyDrawCommand_DeleteIcon.toJSON(message.deleteIcon);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LobbyDrawCommand>, I>>(base?: I): LobbyDrawCommand {
+    return LobbyDrawCommand.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LobbyDrawCommand>, I>>(object: I): LobbyDrawCommand {
+    const message = createBaseLobbyDrawCommand();
+    message.phase = object.phase ?? 0;
+    message.floor = object.floor ?? 0;
+    message.setDrawPath = (object.setDrawPath !== undefined && object.setDrawPath !== null)
+      ? LobbyDrawCommand_SetDrawPath.fromPartial(object.setDrawPath)
+      : undefined;
+    message.setArrow = (object.setArrow !== undefined && object.setArrow !== null)
+      ? LobbyDrawCommand_SetArrow.fromPartial(object.setArrow)
+      : undefined;
+    message.setIcon = (object.setIcon !== undefined && object.setIcon !== null)
+      ? LobbyDrawCommand_SetIcon.fromPartial(object.setIcon)
+      : undefined;
+    message.deleteDrawPath = (object.deleteDrawPath !== undefined && object.deleteDrawPath !== null)
+      ? LobbyDrawCommand_DeleteDrawPath.fromPartial(object.deleteDrawPath)
+      : undefined;
+    message.deleteArrow = (object.deleteArrow !== undefined && object.deleteArrow !== null)
+      ? LobbyDrawCommand_DeleteArrow.fromPartial(object.deleteArrow)
+      : undefined;
+    message.deleteIcon = (object.deleteIcon !== undefined && object.deleteIcon !== null)
+      ? LobbyDrawCommand_DeleteIcon.fromPartial(object.deleteIcon)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseLobbyDrawCommand_SetDrawPath(): LobbyDrawCommand_SetDrawPath {
+  return { id: "", data: undefined };
+}
+
+export const LobbyDrawCommand_SetDrawPath: MessageFns<LobbyDrawCommand_SetDrawPath> = {
+  encode(message: LobbyDrawCommand_SetDrawPath, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    if (message.data !== undefined) {
+      DrawPath.encode(message.data, writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LobbyDrawCommand_SetDrawPath {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLobbyDrawCommand_SetDrawPath();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.id = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.data = DrawPath.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LobbyDrawCommand_SetDrawPath {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      data: isSet(object.data) ? DrawPath.fromJSON(object.data) : undefined,
+    };
+  },
+
+  toJSON(message: LobbyDrawCommand_SetDrawPath): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.data !== undefined) {
+      obj.data = DrawPath.toJSON(message.data);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LobbyDrawCommand_SetDrawPath>, I>>(base?: I): LobbyDrawCommand_SetDrawPath {
+    return LobbyDrawCommand_SetDrawPath.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LobbyDrawCommand_SetDrawPath>, I>>(object: I): LobbyDrawCommand_SetDrawPath {
+    const message = createBaseLobbyDrawCommand_SetDrawPath();
+    message.id = object.id ?? "";
+    message.data = (object.data !== undefined && object.data !== null) ? DrawPath.fromPartial(object.data) : undefined;
+    return message;
+  },
+};
+
+function createBaseLobbyDrawCommand_SetArrow(): LobbyDrawCommand_SetArrow {
+  return { id: "", data: undefined };
+}
+
+export const LobbyDrawCommand_SetArrow: MessageFns<LobbyDrawCommand_SetArrow> = {
+  encode(message: LobbyDrawCommand_SetArrow, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    if (message.data !== undefined) {
+      Arrow.encode(message.data, writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LobbyDrawCommand_SetArrow {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLobbyDrawCommand_SetArrow();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.id = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.data = Arrow.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LobbyDrawCommand_SetArrow {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      data: isSet(object.data) ? Arrow.fromJSON(object.data) : undefined,
+    };
+  },
+
+  toJSON(message: LobbyDrawCommand_SetArrow): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.data !== undefined) {
+      obj.data = Arrow.toJSON(message.data);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LobbyDrawCommand_SetArrow>, I>>(base?: I): LobbyDrawCommand_SetArrow {
+    return LobbyDrawCommand_SetArrow.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LobbyDrawCommand_SetArrow>, I>>(object: I): LobbyDrawCommand_SetArrow {
+    const message = createBaseLobbyDrawCommand_SetArrow();
+    message.id = object.id ?? "";
+    message.data = (object.data !== undefined && object.data !== null) ? Arrow.fromPartial(object.data) : undefined;
+    return message;
+  },
+};
+
+function createBaseLobbyDrawCommand_SetIcon(): LobbyDrawCommand_SetIcon {
+  return { id: "", data: undefined };
+}
+
+export const LobbyDrawCommand_SetIcon: MessageFns<LobbyDrawCommand_SetIcon> = {
+  encode(message: LobbyDrawCommand_SetIcon, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    if (message.data !== undefined) {
+      Icon.encode(message.data, writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LobbyDrawCommand_SetIcon {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLobbyDrawCommand_SetIcon();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.id = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.data = Icon.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LobbyDrawCommand_SetIcon {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      data: isSet(object.data) ? Icon.fromJSON(object.data) : undefined,
+    };
+  },
+
+  toJSON(message: LobbyDrawCommand_SetIcon): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.data !== undefined) {
+      obj.data = Icon.toJSON(message.data);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LobbyDrawCommand_SetIcon>, I>>(base?: I): LobbyDrawCommand_SetIcon {
+    return LobbyDrawCommand_SetIcon.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LobbyDrawCommand_SetIcon>, I>>(object: I): LobbyDrawCommand_SetIcon {
+    const message = createBaseLobbyDrawCommand_SetIcon();
+    message.id = object.id ?? "";
+    message.data = (object.data !== undefined && object.data !== null) ? Icon.fromPartial(object.data) : undefined;
+    return message;
+  },
+};
+
+function createBaseLobbyDrawCommand_DeleteDrawPath(): LobbyDrawCommand_DeleteDrawPath {
+  return { id: "" };
+}
+
+export const LobbyDrawCommand_DeleteDrawPath: MessageFns<LobbyDrawCommand_DeleteDrawPath> = {
+  encode(message: LobbyDrawCommand_DeleteDrawPath, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LobbyDrawCommand_DeleteDrawPath {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLobbyDrawCommand_DeleteDrawPath();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.id = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LobbyDrawCommand_DeleteDrawPath {
+    return { id: isSet(object.id) ? globalThis.String(object.id) : "" };
+  },
+
+  toJSON(message: LobbyDrawCommand_DeleteDrawPath): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LobbyDrawCommand_DeleteDrawPath>, I>>(base?: I): LobbyDrawCommand_DeleteDrawPath {
+    return LobbyDrawCommand_DeleteDrawPath.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LobbyDrawCommand_DeleteDrawPath>, I>>(
+    object: I,
+  ): LobbyDrawCommand_DeleteDrawPath {
+    const message = createBaseLobbyDrawCommand_DeleteDrawPath();
+    message.id = object.id ?? "";
+    return message;
+  },
+};
+
+function createBaseLobbyDrawCommand_DeleteArrow(): LobbyDrawCommand_DeleteArrow {
+  return { id: "" };
+}
+
+export const LobbyDrawCommand_DeleteArrow: MessageFns<LobbyDrawCommand_DeleteArrow> = {
+  encode(message: LobbyDrawCommand_DeleteArrow, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LobbyDrawCommand_DeleteArrow {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLobbyDrawCommand_DeleteArrow();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.id = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LobbyDrawCommand_DeleteArrow {
+    return { id: isSet(object.id) ? globalThis.String(object.id) : "" };
+  },
+
+  toJSON(message: LobbyDrawCommand_DeleteArrow): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LobbyDrawCommand_DeleteArrow>, I>>(base?: I): LobbyDrawCommand_DeleteArrow {
+    return LobbyDrawCommand_DeleteArrow.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LobbyDrawCommand_DeleteArrow>, I>>(object: I): LobbyDrawCommand_DeleteArrow {
+    const message = createBaseLobbyDrawCommand_DeleteArrow();
+    message.id = object.id ?? "";
+    return message;
+  },
+};
+
+function createBaseLobbyDrawCommand_DeleteIcon(): LobbyDrawCommand_DeleteIcon {
+  return { id: "" };
+}
+
+export const LobbyDrawCommand_DeleteIcon: MessageFns<LobbyDrawCommand_DeleteIcon> = {
+  encode(message: LobbyDrawCommand_DeleteIcon, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LobbyDrawCommand_DeleteIcon {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLobbyDrawCommand_DeleteIcon();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.id = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LobbyDrawCommand_DeleteIcon {
+    return { id: isSet(object.id) ? globalThis.String(object.id) : "" };
+  },
+
+  toJSON(message: LobbyDrawCommand_DeleteIcon): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LobbyDrawCommand_DeleteIcon>, I>>(base?: I): LobbyDrawCommand_DeleteIcon {
+    return LobbyDrawCommand_DeleteIcon.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LobbyDrawCommand_DeleteIcon>, I>>(object: I): LobbyDrawCommand_DeleteIcon {
+    const message = createBaseLobbyDrawCommand_DeleteIcon();
+    message.id = object.id ?? "";
+    return message;
+  },
+};
+
 function createBaseClient2Server(): Client2Server {
   return {
     hello: undefined,
@@ -3913,6 +4637,7 @@ function createBaseClient2Server(): Client2Server {
     getLobbyList: undefined,
     joinLobby: undefined,
     lobbyLoadStrat: undefined,
+    lobbyDrawCommand: undefined,
   };
 }
 
@@ -3950,6 +4675,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.lobbyLoadStrat !== undefined) {
       LobbyLoadStrat.encode(message.lobbyLoadStrat, writer.uint32(850).fork()).join();
+    }
+    if (message.lobbyDrawCommand !== undefined) {
+      LobbyDrawCommand.encode(message.lobbyDrawCommand, writer.uint32(858).fork()).join();
     }
     return writer;
   },
@@ -4055,6 +4783,14 @@ export const Client2Server: MessageFns<Client2Server> = {
             message.lobbyLoadStrat = LobbyLoadStrat.decode(reader, reader.uint32());
             continue;
           }
+          case 107: {
+            if (tag !== 858) {
+              break;
+            }
+
+            message.lobbyDrawCommand = LobbyDrawCommand.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -4120,6 +4856,11 @@ export const Client2Server: MessageFns<Client2Server> = {
         : isSet(object.lobby_load_strat)
         ? LobbyLoadStrat.fromJSON(object.lobby_load_strat)
         : undefined,
+      lobbyDrawCommand: isSet(object.lobbyDrawCommand)
+        ? LobbyDrawCommand.fromJSON(object.lobbyDrawCommand)
+        : isSet(object.lobby_draw_command)
+        ? LobbyDrawCommand.fromJSON(object.lobby_draw_command)
+        : undefined,
     };
   },
 
@@ -4157,6 +4898,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.lobbyLoadStrat !== undefined) {
       obj.lobbyLoadStrat = LobbyLoadStrat.toJSON(message.lobbyLoadStrat);
+    }
+    if (message.lobbyDrawCommand !== undefined) {
+      obj.lobbyDrawCommand = LobbyDrawCommand.toJSON(message.lobbyDrawCommand);
     }
     return obj;
   },
@@ -4197,6 +4941,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     message.lobbyLoadStrat = (object.lobbyLoadStrat !== undefined && object.lobbyLoadStrat !== null)
       ? LobbyLoadStrat.fromPartial(object.lobbyLoadStrat)
       : undefined;
+    message.lobbyDrawCommand = (object.lobbyDrawCommand !== undefined && object.lobbyDrawCommand !== null)
+      ? LobbyDrawCommand.fromPartial(object.lobbyDrawCommand)
+      : undefined;
     return message;
   },
 };
@@ -4216,6 +4963,7 @@ function createBaseServer2Client(): Server2Client {
     joinLobbyResponse: undefined,
     updateLobbyStratList: undefined,
     lobbySetCurrentStrat: undefined,
+    lobbyDrawCommand: undefined,
   };
 }
 
@@ -4259,6 +5007,9 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.lobbySetCurrentStrat !== undefined) {
       LobbySetCurrentStrat.encode(message.lobbySetCurrentStrat, writer.uint32(850).fork()).join();
+    }
+    if (message.lobbyDrawCommand !== undefined) {
+      LobbyDrawCommand.encode(message.lobbyDrawCommand, writer.uint32(858).fork()).join();
     }
     return writer;
   },
@@ -4380,6 +5131,14 @@ export const Server2Client: MessageFns<Server2Client> = {
             message.lobbySetCurrentStrat = LobbySetCurrentStrat.decode(reader, reader.uint32());
             continue;
           }
+          case 107: {
+            if (tag !== 858) {
+              break;
+            }
+
+            message.lobbyDrawCommand = LobbyDrawCommand.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -4459,6 +5218,11 @@ export const Server2Client: MessageFns<Server2Client> = {
         : isSet(object.lobby_set_current_strat)
         ? LobbySetCurrentStrat.fromJSON(object.lobby_set_current_strat)
         : undefined,
+      lobbyDrawCommand: isSet(object.lobbyDrawCommand)
+        ? LobbyDrawCommand.fromJSON(object.lobbyDrawCommand)
+        : isSet(object.lobby_draw_command)
+        ? LobbyDrawCommand.fromJSON(object.lobby_draw_command)
+        : undefined,
     };
   },
 
@@ -4502,6 +5266,9 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.lobbySetCurrentStrat !== undefined) {
       obj.lobbySetCurrentStrat = LobbySetCurrentStrat.toJSON(message.lobbySetCurrentStrat);
+    }
+    if (message.lobbyDrawCommand !== undefined) {
+      obj.lobbyDrawCommand = LobbyDrawCommand.toJSON(message.lobbyDrawCommand);
     }
     return obj;
   },
@@ -4551,6 +5318,9 @@ export const Server2Client: MessageFns<Server2Client> = {
       : undefined;
     message.lobbySetCurrentStrat = (object.lobbySetCurrentStrat !== undefined && object.lobbySetCurrentStrat !== null)
       ? LobbySetCurrentStrat.fromPartial(object.lobbySetCurrentStrat)
+      : undefined;
+    message.lobbyDrawCommand = (object.lobbyDrawCommand !== undefined && object.lobbyDrawCommand !== null)
+      ? LobbyDrawCommand.fromPartial(object.lobbyDrawCommand)
       : undefined;
     return message;
   },

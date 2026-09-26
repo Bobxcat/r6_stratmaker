@@ -185,6 +185,43 @@ message LobbySetCurrentStrat {
     string map = 2;
 }
 
+message LobbyDrawCommand {
+    message SetDrawPath {
+        string id = 1;
+        DrawPath data = 2;
+    }
+    message SetArrow {
+        string id = 1;
+        Arrow data = 2;
+    }
+    message SetIcon {
+        string id = 1;
+        Icon data = 2;
+    }
+    message DeleteDrawPath {
+        string id = 1;
+    }
+    message DeleteArrow {
+        string id = 1;
+    }
+    message DeleteIcon {
+        string id = 1;
+    }
+
+    uint32 phase = 1;
+    uint32 floor = 2;
+
+    oneof Kind {
+        SetDrawPath set_draw_path = 10;
+        SetArrow set_arrow = 11;
+        SetIcon set_icon = 12;
+
+        DeleteDrawPath delete_draw_path = 20;
+        DeleteArrow delete_arrow = 22;
+        DeleteIcon delete_icon = 23;
+    }
+}
+
 message Client2Server {
     oneof C2SInner {
         Hello hello = 1;
@@ -199,6 +236,7 @@ message Client2Server {
         GetLobbyList get_lobby_list = 102;
         JoinLobby join_lobby = 104;
         LobbyLoadStrat lobby_load_strat = 106;
+        LobbyDrawCommand lobby_draw_command = 107;
     }
 }
 
@@ -218,5 +256,6 @@ message Server2Client {
         JoinLobbyResponse join_lobby_response = 104;
         UpdateLobbyStratList update_lobby_strat_list = 105;
         LobbySetCurrentStrat lobby_set_current_strat = 106;
+        LobbyDrawCommand lobby_draw_command = 107;
     }
 }

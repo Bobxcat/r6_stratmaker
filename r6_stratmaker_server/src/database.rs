@@ -90,7 +90,7 @@ impl StratId {
     }
 }
 
-#[derive(Deserialize, Serialize, Default, Debug)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone)]
 pub struct DrawPath {
     pub points: Vec<Point>,
     pub color: Color,
@@ -115,7 +115,7 @@ impl ProtoConvert for DrawPath {
     }
 }
 
-#[derive(Deserialize, Serialize, Default, Debug)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone)]
 pub struct Arrow {
     pub start: Point,
     pub end: Point,
@@ -143,7 +143,7 @@ impl ProtoConvert for Arrow {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum IconKind {
     TeamOperator { teammate_idx: u32 },
     TeamAbility { teammate_idx: u32 },
@@ -159,7 +159,7 @@ impl Default for IconKind {
     }
 }
 
-#[derive(Deserialize, Serialize, Default, Debug)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone)]
 pub struct PlacedIcon {
     pub pos: Point,
     pub kind: IconKind,
@@ -260,14 +260,14 @@ impl ProtoConvert for PlacedIcon {
     }
 }
 
-#[derive(Deserialize, Serialize, Default, Debug)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone)]
 pub struct PhaseFloor {
     pub draw_paths: HashMap<String, DrawPath>,
     pub arrows: HashMap<String, Arrow>,
     pub icons: HashMap<String, PlacedIcon>,
 }
 
-#[derive(Deserialize, Serialize, Default, Debug)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone)]
 pub struct StratPhase {
     pub phase_name: String,
     pub floors: Vec<PhaseFloor>,
@@ -318,7 +318,7 @@ impl Default for Teammate {
     }
 }
 
-#[derive(Deserialize, Serialize, Default, Debug)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone)]
 pub struct StratEntry {
     pub strat_name: String,
     pub map: String,

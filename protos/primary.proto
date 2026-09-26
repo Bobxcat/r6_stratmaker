@@ -181,7 +181,7 @@ message LobbyLoadStrat {
 
 // LobbySetCurrentStrat
 message LobbySetCurrentStrat {
-    string strat_id = 1;
+    StratState strat = 1;
     string map = 2;
 }
 

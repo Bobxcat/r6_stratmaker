@@ -221,7 +221,7 @@ export interface LobbyLoadStrat {
 
 /** LobbySetCurrentStrat */
 export interface LobbySetCurrentStrat {
-  stratId: string;
+  strat: StratState | undefined;
   map: string;
 }
 
@@ -3814,13 +3814,13 @@ export const LobbyLoadStrat: MessageFns<LobbyLoadStrat> = {
 };
 
 function createBaseLobbySetCurrentStrat(): LobbySetCurrentStrat {
-  return { stratId: "", map: "" };
+  return { strat: undefined, map: "" };
 }
 
 export const LobbySetCurrentStrat: MessageFns<LobbySetCurrentStrat> = {
   encode(message: LobbySetCurrentStrat, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.stratId !== "") {
-      writer.uint32(10).string(message.stratId);
+    if (message.strat !== undefined) {
+      StratState.encode(message.strat, writer.uint32(10).fork()).join();
     }
     if (message.map !== "") {
       writer.uint32(18).string(message.map);
@@ -3846,7 +3846,7 @@ export const LobbySetCurrentStrat: MessageFns<LobbySetCurrentStrat> = {
               break;
             }
 
-            message.stratId = reader.string();
+            message.strat = StratState.decode(reader, reader.uint32());
             continue;
           }
           case 2: {
@@ -3871,19 +3871,15 @@ export const LobbySetCurrentStrat: MessageFns<LobbySetCurrentStrat> = {
 
   fromJSON(object: any): LobbySetCurrentStrat {
     return {
-      stratId: isSet(object.stratId)
-        ? globalThis.String(object.stratId)
-        : isSet(object.strat_id)
-        ? globalThis.String(object.strat_id)
-        : "",
+      strat: isSet(object.strat) ? StratState.fromJSON(object.strat) : undefined,
       map: isSet(object.map) ? globalThis.String(object.map) : "",
     };
   },
 
   toJSON(message: LobbySetCurrentStrat): unknown {
     const obj: any = {};
-    if (message.stratId !== "") {
-      obj.stratId = message.stratId;
+    if (message.strat !== undefined) {
+      obj.strat = StratState.toJSON(message.strat);
     }
     if (message.map !== "") {
       obj.map = message.map;
@@ -3896,7 +3892,9 @@ export const LobbySetCurrentStrat: MessageFns<LobbySetCurrentStrat> = {
   },
   fromPartial<I extends Exact<DeepPartial<LobbySetCurrentStrat>, I>>(object: I): LobbySetCurrentStrat {
     const message = createBaseLobbySetCurrentStrat();
-    message.stratId = object.stratId ?? "";
+    message.strat = (object.strat !== undefined && object.strat !== null)
+      ? StratState.fromPartial(object.strat)
+      : undefined;
     message.map = object.map ?? "";
     return message;
   },

@@ -1007,6 +1007,84 @@ function App() {
     await websocket?.send(Array.from(msgRaw));
   }
 
+  function updateStratEditingStateFromProto(state: protos.StratState) {
+    stratEditingState.stratName = state.stratName;
+    stratEditingState.teamLoadouts = state.teammates.map((teammate) => {
+      return { operator: teammate.operator, color: colorFromProto(teammate.color!), util: teammate.util }
+    });
+    stratEditingState.setPhasesRaw(state.phases.map((protoPhase) => {
+      let phase = new StratEditingPhase();
+      phase.phaseName = protoPhase.phaseName;
+      phase.floors = protoPhase.floors.map((protoFloor) => {
+        let floor = new StratEditingPhaseFloor();
+        for (const id in protoFloor.drawPaths) {
+          let path = protoFloor.drawPaths[id];
+          floor.drawPaths.set(new Uuid(id), new DrawPath(path.points.map((pt) => Vec2.fromProto(pt)), colorFromProto(path.color!)));
+        }
+        for (const id in protoFloor.arrows) {
+          let arrow = protoFloor.arrows[id];
+          floor.arrows.set(new Uuid(id), new Arrow(Vec2.fromProto(arrow.start!), Vec2.fromProto(arrow.end!), colorFromProto(arrow.color!)));
+        }
+        for (const id in protoFloor.icons) {
+          let icon = protoFloor.icons[id];
+
+          let parsedIconInfo: IconInfo;
+          if (icon.teamOperator) {
+            parsedIconInfo = { kind: IconKind.TeamOperator, teammateIndex: icon.teamOperator.teammateIdx };
+          } else if (icon.teamAbility) {
+            parsedIconInfo = { kind: IconKind.TeamAbility, teammateIndex: icon.teamAbility.teammateIdx };
+          } else if (icon.teamUtility) {
+            parsedIconInfo = { kind: IconKind.TeamUtility, teammateIndex: icon.teamUtility.teammateIdx };
+          } else if (icon.freeOperator) {
+            parsedIconInfo = { kind: IconKind.FreeOperator, operator: icon.freeOperator.operator };
+          } else if (icon.freeAbility) {
+            parsedIconInfo = { kind: IconKind.FreeAbility, operator: icon.freeAbility.ability };
+          } else if (icon.freeUtility) {
+            parsedIconInfo = { kind: IconKind.FreeUtility, util: icon.freeUtility.util };
+          } else {
+            let e = "UNHANDLED BRANCH: parsedIconInfo";
+            println(e);
+            throw new Error(e);
+          };
+
+          let iconSize;
+          switch (parsedIconInfo.kind) {
+            case IconKind.TeamOperator: {
+              iconSize = 50;
+              break;
+            }
+            case IconKind.TeamAbility: {
+              iconSize = 30;
+              break;
+            }
+            case IconKind.TeamUtility: {
+              iconSize = 30;
+              break;
+            }
+            case IconKind.FreeOperator: {
+              iconSize = 50;
+              break;
+            }
+            case IconKind.FreeAbility: {
+              iconSize = 30;
+              break;
+            }
+            case IconKind.FreeUtility: {
+              iconSize = 30;
+              break;
+            }
+          }
+          floor.icons.set(new Uuid(id), new IconPlacement(Vec2.fromProto(icon.pos!), iconSize, parsedIconInfo));
+        }
+
+        return floor;
+      });
+      return phase;
+    }));
+    updateStratEditingStateDisplay();
+    redrawFreeDrawCanvasQueued = true;
+  }
+
   async function handleNetworkMessage(msgRaw: Uint8Array) {
     const msg = protos.Server2Client.decode(msgRaw);
 
@@ -1032,82 +1110,8 @@ function App() {
       updateStratEditingStateDisplay();
     } else if (msg.getStratInfoResponse) {
       const state: protos.StratState = msg.getStratInfoResponse.state!;
-      stratEditingState.stratName = state.stratName;
-      stratEditingState.teamLoadouts = state.teammates.map((teammate) => {
-        return { operator: teammate.operator, color: colorFromProto(teammate.color!), util: teammate.util }
-      });
-      stratEditingState.setPhasesRaw(state.phases.map((protoPhase) => {
-        let phase = new StratEditingPhase();
-        phase.phaseName = protoPhase.phaseName;
-        phase.floors = protoPhase.floors.map((protoFloor) => {
-          let floor = new StratEditingPhaseFloor();
-          for (const id in protoFloor.drawPaths) {
-            let path = protoFloor.drawPaths[id];
-            floor.drawPaths.set(new Uuid(id), new DrawPath(path.points.map((pt) => Vec2.fromProto(pt)), colorFromProto(path.color!)));
-          }
-          for (const id in protoFloor.arrows) {
-            let arrow = protoFloor.arrows[id];
-            floor.arrows.set(new Uuid(id), new Arrow(Vec2.fromProto(arrow.start!), Vec2.fromProto(arrow.end!), colorFromProto(arrow.color!)));
-          }
-          for (const id in protoFloor.icons) {
-            let icon = protoFloor.icons[id];
-
-            let parsedIconInfo: IconInfo;
-            if (icon.teamOperator) {
-              parsedIconInfo = { kind: IconKind.TeamOperator, teammateIndex: icon.teamOperator.teammateIdx };
-            } else if (icon.teamAbility) {
-              parsedIconInfo = { kind: IconKind.TeamAbility, teammateIndex: icon.teamAbility.teammateIdx };
-            } else if (icon.teamUtility) {
-              parsedIconInfo = { kind: IconKind.TeamUtility, teammateIndex: icon.teamUtility.teammateIdx };
-            } else if (icon.freeOperator) {
-              parsedIconInfo = { kind: IconKind.FreeOperator, operator: icon.freeOperator.operator };
-            } else if (icon.freeAbility) {
-              parsedIconInfo = { kind: IconKind.FreeAbility, operator: icon.freeAbility.ability };
-            } else if (icon.freeUtility) {
-              parsedIconInfo = { kind: IconKind.FreeUtility, util: icon.freeUtility.util };
-            } else {
-              let e = "UNHANDLED BRANCH: parsedIconInfo";
-              println(e);
-              throw new Error(e);
-            };
-
-            let iconSize;
-            switch (parsedIconInfo.kind) {
-              case IconKind.TeamOperator: {
-                iconSize = 50;
-                break;
-              }
-              case IconKind.TeamAbility: {
-                iconSize = 30;
-                break;
-              }
-              case IconKind.TeamUtility: {
-                iconSize = 30;
-                break;
-              }
-              case IconKind.FreeOperator: {
-                iconSize = 50;
-                break;
-              }
-              case IconKind.FreeAbility: {
-                iconSize = 30;
-                break;
-              }
-              case IconKind.FreeUtility: {
-                iconSize = 30;
-                break;
-              }
-            }
-            floor.icons.set(new Uuid(id), new IconPlacement(Vec2.fromProto(icon.pos!), iconSize, parsedIconInfo));
-          }
-
-          return floor;
-        });
-        return phase;
-      }));
+      updateStratEditingStateFromProto(state);
       setCurrPage(Page.StratEditorPage);
-      updateStratEditingStateDisplay();
-      redrawFreeDrawCanvasQueued = true;
     } else if (msg.getLobbyListResponse) {
       setLobbyList(msg.getLobbyListResponse.lobbies.map((lobby) => {
         return { lobbyName: lobby.hostName, lobbyId: lobby.id };
@@ -1125,12 +1129,12 @@ function App() {
         )
       ));
     } else if (msg.lobbySetCurrentStrat) {
-      stratEditingState.stratId = msg.lobbySetCurrentStrat.stratId;
+      stratEditingState.stratId = "";
       stratEditingState.map = msg.lobbySetCurrentStrat.map;
       stratEditingState.mode = StratEditingMode.Lobby;
-      updateStratEditingStateDisplay();
+      setCurrPage(Page.StratEditorPage);
+      updateStratEditingStateFromProto(msg.lobbySetCurrentStrat.strat!);
 
-      await sendNetworkMessage(protos.Client2Server.create({ getStratInfo: { stratId: msg.lobbySetCurrentStrat.stratId } }));
       await sendNetworkMessage(protos.Client2Server.create({ getMapMetadata: { map: msg.lobbySetCurrentStrat.map } }));
     } else if (msg.saveStratResponse) {
       // Yay!
@@ -2014,19 +2018,20 @@ function App() {
       <>
         {/* Menuing buttons */}
         <button onClick={(_) => {
-          let gotoStratList = () => {
-            stratEditingState.reset();
-            updateStratEditingStateDisplay();
-            sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
-            setCurrPage(Page.StratListPage);
-          };
           switch (stratEditingState.mode) {
             case StratEditingMode.Singleplayer: {
-              saveProgress().then(gotoStratList);
+              saveProgress().then((() => {
+                stratEditingState.reset();
+                updateStratEditingStateDisplay();
+                sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
+                setCurrPage(Page.StratListPage);
+              }));
               break;
             }
             case StratEditingMode.Lobby: {
-              gotoStratList();
+              stratEditingState.reset();
+              updateStratEditingStateDisplay();
+              setCurrPage(Page.InLobbySelectStratPage);
               break;
             }
           }

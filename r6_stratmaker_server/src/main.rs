@@ -179,6 +179,54 @@ struct ClientState {
     ws: WebSocketStream<TcpStream>,
 }
 
+fn db_strat_state_to_proto(strat: StratEntry) -> primary::StratState {
+    primary::StratState {
+        strat_name: strat.strat_name,
+        phases: strat
+            .phases
+            .into_iter()
+            .map(|phase| primary::StratPhase {
+                phase_name: phase.phase_name,
+                floors: phase
+                    .floors
+                    .into_iter()
+                    .map(|floor| primary::StratFloor {
+                        draw_paths: floor
+                            .draw_paths
+                            .into_iter()
+                            .map(|(id, path)| (id, path.to_proto()))
+                            .collect(),
+                        arrows: floor
+                            .arrows
+                            .into_iter()
+                            .map(|(id, arrow)| (id, arrow.to_proto()))
+                            .collect(),
+                        icons: floor
+                            .icons
+                            .into_iter()
+                            .map(|(id, icon)| (id, icon.to_proto()))
+                            .collect(),
+
+                        special_fields: SpecialFields::new(),
+                    })
+                    .collect(),
+                special_fields: SpecialFields::new(),
+            })
+            .collect(),
+        teammates: strat
+            .teammates
+            .into_iter()
+            .map(|teammate| primary::Teammate {
+                operator: teammate.operator,
+                color: MessageField::some(teammate.color.to_proto()),
+                util: teammate.util,
+                special_fields: SpecialFields::new(),
+            })
+            .collect(),
+        special_fields: SpecialFields::new(),
+    }
+}
+
 /// ### Returns:
 /// * `Ok(Some(msg))` - The received message isn't of a generic type, and wasn't handled
 /// * `Ok(None)` - The received message was handled successfully
@@ -288,63 +336,21 @@ async fn handle_generic_message(
                 return Ok(None);
             };
 
-            let strat_state = primary::StratState {
-                strat_name: strat.strat_name,
-                phases: strat
-                    .phases
-                    .into_iter()
-                    .map(|phase| primary::StratPhase {
-                        phase_name: phase.phase_name,
-                        floors: phase
-                            .floors
-                            .into_iter()
-                            .map(|floor| primary::StratFloor {
-                                draw_paths: floor
-                                    .draw_paths
-                                    .into_iter()
-                                    .map(|(id, path)| (id, path.to_proto()))
-                                    .collect(),
-                                arrows: floor
-                                    .arrows
-                                    .into_iter()
-                                    .map(|(id, arrow)| (id, arrow.to_proto()))
-                                    .collect(),
-                                icons: floor
-                                    .icons
-                                    .into_iter()
-                                    .map(|(id, icon)| (id, icon.to_proto()))
-                                    .collect(),
-
-                                special_fields: SpecialFields::new(),
-                            })
-                            .collect(),
-                        special_fields: SpecialFields::new(),
-                    })
-                    .collect(),
-                teammates: strat
-                    .teammates
-                    .into_iter()
-                    .map(|teammate| primary::Teammate {
-                        operator: teammate.operator,
-                        color: MessageField::some(teammate.color.to_proto()),
-                        util: teammate.util,
-                        special_fields: SpecialFields::new(),
-                    })
-                    .collect(),
-                special_fields: SpecialFields::new(),
-            };
+            let strat_state = db_strat_state_to_proto(strat);
 
             cl_state
                 .ws
                 .send_proto(S2CInner::GetStratInfoResponse(
                     primary::GetStratInfoResponse {
-                        state: protobuf::MessageField(Some(Box::new(strat_state))),
+                        state: MessageField::some(strat_state),
                         special_fields: SpecialFields::new(),
                     },
                 ))
                 .await?;
         }
         C2SInner::SaveStrat(msg) => {
+            // FIXME: A client can save strats that aren't their own, and can do so while in a lobby
+
             let strat_id = StratId(Uuid::try_parse(&msg.strat_id).context(format!(
                 "{}: {}",
                 line!(),
@@ -469,6 +475,8 @@ fn lobby_loop(
         let mut clients = vec![host];
         let mut members_list_is_changed = true;
 
+        let mut curr_strat_state: Option<StratEntry> = None;
+
         loop {
             tokio::task::yield_now().await;
 
@@ -483,9 +491,25 @@ fn lobby_loop(
             }
 
             // Accept new clients
-            if let Some(new_clients) = join_rx.try_recv_many()
+            if let Some(mut new_clients) = join_rx.try_recv_many()
                 && new_clients.len() > 0
             {
+                for cl in &mut new_clients {
+                    if let Some(curr_strat_state) = &curr_strat_state {
+                        let _ = cl
+                            .ws
+                            .send_proto(S2CInner::LobbySetCurrentStrat(
+                                primary::LobbySetCurrentStrat {
+                                    strat: MessageField::some(db_strat_state_to_proto(
+                                        curr_strat_state.clone(),
+                                    )),
+                                    map: curr_strat_state.map.clone(),
+                                    special_fields: SpecialFields::new(),
+                                },
+                            ))
+                            .await;
+                    }
+                }
                 clients.extend(new_clients);
                 members_list_is_changed = true;
             }
@@ -533,7 +557,7 @@ fn lobby_loop(
                             members: member_names.clone(),
                             special_fields: SpecialFields::new(),
                         }))
-                        .await?;
+                        .await;
 
                     let _ = cl
                         .ws
@@ -543,7 +567,7 @@ fn lobby_loop(
                                 special_fields: SpecialFields::new(),
                             },
                         ))
-                        .await?;
+                        .await;
                 }
 
                 let mut ss = shared_state.lock().unwrap();
@@ -577,13 +601,18 @@ fn lobby_loop(
                                             cl.ws
                                                 .send_proto(S2CInner::LobbySetCurrentStrat(
                                                     primary::LobbySetCurrentStrat {
-                                                        strat_id: strat_id.to_string(),
+                                                        strat: MessageField::some(
+                                                            db_strat_state_to_proto(
+                                                                strat_db.clone(),
+                                                            ),
+                                                        ),
                                                         map: strat_db.map.clone(),
                                                         special_fields: SpecialFields::new(),
                                                     },
                                                 ))
                                                 .await?;
                                         }
+                                        curr_strat_state = Some(strat_db);
                                     }
                                 }
 

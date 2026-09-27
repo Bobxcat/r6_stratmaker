@@ -822,9 +822,17 @@ async fn accept_client(
     Ok(())
 }
 
+const HOST_PUBLIC: bool = true;
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    let addr = if HOST_PUBLIC {
+        "0.0.0.0:8080"
+    } else {
+        "127.0.0.1:8080"
+    };
+    let listener = TcpListener::bind(addr).await?;
+    // let listener = TcpListener::bind("127.0.0.1:8080").await?;
     let database = DatabaseHandle::initialize().await?;
 
     let shared_state = SharedState {
@@ -836,9 +844,10 @@ async fn main() -> Result<(), anyhow::Error> {
 
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
+            println!("TCP Connection established, attempting HTTP handshake");
             let (_request, ws_stream) = ServerBuilder::new().accept(stream).await?;
 
-            println!("Client Accepted at {:?}", ws_stream.get_ref().local_addr());
+            println!("Client Accepted at {:?}", ws_stream.get_ref().peer_addr());
 
             let db_clone = database.clone();
             let state_clone = shared_state.clone();

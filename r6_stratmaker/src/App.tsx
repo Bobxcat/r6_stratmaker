@@ -1340,30 +1340,12 @@ function App() {
 
   function connectToServerPageComponent() {
     async function connectToServer(ipAddr: string) {
-      let ws = await WebSocket.connect(`ws://${ipAddr}`);
+      let ws = await WebSocket.connect(`ws://${ipAddr}:8080`);
       websocket = ws;
 
       ws.addListener((msg) => {
         handleNetworkMessage(msg);
-      })
-
-      // ws
-      // ws.addListener((msg) => {
-      //   switch (msg.type) {
-      //     case "Text":
-      //       println("Network messages must be in binary!");
-      //       break;
-      //     case "Binary":
-      //       handleNetworkMessage(Uint8Array.from(msg.data));
-      //       break;
-      //     case "Ping":
-      //       break;
-      //     case "Pong":
-      //       break;
-      //     case "Close":
-      //       break;
-      //   }
-      // });
+      });
       await sendNetworkMessage(protos.Client2Server.create({ hello: {} }));
 
       setConnectionState(ConnectionState.Connected);
@@ -1381,7 +1363,7 @@ function App() {
         }}>
         <input
           id="select-server-ip-address"
-          defaultValue="127.0.0.1:8080"
+          defaultValue={window.location.hostname}
         />
         <button type="submit">Connect</button>
       </form>

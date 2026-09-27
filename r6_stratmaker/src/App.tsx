@@ -1464,6 +1464,15 @@ function App() {
 
   function inLobbySelectStratPageComponent() {
     async function loadStrat(strat: LobbyStratMetadata) {
+      // FIXME: For some reason, a client in a lobby that initiates loading a strat will fail to
+      // redraw the canvas when `redrawFreeDrawCanvas` is called immediately, while the others will succeed.
+      // For this reason, we need to trigger a second redraw with a slight delay
+      setTimeout(() => {
+        redrawFreeDrawCanvasQueued = true;
+      }, 50);
+      setTimeout(() => {
+        redrawFreeDrawCanvasQueued = true;
+      }, 100);
       await sendNetworkMessage(protos.Client2Server.create({ lobbyLoadStrat: { stratId: strat.strat.uuid } }));
     }
 
@@ -1657,12 +1666,6 @@ function App() {
         if (document.getElementById(stratEditorFreeDrawCanvasId) && redrawFreeDrawCanvasQueued) {
           redrawFreeDrawCanvasQueued = false;
           redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
-          // FIXME: For some reason, a client in a lobby that initiates loading a strat will fail to
-          // redraw the canvas when `redrawFreeDrawCanvas` is called immediately, while the others will succeed.
-          // For this reason, we need to trigger a second redraw with a slight delay
-          setTimeout(() => {
-            redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
-          }, 50);
         }
 
         const phase = stratEditingState.selectedPhase;

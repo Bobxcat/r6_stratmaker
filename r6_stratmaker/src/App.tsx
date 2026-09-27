@@ -1717,8 +1717,6 @@ function App() {
                   const elem = stratEditingState.getDrawElementRef(phase, floor, toolState.currentPath!)?.asDrawPath();
                   if (elem) {
                     elem.points.push(inputCanvasState.mousePos.clone());
-                    // TODO: only call `setDrawElement` on *finishing* a path
-                    stratEditingState.setDrawElement(phase, floor, toolState.currentPath!, elem);
                   }
                 }
               } else {
@@ -1740,6 +1738,10 @@ function App() {
                 drawElementToCanvas(stratEditorFreeDrawCanvasId, path, stratEditingState.selectedFloor);
               }
             } else {
+              const elem = stratEditingState.getDrawElementRef(phase, floor, toolState.currentPath!)?.asDrawPath();
+              if (elem) {
+                stratEditingState.setDrawElement(phase, floor, toolState.currentPath!, elem);
+              }
               toolState.currentPath = undefined;
             }
             break;

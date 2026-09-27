@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { isTauri, invoke } from "@tauri-apps/api/core";
 // import WebSocket from "@tauri-apps/plugin-websocket";
+import { DeepMap } from "deep-equality-data-structures";
 import { WS as WebSocket } from "./websocket.ts";
 import "./App.css";
 import * as protos from "./generated_protos/primary.ts"
@@ -57,7 +58,7 @@ class AnyDrawElementId {
     this.id = id;
   }
 
-  get(phase: StratEditingPhase): DrawElement | undefined {
+  getRaw(phase: StratEditingPhase): DrawElement | undefined {
     const phaseFloor = phase.floors[this.floor];
     switch (this.kind) {
       case DrawElementKind.DrawPath: {
@@ -620,9 +621,9 @@ class IconPlacement implements DrawElement {
 }
 
 class StratEditingPhaseFloor {
-  drawPaths: Map<Uuid, DrawPath> = new Map();
-  arrows: Map<Uuid, Arrow> = new Map();
-  icons: Map<Uuid, IconPlacement> = new Map();
+  drawPaths: DeepMap<Uuid, DrawPath> = new DeepMap();
+  arrows: DeepMap<Uuid, Arrow> = new DeepMap();
+  icons: DeepMap<Uuid, IconPlacement> = new DeepMap();
 
   allDrawElements(): Uuid[] {
     return Array.from(this.drawPaths.keys())
@@ -977,12 +978,12 @@ class OperatorsIndex {
   // Part of the JSON...
   attackers: string[] = [];
   defenders: string[] = [];
-  operators: Map<string, OperatorInfo> = new Map();
+  operators: DeepMap<string, OperatorInfo> = new DeepMap();
 
   // Normal fields...
-  operatorImgData: Map<string, CanvasImageSource> = new Map();
-  abilityImgData: Map<string, CanvasImageSource> = new Map();
-  utilityImgData: Map<string, CanvasImageSource> = new Map();
+  operatorImgData: DeepMap<string, CanvasImageSource> = new DeepMap();
+  abilityImgData: DeepMap<string, CanvasImageSource> = new DeepMap();
+  utilityImgData: DeepMap<string, CanvasImageSource> = new DeepMap();
 
   getOperatorIconPath(operator: string): string {
     const op = this.operators.get(operator);
@@ -1082,8 +1083,8 @@ function lerp(start: number, end: number, t: number): number {
   return start * (1 - t) + end * t;
 }
 
-function mapMap<K1, V1, K2, V2>(map: Map<K1, V1>, cb: (k: K1, v: V1) => [K2, V2]): Map<K2, V2> {
-  let outMap = new Map();
+function mapMap<K1, V1, K2, V2>(map: DeepMap<K1, V1>, cb: (k: K1, v: V1) => [K2, V2]): DeepMap<K2, V2> {
+  let outMap: DeepMap<K2, V2> = new DeepMap();
 
   for (const entry of map) {
     const out = cb(entry[0], entry[1]);
@@ -1093,7 +1094,7 @@ function mapMap<K1, V1, K2, V2>(map: Map<K1, V1>, cb: (k: K1, v: V1) => [K2, V2]
   return outMap;
 }
 
-function mapMapToObject<K1, V1, V2>(map: Map<K1, V1>, cb: (k: K1, v: V1) => [string, V2]): Record<string, V2> {
+function mapMapToObject<K1, V1, V2>(map: DeepMap<K1, V1>, cb: (k: K1, v: V1) => [string, V2]): Record<string, V2> {
   let record: Record<string, V2> = {};
 
   for (const entry of mapMap(map, cb)) {
@@ -1893,9 +1894,9 @@ function App() {
               }
             })();
 
-            if (toolState.selected && toolState.selected.get(phaseRawRef)) {
+            if (toolState.selected && toolState.selected.getRaw(phaseRawRef)) {
               // Draw border around selection
-              const boundingBox: Aabb = toolState.selected.get(phaseRawRef)!.boundingBox();
+              const boundingBox: Aabb = toolState.selected.getRaw(phaseRawRef)!.boundingBox();
 
               placementPreviewCtx.beginPath();
 
@@ -1924,6 +1925,8 @@ function App() {
                     floor: toolState.selected.floor,
                     id: toolState.selected.id,
                   });
+                  // Notify server of dragging
+                  stratEditingState.setDrawElement(phase, toolState.selected.floor, toolState.selected.id, toolState.selected.getRaw(phaseRawRef)!);
                 }
 
                 toolState.currDragTotalDelta = new Vec2(0, 0);
@@ -1933,10 +1936,9 @@ function App() {
               // Drag the selection
               if (toolState.isDragging) {
                 const posDelta = inputCanvasState.mousePos.sub(inputCanvasState.prevMousePos);
-                const drawElem = toolState.selected.get(phaseRawRef)!;
+                const drawElem = toolState.selected.getRaw(phaseRawRef)!;
                 drawElem.mapPoints((pt) => pt.add(posDelta));
                 toolState.currDragTotalDelta = toolState.currDragTotalDelta.add(posDelta);
-                stratEditingState.setDrawElement(phase, toolState.selected.floor, toolState.selected.id, drawElem);
 
                 // Somehow this isn't *that* bad for performance??
                 redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
@@ -1946,7 +1948,7 @@ function App() {
               if (toolState.isDeleteQueued) {
                 stratEditingState.pushPreviousDrawAction(phase, {
                   kind: DrawActionKind.DeleteDrawElement,
-                  data: toolState.selected.get(phaseRawRef)!,
+                  data: toolState.selected.getRaw(phaseRawRef)!,
                   floor: toolState.selected.floor,
                   id: toolState.selected.id,
                 });

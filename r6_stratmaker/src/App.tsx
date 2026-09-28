@@ -30,6 +30,8 @@ interface DrawElement {
   asArrow(): Arrow | undefined;
   asIcon(): IconPlacement | undefined;
 
+  clone(): DrawElement;
+
   isHovered(mousePos: Vec2): boolean;
   boundingBox(): Aabb;
   drawToCtx(ctx: CanvasRenderingContext2D): void;
@@ -102,7 +104,9 @@ enum DrawTool {
 }
 
 class InputCanvasState {
+  /** The previous mouse position in *logical* pixels */
   prevMousePos: Vec2 = new Vec2(0, 0);
+  /** The current mouse position in *logical* pixels */
   mousePos: Vec2 = new Vec2(0, 0);
 
   prevMouseClicked: boolean = false;
@@ -114,6 +118,37 @@ class InputCanvasState {
 
   public static get Instance() {
     return this._instance || (this._instance = new this());
+  }
+}
+
+class Color {
+  readonly r: number;
+  readonly g: number;
+  readonly b: number;
+  constructor(r: number, g: number, b: number) {
+    this.r = r;
+    this.g = g;
+    this.b = b;
+  }
+
+  static fromRgb(rgb: number[]): Color {
+    return new Color(rgb[0], rgb[1], rgb[2]);
+  }
+
+  toString(): string {
+    return this.toCss();
+  }
+
+  toCss(): string {
+    return `rgb(${this.r},${this.g},${this.b})`
+  }
+
+  toProto(): protos.Color {
+    return { r: this.r, g: this.g, b: this.b };
+  }
+
+  static fromProto(color: protos.Color): Color {
+    return new Color(color.r, color.g, color.b);
   }
 }
 
@@ -241,23 +276,27 @@ class Aabb {
     return (this.minPt.x <= pt.x && pt.x <= this.maxPt.x) &&
       (this.minPt.y <= pt.y && pt.y <= this.maxPt.y);
   }
+
+  scaled(scale: number): Aabb {
+    return Aabb.fromPoints([this.minPt.scaled(scale), this.maxPt.scaled(scale)]);
+  }
 }
 
 class DrawPath implements DrawElement {
   points: Array<Vec2>;
-  color: [number, number, number];
+  color: Color;
 
-  constructor(points: Array<Vec2>, color: [number, number, number]) {
+  constructor(points: Array<Vec2>, color: Color) {
     this.points = points;
     this.color = color;
   }
 
   static fromProto(proto: protos.DrawPath): DrawPath {
-    return new DrawPath(proto.points.map((pt) => Vec2.fromProto(pt)), colorFromProto(proto.color!));
+    return new DrawPath(proto.points.map((pt) => Vec2.fromProto(pt)), Color.fromProto(proto.color!));
   }
 
   toProto(): protos.DrawPath {
-    return { points: this.points, color: colorToProto(this.color) };
+    return { points: this.points, color: this.color.toProto() };
   }
 
   asEnum(): AnyDrawElementData {
@@ -271,6 +310,9 @@ class DrawPath implements DrawElement {
   }
   asIcon(): IconPlacement | undefined {
     return undefined;
+  }
+  clone(): DrawElement {
+    return new DrawPath(this.points.slice(), this.color)
   }
   isHovered(mousePos: Vec2): boolean {
     for (let i = 0; i < this.points.length - 1; i += 1) {
@@ -286,8 +328,8 @@ class DrawPath implements DrawElement {
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
-    ctx.strokeStyle = `rgb(${this.color[0]}, ${this.color[1]}, ${this.color[2]})`;
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = this.color.toCss();
+    ctx.lineWidth = 3 * canvasScale;
 
     this.points.forEach((pt, idx) => {
       if (idx == 0) {
@@ -307,20 +349,20 @@ class DrawPath implements DrawElement {
 class Arrow implements DrawElement {
   start: Vec2;
   end: Vec2;
-  color: [number, number, number];
+  color: Color;
 
-  constructor(start: Vec2, end: Vec2, color: [number, number, number]) {
+  constructor(start: Vec2, end: Vec2, color: Color) {
     this.start = start;
     this.end = end;
     this.color = color;
   }
 
   static fromProto(proto: protos.Arrow): Arrow {
-    return new Arrow(Vec2.fromProto(proto.start!), Vec2.fromProto(proto.end!), colorFromProto(proto.color!));
+    return new Arrow(Vec2.fromProto(proto.start!), Vec2.fromProto(proto.end!), Color.fromProto(proto.color!));
   }
 
   toProto(): protos.Arrow {
-    return { start: this.start, end: this.end, color: colorToProto(this.color) };
+    return { start: this.start, end: this.end, color: this.color.toProto() };
   }
 
   asEnum(): AnyDrawElementData {
@@ -335,6 +377,9 @@ class Arrow implements DrawElement {
   asIcon(): IconPlacement | undefined {
     return undefined;
   }
+  clone(): DrawElement {
+    return new Arrow(this.start, this.end, this.color);
+  }
   isHovered(mousePos: Vec2): boolean {
     return mousePos.distanceToLine(this.start, this.end, false, false).distance < 5;
   }
@@ -343,8 +388,8 @@ class Arrow implements DrawElement {
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
-    ctx.strokeStyle = `rgb(${this.color[0]}, ${this.color[1]}, ${this.color[2]})`;
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = this.color.toCss();
+    ctx.lineWidth = 3 * canvasScale;
 
     ctx.moveTo(this.start.x, this.start.y);
     ctx.lineTo(this.end.x, this.end.y);
@@ -519,6 +564,9 @@ class IconPlacement implements DrawElement {
   asIcon(): IconPlacement | undefined {
     return this;
   }
+  clone(): DrawElement {
+    return new IconPlacement(this.pos, this.size, Object.assign({}, this.info));
+  }
   isHovered(mousePos: Vec2): boolean {
     return this.boundingBox().containsPoint(mousePos);
   }
@@ -531,7 +579,6 @@ class IconPlacement implements DrawElement {
       return imgElem.width / imgElem.height;
     }
 
-    // const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
     switch (this.info.kind) {
       case IconKind.TeamOperator: {
         width = this.size;
@@ -577,19 +624,19 @@ class IconPlacement implements DrawElement {
     switch (this.info.kind) {
       case IconKind.TeamOperator: {
         const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
-        ctx.fillStyle = `rgb(${loadout.color[0]}, ${loadout.color[1]}, ${loadout.color[2]})`;
+        ctx.fillStyle = loadout.color.toCss();
         imgData = operatorsIndexNonReactive.operatorImgData.get(loadout.operator);
         break;
       }
       case IconKind.TeamAbility: {
         const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
-        ctx.fillStyle = `rgb(${loadout.color[0]}, ${loadout.color[1]}, ${loadout.color[2]})`;
+        ctx.fillStyle = loadout.color.toCss();
         imgData = operatorsIndexNonReactive.abilityImgData.get(loadout.operator);
         break;
       }
       case IconKind.TeamUtility: {
         const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
-        ctx.fillStyle = `rgb(${loadout.color[0]}, ${loadout.color[1]}, ${loadout.color[2]})`;
+        ctx.fillStyle = loadout.color.toCss();
         imgData = operatorsIndexNonReactive.utilityImgData.get(loadout.util);
         break;
       }
@@ -609,10 +656,10 @@ class IconPlacement implements DrawElement {
         break;
       }
     }
-    ctx.fillRect(aabb.minPt.x, aabb.minPt.y, aabb.width(), aabb.height());
+    ctx.fillRect(aabb.minPt.x, aabb.minPt.y, aabb.width() * canvasScale, aabb.height() * canvasScale);
 
     if (imgData) {
-      ctx.drawImage(imgData, aabb.minPt.x, aabb.minPt.y, aabb.width(), aabb.height());
+      ctx.drawImage(imgData, aabb.minPt.x, aabb.minPt.y, aabb.width() * canvasScale, aabb.height() * canvasScale);
     }
   }
   mapPoints(map: (pt: Vec2) => Vec2): void {
@@ -736,16 +783,16 @@ class ToolStates {
 }
 
 class StratEditingLoadout {
-  static readonly defaultPalette: [number, number, number][] = [
+  static readonly defaultPalette: Color[] = [
     [150, 245, 80],
     [229, 99, 153],
     [127, 150, 255],
     [166, 207, 213],
     [255, 188, 66],
-  ];
+  ].map(Color.fromRgb);
 
   operator: string = "ace";
-  color: [number, number, number] = [1, 2, 3];
+  color: Color = new Color(1, 2, 3);
   util: string = "";
 }
 
@@ -755,17 +802,17 @@ enum StratEditingMode {
 }
 
 class StratEditingState {
-  static readonly freeDrawPalette: [number, number, number][] = StratEditingLoadout.defaultPalette.concat([
+  static readonly freeDrawPalette: Color[] = StratEditingLoadout.defaultPalette.concat([
     [200, 10, 10],
     [10, 200, 10],
     [10, 10, 200],
     [200, 200, 10],
-  ]);
+  ].map(Color.fromRgb));
 
   mode: StratEditingMode = StratEditingMode.Singleplayer;
   lobbyMembers: string[] = [];
 
-  selectedDrawColor: [number, number, number] = StratEditingState.freeDrawPalette[0];
+  selectedDrawColor: Color = StratEditingState.freeDrawPalette[0];
 
   teamLoadouts: StratEditingLoadout[] = newArrayOfSize(5, (idx) => {
     let l = new StratEditingLoadout();
@@ -783,6 +830,7 @@ class StratEditingState {
   mapFloors: string[] = [];
   mapImgWidth: number = 1600;
   mapImgHeight: number = 900;
+  prevCanvasScales: DeepMap<string, number> = new DeepMap();
   selectedFloor: number = 0;
 
   private phases: StratEditingPhase[] = [];
@@ -959,10 +1007,9 @@ class StratEditingState {
 
 const stratEditingState = new StratEditingState();
 let redrawFreeDrawCanvasQueued: boolean = false;
+let canvasScale: number = 1;
 
 const inputCanvasState = InputCanvasState.Instance;
-
-const stratEditorFreeDrawCanvasId = "strat-editor-free-draw-canvas";
 
 const mapList = ["chalet", "coastline"];
 
@@ -1104,14 +1151,6 @@ function mapMapToObject<K1, V1, V2>(map: DeepMap<K1, V1>, cb: (k: K1, v: V1) => 
   return record;
 }
 
-function colorToProto(color: [number, number, number]): protos.Color {
-  return { r: color[0], g: color[1], b: color[2] };
-}
-
-function colorFromProto(color: protos.Color): [number, number, number] {
-  return [color.r, color.g, color.b];
-}
-
 function println(msg: string) {
   if (isTauri()) {
     invoke("console_println", { msg })
@@ -1125,8 +1164,29 @@ async function sendNetworkMessage(msg: protos.Client2Server) {
   await websocket?.send(Array.from(msgRaw));
 }
 
+// FIXME: For some reason, a client in a lobby that initiates loading a strat will fail to
+// redraw the canvas when `redrawFreeDrawCanvas` is called immediately, while the others will succeed.
+// For this reason, we need to trigger a second redraw with a slight delay
+function redrawFreeDrawCanvasQueueDeferred() {
+  redrawFreeDrawCanvasQueued = true;
+  setTimeout(() => {
+    redrawFreeDrawCanvasQueued = true;
+  }, 50);
+  setTimeout(() => {
+    redrawFreeDrawCanvasQueued = true;
+  }, 100);
+}
+
+const canvasIds = {
+  placementPreview: "placement-preview-canvas",
+  freeDraw: "free-draw-canvas",
+  inputGathering: "input-gathering-canvas",
+};
+
 function App() {
   const [stratEditingStateDisplay, setStratEditingStateDisplay] = useState<StratEditingState>(new StratEditingState());
+  const [stratEditingCanvasWidth, setStratEditingCanvasWidth] = useState<number>(1600);
+  const [stratEditingCanvasHeight, setStratEditingCanvasHeight] = useState<number>(900);
 
   const [currPage, setCurrPage] = useState<Page>(Page.ConnectToServerPage);
 
@@ -1148,7 +1208,6 @@ function App() {
   const [selectOperatorForTeammateActiveIdx, setSelectOperatorForTeammateActiveIdx] = useState<number | undefined>(undefined);
   const [selectUtilityForTeammateActiveIdx, setSelectUtilityForTeammateActiveIdx] = useState<number | undefined>(undefined);
 
-
   // Load operators
   useEffect(() => {
     async function loadOperatorsIndex() {
@@ -1161,6 +1220,20 @@ function App() {
     }
     loadOperatorsIndex();
   }, []);
+
+  //** Returns whether or not the size of the canvas has changed */
+  function recalculateStratEditingCanvasSize(): boolean {
+    let width = window.innerWidth / 2;
+    let height = (stratEditingState.mapImgHeight / stratEditingState.mapImgWidth) * width;
+    canvasScale = width / stratEditingState.mapImgWidth;
+    if (Math.abs(width - stratEditingCanvasWidth) > 0.01) {
+      setStratEditingCanvasWidth(width);
+      setStratEditingCanvasHeight(height);
+      return true;
+    } else {
+      return false;
+    }
+  }
 
   function getFloorImgPath(map: string, floor: string): string {
     return `/maps/${map}/${floor}.jpg`
@@ -1175,7 +1248,7 @@ function App() {
   function updateStratEditingStateFromProto(state: protos.StratState) {
     stratEditingState.stratName = state.stratName;
     stratEditingState.teamLoadouts = state.teammates.map((teammate) => {
-      return { operator: teammate.operator, color: colorFromProto(teammate.color!), util: teammate.util }
+      return { operator: teammate.operator, color: Color.fromProto(teammate.color!), util: teammate.util }
     });
     stratEditingState.setPhasesRaw(state.phases.map((protoPhase) => {
       let phase = new StratEditingPhase();
@@ -1251,6 +1324,7 @@ function App() {
       stratEditingState.mode = StratEditingMode.Lobby;
       setCurrPage(Page.StratEditorPage);
       updateStratEditingStateFromProto(msg.lobbySetCurrentStrat.strat!);
+      redrawFreeDrawCanvasQueueDeferred();
 
       await sendNetworkMessage(protos.Client2Server.create({ getMapMetadata: { map: msg.lobbySetCurrentStrat.map } }));
     } else if (msg.lobbyDrawCommand) {
@@ -1325,10 +1399,6 @@ function App() {
     } else if (defenders) {
       ops = operatorsIndexReactive.defenders;
     }
-
-    // Note: this is a test for the "truthyness" of widthOverride, which means that `widthOverride == 0` will *also* go to `10`
-    // const rowWidth = rowWidthOverride ? rowWidthOverride : 10;
-    // var rows: string[][] = arrayChunk(ops, rowWidth);
 
     var imgSize = (imgSizeOverride === undefined) ? 32 : imgSizeOverride;
 
@@ -1446,15 +1516,7 @@ function App() {
 
   function inLobbySelectStratPageComponent() {
     async function loadStrat(strat: LobbyStratMetadata) {
-      // FIXME: For some reason, a client in a lobby that initiates loading a strat will fail to
-      // redraw the canvas when `redrawFreeDrawCanvas` is called immediately, while the others will succeed.
-      // For this reason, we need to trigger a second redraw with a slight delay
-      setTimeout(() => {
-        redrawFreeDrawCanvasQueued = true;
-      }, 50);
-      setTimeout(() => {
-        redrawFreeDrawCanvasQueued = true;
-      }, 100);
+      redrawFreeDrawCanvasQueueDeferred();
       await sendNetworkMessage(protos.Client2Server.create({ lobbyLoadStrat: { stratId: strat.strat.uuid } }));
     }
 
@@ -1502,7 +1564,6 @@ function App() {
   }
 
   function stratEditorPageComponent() {
-    const placementPreviewCanvasId = "arrow-placement-preview-canvas";
 
     /**
      * 
@@ -1527,9 +1588,9 @@ function App() {
         return;
       }
 
-      const length = 5;
-      const lineWidth = 1.5;
-      const spacing = 3;
+      const length = 5 * canvasScale;
+      const lineWidth = 1.5 * canvasScale;
+      const spacing = 3 * canvasScale;
 
       function drawSingleCaret(ctx: CanvasRenderingContext2D, isDown: boolean, pos: Vec2) {
         // Since -y is "up", we rotate in the positive direction to point downwards
@@ -1580,17 +1641,26 @@ function App() {
       if (stratEditingState.selectedFloor != floor) {
         ctx.globalAlpha = 0.3;
       }
-      elem.drawToCtx(ctx);
+      let elemClone = elem.clone();
+      elemClone.mapPoints((pt) => pt.scaled(canvasScale));
+      elemClone.drawToCtx(ctx);
       ctx.globalAlpha = 1.0;
 
-      const aabb = elem.boundingBox();
+      const aabb = elemClone.boundingBox();
       const caretPt = new Vec2(aabb.minPt.x, (aabb.minPt.y + aabb.maxPt.y) / 2);
       drawCaretToCanvas(canvasId, floor - stratEditingState.selectedFloor, caretPt);
     }
 
     function redrawFreeDrawCanvas(canvasId: string) {
-      const canvas = document.getElementById(canvasId)! as HTMLCanvasElement;
-      const ctx = canvas.getContext("2d")!;
+      const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
+      if (!canvas) {
+        return;
+      }
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        return;
+      }
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -1623,31 +1693,44 @@ function App() {
       }
     }
 
-    function mousePosForCanvas(canvasId: string, clientX: number, clientY: number): Vec2 {
+    /** Returns the normalized mouse position on the canvas */
+    function logicalMousePosForCanvas(canvasId: string, clientX: number, clientY: number): Vec2 {
       const canvas = document.getElementById(canvasId)! as HTMLCanvasElement;
       const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      return new Vec2(((clientX - rect.left) * scaleX), ((clientY - rect.top) * scaleY));
+      const scale = 1 / canvasScale;
+      return new Vec2(((clientX - rect.left) * scale), ((clientY - rect.top) * scale));
     }
 
-    function freeDrawCanvas(canvasId: string) {
-      return (
-        <canvas id={canvasId}
-          style={{ gridColumn: 1, gridRow: 1, zIndex: 1 }}
-          width={stratEditingStateDisplay.mapImgWidth}
-          height={stratEditingStateDisplay.mapImgHeight}
-        ></canvas>
-      )
+    function updateCanvasScale(canvasId: string) {
+      const ctx = (document.getElementById(canvasId) as HTMLCanvasElement)?.getContext("2d");
+      if (!ctx) {
+        return;
+      }
+
+      let prevScale = stratEditingState.prevCanvasScales.get(canvasId);
+      if (!prevScale) {
+        stratEditingState.prevCanvasScales.set(canvasId, 1);
+        prevScale = 1;
+      }
+      const newScale = canvasScale;
+      if (Math.abs(newScale - prevScale) > 0.001) {
+        ctx.scale(newScale / prevScale, newScale / prevScale);
+        stratEditingState.prevCanvasScales.set(canvasId, newScale);
+      }
     }
 
     function inputGatheringCanvas() {
-      const inputGatheringCanvasId = "input-gathering-canvas";
-
       function onUpdate() {
-        if (document.getElementById(stratEditorFreeDrawCanvasId) && redrawFreeDrawCanvasQueued) {
+        if (recalculateStratEditingCanvasSize()) {
+          for (const [_, canvasId] of Object.entries(canvasIds)) {
+            updateCanvasScale(canvasId);
+          }
+          redrawFreeDrawCanvas(canvasIds.freeDraw);
+        }
+
+        if (document.getElementById(canvasIds.freeDraw) && redrawFreeDrawCanvasQueued) {
           redrawFreeDrawCanvasQueued = false;
-          redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+          redrawFreeDrawCanvas(canvasIds.freeDraw);
         }
 
         const phase = stratEditingState.selectedPhase;
@@ -1656,7 +1739,7 @@ function App() {
           return;
         }
 
-        const placementPreviewCanvas = document.getElementById(placementPreviewCanvasId)! as HTMLCanvasElement;
+        const placementPreviewCanvas = document.getElementById(canvasIds.placementPreview)! as HTMLCanvasElement;
         const placementPreviewCtx = placementPreviewCanvas.getContext("2d")!;
         placementPreviewCtx.clearRect(0, 0, placementPreviewCanvas.width, placementPreviewCanvas.height);
 
@@ -1717,7 +1800,7 @@ function App() {
               // Draw path to canvas immediately, avoiding a rerender
               if (inputCanvasState.prevMouseClicked) {
                 var path = new DrawPath([inputCanvasState.prevMousePos.clone(), inputCanvasState.mousePos.clone()], stratEditingState.selectedDrawColor);
-                drawElementToCanvas(stratEditorFreeDrawCanvasId, path, stratEditingState.selectedFloor);
+                drawElementToCanvas(canvasIds.freeDraw, path, stratEditingState.selectedFloor);
               }
             } else {
               const elem = stratEditingState.getDrawElementRef(phase, floor, toolState.currentPath!)?.asDrawPath();
@@ -1734,7 +1817,7 @@ function App() {
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
               if (toolState.arrowHasBeenStarted) {
                 const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone(), stratEditingState.selectedDrawColor);
-                drawElementToCanvas(stratEditorFreeDrawCanvasId, arrow, stratEditingState.selectedFloor);
+                drawElementToCanvas(canvasIds.freeDraw, arrow, stratEditingState.selectedFloor);
                 const id = stratEditingState.pushDrawElement(phase, floor, arrow);
                 stratEditingState.pushPreviousDrawAction(stratEditingState.selectedPhase, {
                   kind: DrawActionKind.PlaceDrawElement,
@@ -1751,7 +1834,7 @@ function App() {
 
             if (toolState.arrowHasBeenStarted && !inputCanvasState.mouseClicked) {
               const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone(), stratEditingState.selectedDrawColor);
-              drawElementToCanvas(placementPreviewCanvasId, arrow, stratEditingState.selectedFloor);
+              drawElementToCanvas(canvasIds.placementPreview, arrow, stratEditingState.selectedFloor);
             }
             break;
           }
@@ -1789,7 +1872,7 @@ function App() {
             const icon = new IconPlacement(inputCanvasState.mousePos.clone(), iconSize, toolState.selectedIcon);
 
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
-              drawElementToCanvas(stratEditorFreeDrawCanvasId, icon, stratEditingState.selectedFloor);
+              drawElementToCanvas(canvasIds.freeDraw, icon, stratEditingState.selectedFloor);
               const id = stratEditingState.pushDrawElement(phase, floor, icon);
               stratEditingState.pushPreviousDrawAction(stratEditingState.selectedPhase, {
                 kind: DrawActionKind.PlaceDrawElement,
@@ -1798,7 +1881,7 @@ function App() {
                 id,
               });
             } else {
-              drawElementToCanvas(placementPreviewCanvasId, icon, stratEditingState.selectedFloor);
+              drawElementToCanvas(canvasIds.placementPreview, icon, stratEditingState.selectedFloor);
             }
             break;
           }
@@ -1883,7 +1966,7 @@ function App() {
 
             if (toolState.selected && toolState.selected.getRaw(phaseRawRef)) {
               // Draw border around selection
-              const boundingBox: Aabb = toolState.selected.getRaw(phaseRawRef)!.boundingBox();
+              const boundingBox: Aabb = toolState.selected.getRaw(phaseRawRef)!.boundingBox().scaled(canvasScale);
 
               placementPreviewCtx.beginPath();
 
@@ -1928,7 +2011,7 @@ function App() {
                 toolState.currDragTotalDelta = toolState.currDragTotalDelta.add(posDelta);
 
                 // Somehow this isn't *that* bad for performance??
-                redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+                redrawFreeDrawCanvas(canvasIds.freeDraw);
               }
 
               // Delete the selection
@@ -1942,7 +2025,7 @@ function App() {
                 stratEditingState.deleteDrawElement(phase, toolState.selected.floor, toolState.selected.id);
                 toolState.isDeleteQueued = false;
                 toolState.selected = undefined;
-                redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+                redrawFreeDrawCanvas(canvasIds.freeDraw);
               }
             }
 
@@ -2002,7 +2085,7 @@ function App() {
             break;
           }
         }
-        redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+        redrawFreeDrawCanvas(canvasIds.freeDraw);
       }
 
       function triggerRedo() {
@@ -2024,12 +2107,12 @@ function App() {
         switch (redoAction.kind) {
           case DrawActionKind.PlaceDrawElement: {
             stratEditingState.setDrawElement(phase, redoAction.floor, redoAction.id, redoAction.data);
-            drawElementToCanvas(stratEditorFreeDrawCanvasId, redoAction.data, stratEditingState.selectedFloor);
+            drawElementToCanvas(canvasIds.freeDraw, redoAction.data, stratEditingState.selectedFloor);
             break;
           }
           case DrawActionKind.DeleteDrawElement: {
             stratEditingState.deleteDrawElement(phase, redoAction.floor, redoAction.id);
-            redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+            redrawFreeDrawCanvas(canvasIds.freeDraw);
             break;
           }
           case DrawActionKind.MoveDrawElement: {
@@ -2037,7 +2120,7 @@ function App() {
             if (elem) {
               elem.mapPoints((pt) => pt.add(redoAction.delta));
               stratEditingState.setDrawElement(phase, redoAction.floor, redoAction.id, elem);
-              redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+              redrawFreeDrawCanvas(canvasIds.freeDraw);
             }
             break;
           }
@@ -2059,11 +2142,11 @@ function App() {
       };
 
       return (<>
-        <canvas id={inputGatheringCanvasId}
+        <canvas id={canvasIds.inputGathering}
           style={{ gridColumn: 1, gridRow: 1, zIndex: 100, touchAction: "none" }}
           // style={{ gridColumn: 1, gridRow: 1, zIndex: 100 }}
-          width={stratEditingStateDisplay.mapImgWidth}
-          height={stratEditingStateDisplay.mapImgHeight}
+          width={stratEditingCanvasWidth}
+          height={stratEditingCanvasHeight}
           onMouseEnter={(_e) => inputCanvasState.mouseClicked = false}
           onMouseLeave={(_e) => inputCanvasState.mouseClicked = false}
           onMouseDown={(_e) => inputCanvasState.mouseClicked = true}
@@ -2074,7 +2157,7 @@ function App() {
           // onMouseUp={(e) => { inputCanvasState.mouseClicked = false; e.preventDefault(); }}
           onMouseMove={(e) => {
             e.preventDefault();
-            inputCanvasState.mousePos = mousePosForCanvas(inputGatheringCanvasId, e.clientX, e.clientY);
+            inputCanvasState.mousePos = logicalMousePosForCanvas(canvasIds.inputGathering, e.clientX, e.clientY);
           }}></canvas>
       </>)
     }
@@ -2098,7 +2181,7 @@ function App() {
         };
       });
       const teammates: protos.Teammate[] = stratEditingState.teamLoadouts.map((loadout) => {
-        return { operator: loadout.operator, color: { r: loadout.color[0], g: loadout.color[1], b: loadout.color[2] }, util: loadout.util }
+        return { operator: loadout.operator, color: loadout.color.toProto(), util: loadout.util }
       });
 
       const state: protos.StratState = { stratName: stratEditingState.stratName, phases, teammates };
@@ -2172,7 +2255,7 @@ function App() {
               stratEditingState.toolStates.freeDraw = new FreeDrawToolState();
               // Don't clear icon placement state
               stratEditingState.toolStates.selectAndEdit = new SelectAndEditToolState();
-              redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+              redrawFreeDrawCanvas(canvasIds.freeDraw);
               updateStratEditingStateDisplay();
             }}>{phase.phaseName}</button>
           )}
@@ -2190,7 +2273,7 @@ function App() {
             <button key={i} onClick={(e) => {
               e.preventDefault();
               stratEditingState.selectedFloor = i;
-              redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+              redrawFreeDrawCanvas(canvasIds.freeDraw);
               updateStratEditingStateDisplay();
             }}>{floor_name}</button>
           )}
@@ -2224,7 +2307,7 @@ function App() {
                       setSelectOperatorForTeammateActiveIdx(undefined);
 
                       updateStratEditingStateDisplay();
-                      redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+                      redrawFreeDrawCanvas(canvasIds.freeDraw);
                     }, false, true, false, 10)}
                   </div>
                 </div>
@@ -2265,7 +2348,7 @@ function App() {
                       setSelectUtilityForTeammateActiveIdx(undefined);
 
                       updateStratEditingStateDisplay();
-                      redrawFreeDrawCanvas(stratEditorFreeDrawCanvasId);
+                      redrawFreeDrawCanvas(canvasIds.freeDraw);
                     }, stratEditingState.teamLoadouts[idx].operator)}
                   </div>
                 </div>
@@ -2285,7 +2368,7 @@ function App() {
                   width: 32,
                   height: 32,
                   border: stratEditingStateDisplay.selectedDrawColor == color ? "2px solid #0f0f0f" : "",
-                  backgroundColor: `rgb(${color[0]}, ${color[1]}, ${color[2]})`,
+                  backgroundColor: color.toCss(),
                   borderRadius: "8px"
                 }}></div>
               </>, (color) => {
@@ -2316,12 +2399,20 @@ function App() {
           {/* Draw Area */}
           <div id="draw-area" style={{ margin: 8, display: "grid", gridTemplateColumns: "1", gridTemplateRows: "1" }}>
             <img src={getFloorImgPath(stratEditingStateDisplay.map, stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.selectedFloor])}
-              style={{ gridColumn: 1, gridRow: 1, zIndex: 0 }} />
-            {freeDrawCanvas(stratEditorFreeDrawCanvasId)}
-            <canvas id={placementPreviewCanvasId}
+              style={{ gridColumn: 1, gridRow: 1, zIndex: 0 }}
+              width={stratEditingCanvasWidth}
+              height={stratEditingCanvasHeight}
+            />
+            <canvas id={canvasIds.freeDraw}
+              style={{ gridColumn: 1, gridRow: 1, zIndex: 1 }}
+              width={stratEditingCanvasWidth}
+              height={stratEditingCanvasHeight}
+            ></canvas>
+            <canvas id={canvasIds.placementPreview}
               style={{ gridColumn: 1, gridRow: 1, zIndex: 2 }}
-              width={stratEditingStateDisplay.mapImgWidth}
-              height={stratEditingStateDisplay.mapImgHeight}></canvas>
+              width={stratEditingCanvasWidth}
+              height={stratEditingCanvasHeight}
+            ></canvas>
             {inputGatheringCanvas()}
           </div>
         </div>

@@ -2,7 +2,6 @@ use std::{collections::HashMap, fmt::Display};
 
 use anyhow::Error;
 use fjall::{Database, Keyspace, KeyspaceCreateOptions};
-use json::JsonValue;
 use protobuf::{MessageField, SpecialFields};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

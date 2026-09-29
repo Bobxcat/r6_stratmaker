@@ -18,8 +18,8 @@ use uuid::Uuid;
 
 use crate::{
     database::{
-        Arrow, Color, DatabaseHandle, DrawPath, PhaseFloor, PlacedIcon, ProtoConvert, StratEntry,
-        StratId, StratPhase, StratsKeyspace, Teammate, Username, UsersKeyspace,
+        Arrow, DatabaseHandle, DrawPath, PhaseFloor, PlacedIcon, ProtoConvert, StratEntry, StratId,
+        StratPhase, StratsKeyspace, Teammate, Username, UsersKeyspace,
     },
     protos::primary::{
         self, Client2Server, Server2Client, client2server::C2SInner, server2client::S2CInner,

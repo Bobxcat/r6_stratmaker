@@ -4,7 +4,6 @@
 
 import { useEffect, useState } from "react";
 import { isTauri, invoke } from "@tauri-apps/api/core";
-// import WebSocket from "@tauri-apps/plugin-websocket";
 import { DeepMap } from "deep-equality-data-structures";
 import { WS as WebSocket } from "./websocket.ts";
 import "./App.css";

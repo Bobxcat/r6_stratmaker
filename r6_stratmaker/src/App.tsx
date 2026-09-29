@@ -2267,6 +2267,12 @@ function App() {
       await sendNetworkMessage(protos.Client2Server.create({ saveStrat: { stratId: stratEditingState.stratId, state: state } }));
     }
 
+    window.onbeforeunload = () => {
+      if (stratEditingState.mode == StratEditingMode.Singleplayer && stratEditingState.stratId) {
+        saveProgress();
+      }
+    };
+
     return (
       <>
         {/* Menuing buttons */}
@@ -2389,7 +2395,7 @@ function App() {
 
                       updateStratEditingStateDisplay();
                       redrawFreeDrawCanvas(canvasIds.freeDraw);
-                    }, false, true, false, 10)}
+                    }, false, true, true, 10)}
                   </div>
                 </div>
               )}

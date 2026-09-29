@@ -225,6 +225,23 @@ export interface LobbySetCurrentStrat {
   map: string;
 }
 
+/** LobbyCreatePhase */
+export interface LobbyCreatePhase {
+  phaseName: string;
+}
+
+/** LobbySetPhaseName */
+export interface LobbySetPhaseName {
+  idx: number;
+  phaseName: string;
+}
+
+/** LobbySetTeammateLoadout */
+export interface LobbySetTeammateLoadout {
+  idx: number;
+  newLoadout: Teammate | undefined;
+}
+
 export interface LobbyDrawCommand {
   phase: number;
   floor: number;
@@ -276,6 +293,9 @@ export interface Client2Server {
   joinLobby?: JoinLobby | undefined;
   lobbyLoadStrat?: LobbyLoadStrat | undefined;
   lobbyDrawCommand?: LobbyDrawCommand | undefined;
+  lobbyCreatePhase?: LobbyCreatePhase | undefined;
+  lobbySetPhaseName?: LobbySetPhaseName | undefined;
+  lobbySetTeammateLoadout?: LobbySetTeammateLoadout | undefined;
 }
 
 export interface Server2Client {
@@ -293,6 +313,9 @@ export interface Server2Client {
   updateLobbyStratList?: UpdateLobbyStratList | undefined;
   lobbySetCurrentStrat?: LobbySetCurrentStrat | undefined;
   lobbyDrawCommand?: LobbyDrawCommand | undefined;
+  lobbyCreatePhase?: LobbyCreatePhase | undefined;
+  lobbySetPhaseName?: LobbySetPhaseName | undefined;
+  lobbySetTeammateLoadout?: LobbySetTeammateLoadout | undefined;
 }
 
 function createBasePoint(): Point {
@@ -3940,6 +3963,255 @@ export const LobbySetCurrentStrat: MessageFns<LobbySetCurrentStrat> = {
   },
 };
 
+function createBaseLobbyCreatePhase(): LobbyCreatePhase {
+  return { phaseName: "" };
+}
+
+export const LobbyCreatePhase: MessageFns<LobbyCreatePhase> = {
+  encode(message: LobbyCreatePhase, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.phaseName !== "") {
+      writer.uint32(10).string(message.phaseName);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LobbyCreatePhase {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLobbyCreatePhase();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.phaseName = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LobbyCreatePhase {
+    return {
+      phaseName: isSet(object.phaseName)
+        ? globalThis.String(object.phaseName)
+        : isSet(object.phase_name)
+        ? globalThis.String(object.phase_name)
+        : "",
+    };
+  },
+
+  toJSON(message: LobbyCreatePhase): unknown {
+    const obj: any = {};
+    if (message.phaseName !== "") {
+      obj.phaseName = message.phaseName;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LobbyCreatePhase>, I>>(base?: I): LobbyCreatePhase {
+    return LobbyCreatePhase.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LobbyCreatePhase>, I>>(object: I): LobbyCreatePhase {
+    const message = createBaseLobbyCreatePhase();
+    message.phaseName = object.phaseName ?? "";
+    return message;
+  },
+};
+
+function createBaseLobbySetPhaseName(): LobbySetPhaseName {
+  return { idx: 0, phaseName: "" };
+}
+
+export const LobbySetPhaseName: MessageFns<LobbySetPhaseName> = {
+  encode(message: LobbySetPhaseName, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.idx !== 0) {
+      writer.uint32(8).uint32(message.idx);
+    }
+    if (message.phaseName !== "") {
+      writer.uint32(18).string(message.phaseName);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LobbySetPhaseName {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLobbySetPhaseName();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 8) {
+              break;
+            }
+
+            message.idx = reader.uint32();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.phaseName = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LobbySetPhaseName {
+    return {
+      idx: isSet(object.idx) ? globalThis.Number(object.idx) : 0,
+      phaseName: isSet(object.phaseName)
+        ? globalThis.String(object.phaseName)
+        : isSet(object.phase_name)
+        ? globalThis.String(object.phase_name)
+        : "",
+    };
+  },
+
+  toJSON(message: LobbySetPhaseName): unknown {
+    const obj: any = {};
+    if (message.idx !== 0) {
+      obj.idx = Math.round(message.idx);
+    }
+    if (message.phaseName !== "") {
+      obj.phaseName = message.phaseName;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LobbySetPhaseName>, I>>(base?: I): LobbySetPhaseName {
+    return LobbySetPhaseName.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LobbySetPhaseName>, I>>(object: I): LobbySetPhaseName {
+    const message = createBaseLobbySetPhaseName();
+    message.idx = object.idx ?? 0;
+    message.phaseName = object.phaseName ?? "";
+    return message;
+  },
+};
+
+function createBaseLobbySetTeammateLoadout(): LobbySetTeammateLoadout {
+  return { idx: 0, newLoadout: undefined };
+}
+
+export const LobbySetTeammateLoadout: MessageFns<LobbySetTeammateLoadout> = {
+  encode(message: LobbySetTeammateLoadout, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.idx !== 0) {
+      writer.uint32(8).uint32(message.idx);
+    }
+    if (message.newLoadout !== undefined) {
+      Teammate.encode(message.newLoadout, writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LobbySetTeammateLoadout {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLobbySetTeammateLoadout();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 8) {
+              break;
+            }
+
+            message.idx = reader.uint32();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.newLoadout = Teammate.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LobbySetTeammateLoadout {
+    return {
+      idx: isSet(object.idx) ? globalThis.Number(object.idx) : 0,
+      newLoadout: isSet(object.newLoadout) ? Teammate.fromJSON(object.newLoadout) : undefined,
+    };
+  },
+
+  toJSON(message: LobbySetTeammateLoadout): unknown {
+    const obj: any = {};
+    if (message.idx !== 0) {
+      obj.idx = Math.round(message.idx);
+    }
+    if (message.newLoadout !== undefined) {
+      obj.newLoadout = Teammate.toJSON(message.newLoadout);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LobbySetTeammateLoadout>, I>>(base?: I): LobbySetTeammateLoadout {
+    return LobbySetTeammateLoadout.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LobbySetTeammateLoadout>, I>>(object: I): LobbySetTeammateLoadout {
+    const message = createBaseLobbySetTeammateLoadout();
+    message.idx = object.idx ?? 0;
+    message.newLoadout = (object.newLoadout !== undefined && object.newLoadout !== null)
+      ? Teammate.fromPartial(object.newLoadout)
+      : undefined;
+    return message;
+  },
+};
+
 function createBaseLobbyDrawCommand(): LobbyDrawCommand {
   return {
     phase: 0,
@@ -4638,6 +4910,9 @@ function createBaseClient2Server(): Client2Server {
     joinLobby: undefined,
     lobbyLoadStrat: undefined,
     lobbyDrawCommand: undefined,
+    lobbyCreatePhase: undefined,
+    lobbySetPhaseName: undefined,
+    lobbySetTeammateLoadout: undefined,
   };
 }
 
@@ -4678,6 +4953,15 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.lobbyDrawCommand !== undefined) {
       LobbyDrawCommand.encode(message.lobbyDrawCommand, writer.uint32(858).fork()).join();
+    }
+    if (message.lobbyCreatePhase !== undefined) {
+      LobbyCreatePhase.encode(message.lobbyCreatePhase, writer.uint32(866).fork()).join();
+    }
+    if (message.lobbySetPhaseName !== undefined) {
+      LobbySetPhaseName.encode(message.lobbySetPhaseName, writer.uint32(874).fork()).join();
+    }
+    if (message.lobbySetTeammateLoadout !== undefined) {
+      LobbySetTeammateLoadout.encode(message.lobbySetTeammateLoadout, writer.uint32(882).fork()).join();
     }
     return writer;
   },
@@ -4791,6 +5075,30 @@ export const Client2Server: MessageFns<Client2Server> = {
             message.lobbyDrawCommand = LobbyDrawCommand.decode(reader, reader.uint32());
             continue;
           }
+          case 108: {
+            if (tag !== 866) {
+              break;
+            }
+
+            message.lobbyCreatePhase = LobbyCreatePhase.decode(reader, reader.uint32());
+            continue;
+          }
+          case 109: {
+            if (tag !== 874) {
+              break;
+            }
+
+            message.lobbySetPhaseName = LobbySetPhaseName.decode(reader, reader.uint32());
+            continue;
+          }
+          case 110: {
+            if (tag !== 882) {
+              break;
+            }
+
+            message.lobbySetTeammateLoadout = LobbySetTeammateLoadout.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -4861,6 +5169,21 @@ export const Client2Server: MessageFns<Client2Server> = {
         : isSet(object.lobby_draw_command)
         ? LobbyDrawCommand.fromJSON(object.lobby_draw_command)
         : undefined,
+      lobbyCreatePhase: isSet(object.lobbyCreatePhase)
+        ? LobbyCreatePhase.fromJSON(object.lobbyCreatePhase)
+        : isSet(object.lobby_create_phase)
+        ? LobbyCreatePhase.fromJSON(object.lobby_create_phase)
+        : undefined,
+      lobbySetPhaseName: isSet(object.lobbySetPhaseName)
+        ? LobbySetPhaseName.fromJSON(object.lobbySetPhaseName)
+        : isSet(object.lobby_set_phase_name)
+        ? LobbySetPhaseName.fromJSON(object.lobby_set_phase_name)
+        : undefined,
+      lobbySetTeammateLoadout: isSet(object.lobbySetTeammateLoadout)
+        ? LobbySetTeammateLoadout.fromJSON(object.lobbySetTeammateLoadout)
+        : isSet(object.lobby_set_teammate_loadout)
+        ? LobbySetTeammateLoadout.fromJSON(object.lobby_set_teammate_loadout)
+        : undefined,
     };
   },
 
@@ -4901,6 +5224,15 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.lobbyDrawCommand !== undefined) {
       obj.lobbyDrawCommand = LobbyDrawCommand.toJSON(message.lobbyDrawCommand);
+    }
+    if (message.lobbyCreatePhase !== undefined) {
+      obj.lobbyCreatePhase = LobbyCreatePhase.toJSON(message.lobbyCreatePhase);
+    }
+    if (message.lobbySetPhaseName !== undefined) {
+      obj.lobbySetPhaseName = LobbySetPhaseName.toJSON(message.lobbySetPhaseName);
+    }
+    if (message.lobbySetTeammateLoadout !== undefined) {
+      obj.lobbySetTeammateLoadout = LobbySetTeammateLoadout.toJSON(message.lobbySetTeammateLoadout);
     }
     return obj;
   },
@@ -4944,6 +5276,16 @@ export const Client2Server: MessageFns<Client2Server> = {
     message.lobbyDrawCommand = (object.lobbyDrawCommand !== undefined && object.lobbyDrawCommand !== null)
       ? LobbyDrawCommand.fromPartial(object.lobbyDrawCommand)
       : undefined;
+    message.lobbyCreatePhase = (object.lobbyCreatePhase !== undefined && object.lobbyCreatePhase !== null)
+      ? LobbyCreatePhase.fromPartial(object.lobbyCreatePhase)
+      : undefined;
+    message.lobbySetPhaseName = (object.lobbySetPhaseName !== undefined && object.lobbySetPhaseName !== null)
+      ? LobbySetPhaseName.fromPartial(object.lobbySetPhaseName)
+      : undefined;
+    message.lobbySetTeammateLoadout =
+      (object.lobbySetTeammateLoadout !== undefined && object.lobbySetTeammateLoadout !== null)
+        ? LobbySetTeammateLoadout.fromPartial(object.lobbySetTeammateLoadout)
+        : undefined;
     return message;
   },
 };
@@ -4964,6 +5306,9 @@ function createBaseServer2Client(): Server2Client {
     updateLobbyStratList: undefined,
     lobbySetCurrentStrat: undefined,
     lobbyDrawCommand: undefined,
+    lobbyCreatePhase: undefined,
+    lobbySetPhaseName: undefined,
+    lobbySetTeammateLoadout: undefined,
   };
 }
 
@@ -5010,6 +5355,15 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.lobbyDrawCommand !== undefined) {
       LobbyDrawCommand.encode(message.lobbyDrawCommand, writer.uint32(858).fork()).join();
+    }
+    if (message.lobbyCreatePhase !== undefined) {
+      LobbyCreatePhase.encode(message.lobbyCreatePhase, writer.uint32(866).fork()).join();
+    }
+    if (message.lobbySetPhaseName !== undefined) {
+      LobbySetPhaseName.encode(message.lobbySetPhaseName, writer.uint32(874).fork()).join();
+    }
+    if (message.lobbySetTeammateLoadout !== undefined) {
+      LobbySetTeammateLoadout.encode(message.lobbySetTeammateLoadout, writer.uint32(882).fork()).join();
     }
     return writer;
   },
@@ -5139,6 +5493,30 @@ export const Server2Client: MessageFns<Server2Client> = {
             message.lobbyDrawCommand = LobbyDrawCommand.decode(reader, reader.uint32());
             continue;
           }
+          case 108: {
+            if (tag !== 866) {
+              break;
+            }
+
+            message.lobbyCreatePhase = LobbyCreatePhase.decode(reader, reader.uint32());
+            continue;
+          }
+          case 109: {
+            if (tag !== 874) {
+              break;
+            }
+
+            message.lobbySetPhaseName = LobbySetPhaseName.decode(reader, reader.uint32());
+            continue;
+          }
+          case 110: {
+            if (tag !== 882) {
+              break;
+            }
+
+            message.lobbySetTeammateLoadout = LobbySetTeammateLoadout.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -5223,6 +5601,21 @@ export const Server2Client: MessageFns<Server2Client> = {
         : isSet(object.lobby_draw_command)
         ? LobbyDrawCommand.fromJSON(object.lobby_draw_command)
         : undefined,
+      lobbyCreatePhase: isSet(object.lobbyCreatePhase)
+        ? LobbyCreatePhase.fromJSON(object.lobbyCreatePhase)
+        : isSet(object.lobby_create_phase)
+        ? LobbyCreatePhase.fromJSON(object.lobby_create_phase)
+        : undefined,
+      lobbySetPhaseName: isSet(object.lobbySetPhaseName)
+        ? LobbySetPhaseName.fromJSON(object.lobbySetPhaseName)
+        : isSet(object.lobby_set_phase_name)
+        ? LobbySetPhaseName.fromJSON(object.lobby_set_phase_name)
+        : undefined,
+      lobbySetTeammateLoadout: isSet(object.lobbySetTeammateLoadout)
+        ? LobbySetTeammateLoadout.fromJSON(object.lobbySetTeammateLoadout)
+        : isSet(object.lobby_set_teammate_loadout)
+        ? LobbySetTeammateLoadout.fromJSON(object.lobby_set_teammate_loadout)
+        : undefined,
     };
   },
 
@@ -5269,6 +5662,15 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.lobbyDrawCommand !== undefined) {
       obj.lobbyDrawCommand = LobbyDrawCommand.toJSON(message.lobbyDrawCommand);
+    }
+    if (message.lobbyCreatePhase !== undefined) {
+      obj.lobbyCreatePhase = LobbyCreatePhase.toJSON(message.lobbyCreatePhase);
+    }
+    if (message.lobbySetPhaseName !== undefined) {
+      obj.lobbySetPhaseName = LobbySetPhaseName.toJSON(message.lobbySetPhaseName);
+    }
+    if (message.lobbySetTeammateLoadout !== undefined) {
+      obj.lobbySetTeammateLoadout = LobbySetTeammateLoadout.toJSON(message.lobbySetTeammateLoadout);
     }
     return obj;
   },
@@ -5322,6 +5724,16 @@ export const Server2Client: MessageFns<Server2Client> = {
     message.lobbyDrawCommand = (object.lobbyDrawCommand !== undefined && object.lobbyDrawCommand !== null)
       ? LobbyDrawCommand.fromPartial(object.lobbyDrawCommand)
       : undefined;
+    message.lobbyCreatePhase = (object.lobbyCreatePhase !== undefined && object.lobbyCreatePhase !== null)
+      ? LobbyCreatePhase.fromPartial(object.lobbyCreatePhase)
+      : undefined;
+    message.lobbySetPhaseName = (object.lobbySetPhaseName !== undefined && object.lobbySetPhaseName !== null)
+      ? LobbySetPhaseName.fromPartial(object.lobbySetPhaseName)
+      : undefined;
+    message.lobbySetTeammateLoadout =
+      (object.lobbySetTeammateLoadout !== undefined && object.lobbySetTeammateLoadout !== null)
+        ? LobbySetTeammateLoadout.fromPartial(object.lobbySetTeammateLoadout)
+        : undefined;
     return message;
   },
 };

@@ -446,7 +446,10 @@ async fn handle_generic_message(
         | C2SInner::CreateLobby(_)
         | C2SInner::JoinLobby(_)
         | C2SInner::LobbyLoadStrat(_)
-        | C2SInner::LobbyDrawCommand(_) => return Ok(Some(msg_received)),
+        | C2SInner::LobbyDrawCommand(_)
+        | C2SInner::LobbyCreatePhase(_)
+        | C2SInner::LobbySetPhaseName(_)
+        | C2SInner::LobbySetTeammateLoadout(_) => return Ok(Some(msg_received)),
     }
 
     Ok(None)
@@ -634,6 +637,7 @@ fn lobby_loop(
                                 }
                             }
                             C2SInner::LobbyDrawCommand(msg) => {
+                                // FIXME: Update lobby's strat state
                                 // match msg.Kind.unwrap() {
                                 //     primary::lobby_draw_command::Kind::SetDrawPath(msg) => {
                                 //         todo!()
@@ -666,8 +670,45 @@ fn lobby_loop(
                                         .send_proto(S2CInner::LobbyDrawCommand(msg.clone()))
                                         .await;
                                 }
+                            }
+                            C2SInner::LobbyCreatePhase(msg) => {
+                                // FIXME: Update lobby's strat state
 
-                                //
+                                for to_send_client in 0..clients.len() {
+                                    if to_send_client == cl_idx {
+                                        continue;
+                                    }
+                                    let _ = clients[to_send_client]
+                                        .ws
+                                        .send_proto(S2CInner::LobbyCreatePhase(msg.clone()))
+                                        .await;
+                                }
+                            }
+                            C2SInner::LobbySetPhaseName(msg) => {
+                                // FIXME: Update lobby's strat state
+
+                                for to_send_client in 0..clients.len() {
+                                    if to_send_client == cl_idx {
+                                        continue;
+                                    }
+                                    let _ = clients[to_send_client]
+                                        .ws
+                                        .send_proto(S2CInner::LobbySetPhaseName(msg.clone()))
+                                        .await;
+                                }
+                            }
+                            C2SInner::LobbySetTeammateLoadout(msg) => {
+                                // FIXME: Update lobby's strat state
+
+                                for to_send_client in 0..clients.len() {
+                                    if to_send_client == cl_idx {
+                                        continue;
+                                    }
+                                    let _ = clients[to_send_client]
+                                        .ws
+                                        .send_proto(S2CInner::LobbySetTeammateLoadout(msg.clone()))
+                                        .await;
+                                }
                             }
 
                             C2SInner::Hello(..)
@@ -754,7 +795,10 @@ async fn client_loop(
                     | C2SInner::SaveStrat(..)
                     | C2SInner::GetLobbyList(..)
                     | C2SInner::LobbyLoadStrat(..)
-                    | C2SInner::LobbyDrawCommand(..) => {
+                    | C2SInner::LobbyDrawCommand(..)
+                    | C2SInner::LobbyCreatePhase(..)
+                    | C2SInner::LobbySetPhaseName(..)
+                    | C2SInner::LobbySetTeammateLoadout(..) => {
                         unreachable!("{msg:?} Should be handled generically")
                     }
                 }

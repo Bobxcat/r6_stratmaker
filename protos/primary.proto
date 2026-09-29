@@ -185,6 +185,7 @@ message LobbySetCurrentStrat {
     string map = 2;
 }
 
+// LobbyDrawCommand
 message LobbyDrawCommand {
     message SetDrawPath {
         string id = 1;
@@ -222,6 +223,23 @@ message LobbyDrawCommand {
     }
 }
 
+// LobbyCreatePhase
+message LobbyCreatePhase {
+    string phase_name = 1;
+}
+
+// LobbySetPhaseName
+message LobbySetPhaseName {
+    uint32 idx = 1;
+    string phase_name = 2;
+}
+
+// LobbySetTeammateLoadout
+message LobbySetTeammateLoadout {
+    uint32 idx = 1;
+    Teammate newLoadout = 2;
+}
+
 message Client2Server {
     oneof C2SInner {
         Hello hello = 1;
@@ -237,6 +255,9 @@ message Client2Server {
         JoinLobby join_lobby = 104;
         LobbyLoadStrat lobby_load_strat = 106;
         LobbyDrawCommand lobby_draw_command = 107;
+        LobbyCreatePhase lobby_create_phase = 108;
+        LobbySetPhaseName lobby_set_phase_name = 109;
+        LobbySetTeammateLoadout lobby_set_teammate_loadout = 110;
     }
 }
 
@@ -257,5 +278,8 @@ message Server2Client {
         UpdateLobbyStratList update_lobby_strat_list = 105;
         LobbySetCurrentStrat lobby_set_current_strat = 106;
         LobbyDrawCommand lobby_draw_command = 107;
+        LobbyCreatePhase lobby_create_phase = 108;
+        LobbySetPhaseName lobby_set_phase_name = 109;
+        LobbySetTeammateLoadout lobby_set_teammate_loadout = 110;
     }
 }

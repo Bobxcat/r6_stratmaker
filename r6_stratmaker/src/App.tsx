@@ -587,13 +587,13 @@ class IconPlacement implements DrawElement {
       }
       case IconKind.TeamAbility: {
         height = this.size;
-        const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
+        const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
         width = height * imgAspectRatio(operatorsIndexNonReactive.abilityImgData.get(loadout.operator)!);
         break;
       }
       case IconKind.TeamUtility: {
         height = this.size;
-        const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
+        const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
         width = height * imgAspectRatio(operatorsIndexNonReactive.utilityImgData.get(loadout.util)!);
         break;
       }
@@ -623,19 +623,19 @@ class IconPlacement implements DrawElement {
 
     switch (this.info.kind) {
       case IconKind.TeamOperator: {
-        const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
+        const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
         ctx.fillStyle = loadout.color.toCss();
         imgData = operatorsIndexNonReactive.operatorImgData.get(loadout.operator);
         break;
       }
       case IconKind.TeamAbility: {
-        const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
+        const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
         ctx.fillStyle = loadout.color.toCss();
         imgData = operatorsIndexNonReactive.abilityImgData.get(loadout.operator);
         break;
       }
       case IconKind.TeamUtility: {
-        const loadout = stratEditingState.teamLoadouts[this.info.teammateIndex];
+        const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
         ctx.fillStyle = loadout.color.toCss();
         imgData = operatorsIndexNonReactive.utilityImgData.get(loadout.util);
         break;
@@ -791,9 +791,22 @@ class StratEditingLoadout {
     [255, 188, 66],
   ].map(Color.fromRgb);
 
-  operator: string = "ace";
-  color: Color = new Color(1, 2, 3);
-  util: string = "";
+  operator: string;
+  color: Color;
+  util: string;
+  constructor(operator: string, color: Color, util: string) {
+    this.operator = operator;
+    this.color = color;
+    this.util = util;
+  }
+
+  clone(): StratEditingLoadout {
+    return new StratEditingLoadout(this.operator, this.color, this.util);
+  }
+
+  static fromProto(proto: protos.Teammate): StratEditingLoadout {
+    return new StratEditingLoadout(proto.operator, Color.fromProto(proto.color!), proto.util);
+  }
 }
 
 enum StratEditingMode {
@@ -814,10 +827,8 @@ class StratEditingState {
 
   selectedDrawColor: Color = StratEditingState.freeDrawPalette[0];
 
-  teamLoadouts: StratEditingLoadout[] = newArrayOfSize(5, (idx) => {
-    let l = new StratEditingLoadout();
-    l.color = StratEditingLoadout.defaultPalette[idx];
-    return l;
+  private teamLoadouts: StratEditingLoadout[] = newArrayOfSize(5, (idx) => {
+    return new StratEditingLoadout("ace", StratEditingLoadout.defaultPalette[idx], "");
   });
 
   prevSelectedDrawTool: DrawTool = DrawTool.FreeDraw;
@@ -840,11 +851,62 @@ class StratEditingState {
     Object.assign(this, new StratEditingState());
   }
 
+  getTeammateLoadoutClone(idx: number): StratEditingLoadout | undefined {
+    if (idx < this.teamLoadouts.length) {
+      return this.teamLoadouts[idx].clone();
+    } else {
+      return undefined;
+    }
+  }
+
+  /** NETWORKED */
+  setTeammateLoadout(idx: number, loadout: StratEditingLoadout) {
+    if (idx >= this.teamLoadouts.length) {
+      return;
+    }
+    this.teamLoadouts[idx] = loadout;
+    if (this.mode == StratEditingMode.Lobby) {
+      sendNetworkMessage(protos.Client2Server.create({
+        lobbySetTeammateLoadout: {
+          idx,
+          newLoadout: {
+            operator: loadout.operator,
+            color: loadout.color.toProto(),
+            util: loadout.util,
+          }
+        }
+      }));
+    }
+  }
+
+  /** NETWORKED */
+  mapTeammateLoadout(idx: number, map: (loadout: StratEditingLoadout) => StratEditingLoadout) {
+    if (idx >= this.teamLoadouts.length) {
+      return;
+    }
+    this.teamLoadouts[idx] = map(this.teamLoadouts[idx]);
+    this.setTeammateLoadout(idx, this.teamLoadouts[idx]);
+  }
+
+  /** Use with care! Not networked */
+  setTeammateLoadoutsRaw(newLoadouts: StratEditingLoadout[]) {
+    this.teamLoadouts = newLoadouts;
+  }
+
+  /** Use with care! Not networked */
+  getTeammateLoadoutsRaw(): StratEditingLoadout[] {
+    return this.teamLoadouts;
+  }
+
+  /** NETWORKED */
   pushEmptyPhase() {
     var phase = new StratEditingPhase();
     phase.phaseName = `Phase ${this.phases.length}`;
     phase.floors = this.mapFloors.map((_floorName) => new StratEditingPhaseFloor());
     this.phases.push(phase);
+    if (this.mode == StratEditingMode.Lobby) {
+      sendNetworkMessage(protos.Client2Server.create({ lobbyCreatePhase: { phaseName: phase.phaseName } }));
+    }
   }
 
   /** NETWORKED */
@@ -918,7 +980,12 @@ class StratEditingState {
     }
 
     if (this.mode == StratEditingMode.Lobby) {
-      println("TODO: Notify server of phase name changes");
+      sendNetworkMessage(protos.Client2Server.create({
+        lobbySetPhaseName: {
+          idx: phase,
+          phaseName: newName,
+        }
+      }));
     }
 
     phaseRef.phaseName = newName;
@@ -1247,9 +1314,9 @@ function App() {
 
   function updateStratEditingStateFromProto(state: protos.StratState) {
     stratEditingState.stratName = state.stratName;
-    stratEditingState.teamLoadouts = state.teammates.map((teammate) => {
-      return { operator: teammate.operator, color: Color.fromProto(teammate.color!), util: teammate.util }
-    });
+    stratEditingState.setTeammateLoadoutsRaw(state.teammates.map((teammate) => {
+      return StratEditingLoadout.fromProto(teammate);
+    }));
     stratEditingState.setPhasesRaw(state.phases.map((protoPhase) => {
       let phase = new StratEditingPhase();
       phase.phaseName = protoPhase.phaseName;
@@ -1344,6 +1411,17 @@ function App() {
         phaseFloor.icons.delete(new Uuid(cmd.deleteIcon.id));
       }
       redrawFreeDrawCanvasQueued = true;
+      updateStratEditingStateDisplay();
+    } else if (msg.lobbyCreatePhase) {
+      let phase = new StratEditingPhase();
+      phase.phaseName = msg.lobbyCreatePhase.phaseName;
+      stratEditingState.getPhasesRef().push(phase);
+      updateStratEditingStateDisplay();
+    } else if (msg.lobbySetPhaseName) {
+      stratEditingState.getPhasesRef()[msg.lobbySetPhaseName.idx].phaseName = msg.lobbySetPhaseName.phaseName;
+      updateStratEditingStateDisplay();
+    } else if (msg.lobbySetTeammateLoadout) {
+      stratEditingState.getTeammateLoadoutsRaw()[msg.lobbySetTeammateLoadout.idx] = StratEditingLoadout.fromProto(msg.lobbySetTeammateLoadout.newLoadout!);
       updateStratEditingStateDisplay();
     } else if (msg.saveStratResponse) {
       // Yay!
@@ -2180,7 +2258,7 @@ function App() {
           })
         };
       });
-      const teammates: protos.Teammate[] = stratEditingState.teamLoadouts.map((loadout) => {
+      const teammates: protos.Teammate[] = stratEditingState.getTeammateLoadoutsRaw().map((loadout) => {
         return { operator: loadout.operator, color: loadout.color.toProto(), util: loadout.util }
       });
 
@@ -2282,7 +2360,7 @@ function App() {
         {/* Team operator selector */}
         <p>Team</p>
         <div className="row">
-          {stratEditingStateDisplay.teamLoadouts.map((loadout, idx) =>
+          {stratEditingStateDisplay.getTeammateLoadoutsRaw().map((loadout, idx) =>
             <div key={idx} className="col" style={{ border: "2px solid #0f0f0f" }}>
               <button style={{ padding: 0 }} onClick={(_e) => {
                 stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
@@ -2302,8 +2380,11 @@ function App() {
                 <div style={{ position: "relative", zIndex: 1000, padding: 0 }}>
                   <div style={{ position: "absolute", zIndex: 1001, top: "32px", left: "-50%", backgroundColor: "#bababa", border: "2px solid #0f0f0f", borderRadius: "8px" }}>
                     {operatorTileListComponent((opName) => {
-                      stratEditingState.teamLoadouts[idx].operator = opName;
-                      stratEditingState.teamLoadouts[idx].util = "";
+                      stratEditingState.mapTeammateLoadout(idx, (l) => {
+                        l.operator = opName;
+                        l.util = "";
+                        return l;
+                      });
                       setSelectOperatorForTeammateActiveIdx(undefined);
 
                       updateStratEditingStateDisplay();
@@ -2344,12 +2425,15 @@ function App() {
                 <div style={{ position: "relative", zIndex: 1000, padding: 0 }}>
                   <div style={{ position: "absolute", zIndex: 1001, top: "32px", left: "-50%", backgroundColor: "#bababa", border: "2px solid #0f0f0f", borderRadius: "8px" }}>
                     {utilityTileListComponent((util) => {
-                      stratEditingState.teamLoadouts[idx].util = util;
+                      stratEditingState.mapTeammateLoadout(idx, (l) => {
+                        l.util = util;
+                        return l;
+                      })
                       setSelectUtilityForTeammateActiveIdx(undefined);
 
                       updateStratEditingStateDisplay();
                       redrawFreeDrawCanvas(canvasIds.freeDraw);
-                    }, stratEditingState.teamLoadouts[idx].operator)}
+                    }, stratEditingState.getTeammateLoadoutClone(idx)!.operator)}
                   </div>
                 </div>
               )}

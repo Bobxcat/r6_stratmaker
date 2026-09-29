@@ -1453,7 +1453,7 @@ function App() {
     //
   }
 
-  function utilityTileListComponent(onClick: (util: string) => void, utilForOp?: string, rowWidthOverride?: number) {
+  function utilityTileListComponent(onClick: (util: string) => void, imgSize: string, utilForOp?: string, rowWidthOverride?: number) {
     const utils = utilForOp ? operatorsIndexNonReactive.operators.get(utilForOp)!.utils : Array.from(operatorsIndexNonReactive.utilityImgData.keys());
 
     return tileListComponent(utils, (util) => <>
@@ -1461,13 +1461,13 @@ function App() {
         src={operatorsIndexReactive.getUtilityIconPath(util)}
         width="256"
         height="256"
-        style={{ margin: 0, width: 32, height: 32 }}
+        style={{ margin: 0, width: imgSize, height: imgSize }}
         alt=""
       />
     </>, onClick, rowWidthOverride)
   }
 
-  function operatorTileListComponent(onClick: (opName: string) => void, includeNames: boolean, attackers: boolean, defenders: boolean, rowWidthOverride?: number, imgSizeOverride?: number) {
+  function operatorTileListComponent(onClick: (opName: string) => void, includeNames: boolean, attackers: boolean, defenders: boolean, rowWidthOverride?: number, imgSizeOverride?: string) {
     var ops: string[] = []
 
     if (attackers && defenders) {
@@ -1478,7 +1478,7 @@ function App() {
       ops = operatorsIndexReactive.defenders;
     }
 
-    var imgSize = (imgSizeOverride === undefined) ? 32 : imgSizeOverride;
+    var imgSize = (imgSizeOverride === undefined) ? "32px" : imgSizeOverride;
 
     return tileListComponent(ops, (opName) => <>
       <img src={operatorsIndexReactive.getOperatorIconPath(opName)} width="256" height="256" style={{ margin: 0, width: imgSize, height: imgSize }} alt="" />
@@ -2448,42 +2448,23 @@ function App() {
         </div>
 
         {/* Toolbar and draw area */}
-        <div className="row" style={{ justifyItems: "left" }}>
-          {/* Toolbar */}
-          <div className="col" id="tool-selector-bar" style={{ margin: 8 }}>
-            <p>{DrawTool[stratEditingState.selectedDrawTool]}</p>
-            <div style={{ border: "2px solid #0f0f0f", borderRadius: "8px" }}>
-              {tileListComponent(StratEditingState.freeDrawPalette, (color) => <>
-                <div style={{
-                  width: 32,
-                  height: 32,
-                  border: stratEditingStateDisplay.selectedDrawColor == color ? "2px solid #0f0f0f" : "",
-                  backgroundColor: color.toCss(),
-                  borderRadius: "8px"
-                }}></div>
-              </>, (color) => {
-                stratEditingState.selectedDrawColor = color;
-                updateStratEditingStateDisplay();
-              }, 3)}
-            </div>
-            <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.SelectAndEdit; updateStratEditingStateDisplay(); }}>Select and edit</button>
-            <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.FreeDraw; updateStratEditingStateDisplay(); }}>Free draw</button>
-            <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.Arrow; updateStratEditingStateDisplay(); }}>Arrow</button>
-            <div style={{ border: "2px solid #0f0f0f", borderRadius: "8px" }}>
+        <div className="row" style={{ justifyItems: "left", alignItems: "flex-start" }}>
+          {/* Free operator and utility selector */}
+          <div className="col" id="tool-selector-bar" style={{ margin: "0.5vw" }}>
+            <div style={{ border: "2px solid #0f0f0f", borderRadius: "0.5vw" }}>
               {operatorTileListComponent((operator) => {
                 stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
                 stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.FreeOperator, operator };
                 updateStratEditingStateDisplay();
-              }, false, true, true, 6)}
+              }, false, true, true, 8, "2vw")}
             </div>
-            <div style={{ border: "2px solid #0f0f0f", borderRadius: "8px" }}>
+            <div style={{ border: "2px solid #0f0f0f", borderRadius: "0.5vw" }}>
               {utilityTileListComponent((util) => {
                 stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
                 stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.FreeUtility, util };
                 updateStratEditingStateDisplay();
-              }, undefined, 6)}
+              }, "2vw", undefined, 8)}
             </div>
-
           </div>
 
           {/* Draw Area */}
@@ -2504,6 +2485,29 @@ function App() {
               height={stratEditingCanvasHeight}
             ></canvas>
             {inputGatheringCanvas()}
+          </div>
+
+          {/* Toolbar */}
+          <div className="col" id="tool-selector-bar" style={{ margin: "0.5vw" }}>
+            <p style={{ fontSize: "1vw" }}>{DrawTool[stratEditingState.selectedDrawTool]}</p>
+            <div style={{ border: "2px solid #0f0f0f", borderRadius: "0.5vw" }}>
+              {tileListComponent(StratEditingState.freeDrawPalette, (color) => <>
+                <div style={{
+                  width: "2vw",
+                  height: "2vw",
+
+                  border: stratEditingStateDisplay.selectedDrawColor == color ? "2px solid #0f0f0f" : "",
+                  backgroundColor: color.toCss(),
+                  borderRadius: "0.4vw"
+                }}></div>
+              </>, (color) => {
+                stratEditingState.selectedDrawColor = color;
+                updateStratEditingStateDisplay();
+              }, 3)}
+            </div>
+            <button style={{ fontSize: "1vw" }} onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.SelectAndEdit; updateStratEditingStateDisplay(); }}>Select and edit</button>
+            <button style={{ fontSize: "1vw" }} onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.FreeDraw; updateStratEditingStateDisplay(); }}>Free draw</button>
+            <button style={{ fontSize: "1vw" }} onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.Arrow; updateStratEditingStateDisplay(); }}>Arrow</button>
           </div>
         </div>
       </>

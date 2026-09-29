@@ -29,6 +29,15 @@ use crate::{
 mod database;
 mod protos;
 
+const PING_PERIOD: Duration = Duration::from_secs(3);
+
+macro_rules! context_println {
+    ($($arg:tt)*) => {
+        print!("[{}/{}:{}]", file!(), line!(), column!());
+        println!($($arg)*)
+    };
+}
+
 pub struct MapMetadata {
     pub name: &'static str,
     pub floors: &'static [&'static str],
@@ -79,7 +88,7 @@ trait WsStreamExt {
     async fn send_proto(&mut self, msg: S2CInner) -> anyhow::Result<()>;
 
     async fn next_proto(&mut self) -> anyhow::Result<ReceivedMsg>;
-    fn try_next_proto(&mut self) -> anyhow::Result<Option<ReceivedMsg>>;
+    async fn try_next_proto(&mut self) -> anyhow::Result<Option<ReceivedMsg>>;
 }
 
 impl WsStreamExt for WebSocketStream<TcpStream> {
@@ -96,6 +105,13 @@ impl WsStreamExt for WebSocketStream<TcpStream> {
 
     async fn next_proto(&mut self) -> anyhow::Result<ReceivedMsg> {
         let raw = self.next().await.ok_or(anyhow!("Stream exhausted"))??;
+        if raw.is_ping() {
+            self.send(tokio_websockets::Message::pong::<&[u8]>(&[]))
+                .await?;
+            return Box::pin(self.next_proto()).await;
+        } else if raw.is_pong() {
+            return Box::pin(self.next_proto()).await;
+        }
 
         let msg = Client2Server::parse_from_bytes(&raw.as_payload())?;
         let msg = msg.C2SInner.ok_or(anyhow!("Empty message!"))?;
@@ -110,11 +126,18 @@ impl WsStreamExt for WebSocketStream<TcpStream> {
     /// * `Ok(Some(msg))` - There was a message immediately available
     /// * `Ok(None)` - There was no message immediately available
     /// * `Err(e)` - Websocket error or invalid message received
-    fn try_next_proto(&mut self) -> anyhow::Result<Option<ReceivedMsg>> {
+    async fn try_next_proto(&mut self) -> anyhow::Result<Option<ReceivedMsg>> {
         let Some(raw) = self.next().now_or_never() else {
             return Ok(None);
         };
         let raw = raw.ok_or(anyhow!("Stream exhausted"))??;
+        if raw.is_ping() {
+            self.send(tokio_websockets::Message::pong::<&[u8]>(&[]))
+                .await?;
+            return Box::pin(self.try_next_proto()).await;
+        } else if raw.is_pong() {
+            return Box::pin(self.try_next_proto()).await;
+        }
 
         let msg = Client2Server::parse_from_bytes(&raw.as_payload())?;
         let msg = msg.C2SInner.ok_or(anyhow!("Empty message!"))?;
@@ -245,7 +268,7 @@ async fn handle_generic_message(
     match msg {
         C2SInner::LobbyDrawCommand(..) => (),
         _ => {
-            println!(
+            context_println!(
                 "[{}] received message ({}): {}",
                 cl_state.username,
                 bytesize::ByteSize::b(*message_length as u64),
@@ -336,7 +359,7 @@ async fn handle_generic_message(
                 .await?;
         }
         C2SInner::GetStratInfo(msg) => {
-            println!("Get the info: strat={}", msg.strat_id);
+            context_println!("Get the info: strat={}", msg.strat_id);
             let strat_id = StratId(Uuid::try_parse(&msg.strat_id)?);
 
             let Some(strat) = database.get::<StratsKeyspace>(&strat_id).await? else {
@@ -486,10 +509,22 @@ fn lobby_loop(
         let mut clients = vec![host];
         let mut members_list_is_changed = true;
 
+        let mut last_ping = Instant::now();
+
         let mut curr_strat_state: Option<StratEntry> = None;
 
         loop {
             tokio::task::yield_now().await;
+
+            if last_ping.elapsed() > PING_PERIOD {
+                last_ping = Instant::now();
+                for cl in &mut clients {
+                    let _ = cl
+                        .ws
+                        .send(tokio_websockets::Message::ping::<&[u8]>(&[]))
+                        .await;
+                }
+            }
 
             // --- Handle clients leaving and entering ---
 
@@ -529,7 +564,7 @@ fn lobby_loop(
                 members_list_is_changed = false;
 
                 if clients.is_empty() {
-                    println!("Shutting down empty lobby");
+                    context_println!("Shutting down empty lobby");
                     let mut ss = shared_state.lock().unwrap();
                     ss.lobbies.remove(&lobby_id);
                     return Ok(());
@@ -589,11 +624,11 @@ fn lobby_loop(
             // --- Handle client messages ---
             for cl_idx in 0..clients.len() {
                 loop {
-                    let msg = match clients[cl_idx].ws.try_next_proto() {
+                    let msg = match clients[cl_idx].ws.try_next_proto().await {
                         Ok(Some(msg)) => msg,
                         Ok(None) => break,
                         Err(e) => {
-                            println!(
+                            context_println!(
                                 "[{}] Client disconnected with error `{e}`",
                                 clients[cl_idx].username
                             );
@@ -719,7 +754,7 @@ fn lobby_loop(
                             | C2SInner::GetStratInfo(..)
                             | C2SInner::SaveStrat(..)
                             | C2SInner::GetLobbyList(..) => {
-                                unreachable!("{msg:?} Should be handled generically")
+                                context_println!("WARN: {msg:?} Should be handled generically",);
                             }
                         }
                     }
@@ -737,15 +772,25 @@ async fn client_loop(
     shared_state: SharedStateHandle,
 ) -> anyhow::Result<()> {
     let mut loop_interval = tokio::time::interval(Duration::from_micros(500));
+    let mut last_ping = Instant::now();
 
     loop {
         // Not strictly necessary since we yield whenever there's no message received
         tokio::task::yield_now().await;
 
+        if last_ping.elapsed() > PING_PERIOD {
+            last_ping = Instant::now();
+            cl_state
+                .ws
+                .send(tokio_websockets::Message::ping::<&[u8]>(&[]))
+                .await?;
+        }
+
         // Handle message
         if let Some(msg) = cl_state
             .ws
             .try_next_proto()
+            .await
             .context("Failed to receive message")?
         {
             if let Some(ReceivedMsg { length: _, msg }) =
@@ -799,7 +844,7 @@ async fn client_loop(
                     | C2SInner::LobbyCreatePhase(..)
                     | C2SInner::LobbySetPhaseName(..)
                     | C2SInner::LobbySetTeammateLoadout(..) => {
-                        unreachable!("{msg:?} Should be handled generically")
+                        context_println!("WARN: {msg:?} Should be handled generically");
                     }
                 }
             }
@@ -851,7 +896,7 @@ async fn accept_client(
         user
     };
 
-    println!("[{username}] Client finished login");
+    context_println!("[{username}] Client finished login");
     tokio::spawn(client_loop(
         ClientState {
             is_disconnected: false,
@@ -876,7 +921,6 @@ async fn main() -> Result<(), anyhow::Error> {
         "127.0.0.1:8080"
     };
     let listener = TcpListener::bind(addr).await?;
-    // let listener = TcpListener::bind("127.0.0.1:8080").await?;
     let database = DatabaseHandle::initialize().await?;
 
     let shared_state = SharedState {
@@ -884,14 +928,17 @@ async fn main() -> Result<(), anyhow::Error> {
         usernames: HashMap::new(),
     };
     let shared_state = SharedStateHandle(Arc::new(Mutex::new(shared_state)));
-    println!("Started!");
+    context_println!("Started!");
 
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
-            println!("TCP Connection established, attempting HTTP handshake");
-            let (_request, ws_stream) = ServerBuilder::new().accept(stream).await?;
+            context_println!("TCP Connection established, attempting HTTP handshake");
+            let Ok((_request, ws_stream)) = ServerBuilder::new().accept(stream).await else {
+                context_println!("HTTP handshake failed...");
+                continue;
+            };
 
-            println!("Client Accepted at {:?}", ws_stream.get_ref().peer_addr());
+            context_println!("Client Accepted at {:?}", ws_stream.get_ref().peer_addr());
 
             let db_clone = database.clone();
             let state_clone = shared_state.clone();

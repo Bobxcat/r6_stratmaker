@@ -900,13 +900,19 @@ class StratEditingState {
 
   /** NETWORKED */
   pushEmptyPhase() {
+    const phaseName = `Phase ${this.phases.length}`;
+    this.pushEmptyPhaseRaw(phaseName);
+    if (this.mode == StratEditingMode.Lobby) {
+      sendNetworkMessage(protos.Client2Server.create({ lobbyCreatePhase: { phaseName } }));
+    }
+  }
+
+  /** Use with care! Not networked */
+  pushEmptyPhaseRaw(name: string) {
     var phase = new StratEditingPhase();
-    phase.phaseName = `Phase ${this.phases.length}`;
+    phase.phaseName = name;
     phase.floors = this.mapFloors.map((_floorName) => new StratEditingPhaseFloor());
     this.phases.push(phase);
-    if (this.mode == StratEditingMode.Lobby) {
-      sendNetworkMessage(protos.Client2Server.create({ lobbyCreatePhase: { phaseName: phase.phaseName } }));
-    }
   }
 
   /** NETWORKED */
@@ -916,7 +922,7 @@ class StratEditingState {
     return id;
   }
 
-  /** Use with care! Does not notify server of changes */
+  /** Use with care! Not networked */
   getDrawElementRef(phase: number, floor: number, id: Uuid): DrawElement | undefined {
     const phaseFloor = this.phases[phase]?.floors[floor];
     if (!phaseFloor) {
@@ -1057,12 +1063,12 @@ class StratEditingState {
     return phaseRef.getPreviousDrawActionsRef();
   }
 
-  /** Use with care! Does not activate any side effects, just gives a raw reference to the phases*/
+  /** Use with care! Not networked */
   getPhasesRef(): StratEditingPhase[] {
     return this.phases;
   }
 
-  /** Use with care! */
+  /** Use with care! Not networked */
   setPhasesRaw(phases: StratEditingPhase[]) {
     this.phases = phases;
   }
@@ -1278,8 +1284,9 @@ function App() {
   // Load operators
   useEffect(() => {
     async function loadOperatorsIndex() {
-      const ops: OperatorsIndex = await fetch("./operators/operators_index.toml").then((response) => {
-        return response.text().then((r) => OperatorsIndex.fromString(r));
+      const ops: OperatorsIndex = await fetch("./operators/operators_index.toml").then(async (response) => {
+        const r = await response.text();
+        return await OperatorsIndex.fromString(r);
       });
 
       setOperatorsIndexReactive(ops);
@@ -1413,9 +1420,7 @@ function App() {
       redrawFreeDrawCanvasQueued = true;
       updateStratEditingStateDisplay();
     } else if (msg.lobbyCreatePhase) {
-      let phase = new StratEditingPhase();
-      phase.phaseName = msg.lobbyCreatePhase.phaseName;
-      stratEditingState.getPhasesRef().push(phase);
+      stratEditingState.pushEmptyPhaseRaw(msg.lobbyCreatePhase.phaseName);
       updateStratEditingStateDisplay();
     } else if (msg.lobbySetPhaseName) {
       stratEditingState.getPhasesRef()[msg.lobbySetPhaseName.idx].phaseName = msg.lobbySetPhaseName.phaseName;

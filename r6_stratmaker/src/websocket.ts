@@ -43,6 +43,7 @@ export class WS {
                         cb(Uint8Array.from(msg.data));
                         break;
                     case "Ping":
+                        this.backendTauri?.send({ type: "Pong", data: [] });
                         break;
                     case "Pong":
                         break;
@@ -51,10 +52,11 @@ export class WS {
                 }
             });
         } else {
+            // The browser should automatically handle ping/ponging
             this.backendWeb!.addEventListener("message", (ev) => {
                 let data = ev.data as Blob;
                 data.bytes().then(cb);
-            })
+            });
         }
     }
 }

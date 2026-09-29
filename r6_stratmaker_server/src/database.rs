@@ -267,10 +267,79 @@ pub struct PhaseFloor {
     pub icons: HashMap<String, PlacedIcon>,
 }
 
+impl ProtoConvert for PhaseFloor {
+    type Proto = protos::primary::StratFloor;
+
+    fn from_proto(proto: Self::Proto) -> Self {
+        Self {
+            draw_paths: proto
+                .draw_paths
+                .into_iter()
+                .map(|(id, path)| (id, DrawPath::from_proto(path)))
+                .collect(),
+            arrows: proto
+                .arrows
+                .into_iter()
+                .map(|(id, path)| (id, Arrow::from_proto(path)))
+                .collect(),
+            icons: proto
+                .icons
+                .into_iter()
+                .map(|(id, path)| (id, PlacedIcon::from_proto(path)))
+                .collect(),
+        }
+    }
+
+    fn to_proto(self) -> Self::Proto {
+        Self::Proto {
+            draw_paths: self
+                .draw_paths
+                .into_iter()
+                .map(|(id, path)| (id, path.to_proto()))
+                .collect(),
+            arrows: self
+                .arrows
+                .into_iter()
+                .map(|(id, arrow)| (id, arrow.to_proto()))
+                .collect(),
+            icons: self
+                .icons
+                .into_iter()
+                .map(|(id, icon)| (id, icon.to_proto()))
+                .collect(),
+
+            special_fields: SpecialFields::new(),
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Default, Debug, Clone)]
 pub struct StratPhase {
     pub phase_name: String,
     pub floors: Vec<PhaseFloor>,
+}
+
+impl ProtoConvert for StratPhase {
+    type Proto = protos::primary::StratPhase;
+
+    fn from_proto(proto: Self::Proto) -> Self {
+        Self {
+            phase_name: proto.phase_name,
+            floors: proto
+                .floors
+                .into_iter()
+                .map(PhaseFloor::from_proto)
+                .collect(),
+        }
+    }
+
+    fn to_proto(self) -> Self::Proto {
+        Self::Proto {
+            phase_name: self.phase_name,
+            floors: self.floors.into_iter().map(PhaseFloor::to_proto).collect(),
+            special_fields: SpecialFields::new(),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Default, Debug, Clone)]
@@ -308,6 +377,27 @@ pub struct Teammate {
     pub color: Color,
 }
 
+impl ProtoConvert for Teammate {
+    type Proto = protos::primary::Teammate;
+
+    fn from_proto(proto: Self::Proto) -> Self {
+        Self {
+            operator: proto.operator,
+            color: Color::from_proto(proto.color.unwrap()),
+            util: proto.util,
+        }
+    }
+
+    fn to_proto(self) -> Self::Proto {
+        Self::Proto {
+            operator: self.operator,
+            color: MessageField::some(self.color.to_proto()),
+            util: self.util,
+            special_fields: SpecialFields::new(),
+        }
+    }
+}
+
 impl Default for Teammate {
     fn default() -> Self {
         Self {
@@ -324,6 +414,14 @@ pub struct StratEntry {
     pub map: String,
     pub teammates: Vec<Teammate>,
     pub phases: Vec<StratPhase>,
+}
+
+impl StratEntry {
+    pub fn phase_floor_mut(&mut self, phase: u32, floor: u32) -> Option<&mut PhaseFloor> {
+        self.phases
+            .get_mut(phase as usize)
+            .and_then(|phase| phase.floors.get_mut(floor as usize))
+    }
 }
 
 impl DBKeyspace for StratsKeyspace {

@@ -33,7 +33,8 @@ const PING_PERIOD: Duration = Duration::from_secs(3);
 
 macro_rules! context_println {
     ($($arg:tt)*) => {
-        print!("[{}/{}:{}]", file!(), line!(), column!());
+        let context_str = format!("[{}/{}:{}]", file!(), line!(), column!());
+        print!("{context_str:<30}");
         println!($($arg)*)
     };
 }
@@ -205,46 +206,11 @@ struct ClientState {
 fn db_strat_state_to_proto(strat: StratEntry) -> primary::StratState {
     primary::StratState {
         strat_name: strat.strat_name,
-        phases: strat
-            .phases
-            .into_iter()
-            .map(|phase| primary::StratPhase {
-                phase_name: phase.phase_name,
-                floors: phase
-                    .floors
-                    .into_iter()
-                    .map(|floor| primary::StratFloor {
-                        draw_paths: floor
-                            .draw_paths
-                            .into_iter()
-                            .map(|(id, path)| (id, path.to_proto()))
-                            .collect(),
-                        arrows: floor
-                            .arrows
-                            .into_iter()
-                            .map(|(id, arrow)| (id, arrow.to_proto()))
-                            .collect(),
-                        icons: floor
-                            .icons
-                            .into_iter()
-                            .map(|(id, icon)| (id, icon.to_proto()))
-                            .collect(),
-
-                        special_fields: SpecialFields::new(),
-                    })
-                    .collect(),
-                special_fields: SpecialFields::new(),
-            })
-            .collect(),
+        phases: strat.phases.into_iter().map(StratPhase::to_proto).collect(),
         teammates: strat
             .teammates
             .into_iter()
-            .map(|teammate| primary::Teammate {
-                operator: teammate.operator,
-                color: MessageField::some(teammate.color.to_proto()),
-                util: teammate.util,
-                special_fields: SpecialFields::new(),
-            })
+            .map(Teammate::to_proto)
             .collect(),
         special_fields: SpecialFields::new(),
     }
@@ -400,39 +366,12 @@ async fn handle_generic_message(
                 teammates: state
                     .teammates
                     .into_iter()
-                    .map(|teammate| Teammate {
-                        operator: teammate.operator,
-                        color: Color::from_proto(teammate.color.unwrap()),
-                        util: teammate.util,
-                    })
+                    .map(Teammate::from_proto)
                     .collect(),
                 phases: state
                     .phases
                     .into_iter()
-                    .map(|phase| StratPhase {
-                        phase_name: phase.phase_name,
-                        floors: phase
-                            .floors
-                            .into_iter()
-                            .map(|f| PhaseFloor {
-                                draw_paths: f
-                                    .draw_paths
-                                    .into_iter()
-                                    .map(|(id, path)| (id, DrawPath::from_proto(path)))
-                                    .collect(),
-                                arrows: f
-                                    .arrows
-                                    .into_iter()
-                                    .map(|(id, path)| (id, Arrow::from_proto(path)))
-                                    .collect(),
-                                icons: f
-                                    .icons
-                                    .into_iter()
-                                    .map(|(id, path)| (id, PlacedIcon::from_proto(path)))
-                                    .collect(),
-                            })
-                            .collect(),
-                    })
+                    .map(StratPhase::from_proto)
                     .collect(),
             };
             database.insert::<StratsKeyspace>(&strat_id, &strat).await?;
@@ -672,77 +611,120 @@ fn lobby_loop(
                                 }
                             }
                             C2SInner::LobbyDrawCommand(msg) => {
-                                // FIXME: Update lobby's strat state
-                                // match msg.Kind.unwrap() {
-                                //     primary::lobby_draw_command::Kind::SetDrawPath(msg) => {
-                                //         todo!()
-                                //     }
-                                //     primary::lobby_draw_command::Kind::SetArrow(msg) => {
-                                //         todo!()
-                                //     }
-                                //     primary::lobby_draw_command::Kind::SetIcon(msg) => {
-                                //         todo!()
-                                //     }
-                                //     primary::lobby_draw_command::Kind::DeleteDrawPath(msg) => {
-                                //         todo!()
-                                //     }
-                                //     primary::lobby_draw_command::Kind::DeleteArrow(msg) => {
-                                //         todo!()
-                                //     }
-                                //     primary::lobby_draw_command::Kind::DeleteIcon(msg) => {
-                                //         todo!()
-                                //     }
-                                // }
-
-                                // Send the draw state change to all clients other than the one that notfied us
-                                for to_send_client in 0..clients.len() {
-                                    if to_send_client == cl_idx {
-                                        continue;
+                                if let Some(phase_floor) = curr_strat_state
+                                    .as_mut()
+                                    .and_then(|state| state.phase_floor_mut(msg.phase, msg.floor))
+                                {
+                                    match msg.Kind.clone().unwrap() {
+                                        primary::lobby_draw_command::Kind::SetDrawPath(msg) => {
+                                            phase_floor.draw_paths.insert(
+                                                msg.id,
+                                                DrawPath::from_proto(msg.data.unwrap_or_default()),
+                                            );
+                                        }
+                                        primary::lobby_draw_command::Kind::SetArrow(msg) => {
+                                            phase_floor.arrows.insert(
+                                                msg.id,
+                                                Arrow::from_proto(msg.data.unwrap_or_default()),
+                                            );
+                                        }
+                                        primary::lobby_draw_command::Kind::SetIcon(msg) => {
+                                            phase_floor.icons.insert(
+                                                msg.id,
+                                                PlacedIcon::from_proto(
+                                                    msg.data.unwrap_or_default(),
+                                                ),
+                                            );
+                                        }
+                                        primary::lobby_draw_command::Kind::DeleteDrawPath(msg) => {
+                                            phase_floor.draw_paths.remove(&msg.id);
+                                        }
+                                        primary::lobby_draw_command::Kind::DeleteArrow(msg) => {
+                                            phase_floor.arrows.remove(&msg.id);
+                                        }
+                                        primary::lobby_draw_command::Kind::DeleteIcon(msg) => {
+                                            phase_floor.icons.remove(&msg.id);
+                                        }
                                     }
-                                    // FIXME: We don't verify that the client is sending a valid draw command
-                                    let _ = clients[to_send_client]
-                                        .ws
-                                        .send_proto(S2CInner::LobbyDrawCommand(msg.clone()))
-                                        .await;
+
+                                    // Send the draw state change to all clients other than the one that notfied us
+                                    for to_send_client in 0..clients.len() {
+                                        if to_send_client == cl_idx {
+                                            continue;
+                                        }
+                                        let _ = clients[to_send_client]
+                                            .ws
+                                            .send_proto(S2CInner::LobbyDrawCommand(msg.clone()))
+                                            .await;
+                                    }
                                 }
                             }
                             C2SInner::LobbyCreatePhase(msg) => {
-                                // FIXME: Update lobby's strat state
+                                if let Some(strat_state) = curr_strat_state.as_mut() {
+                                    let map_meta =
+                                        MapId::from_map_name(&strat_state.map).unwrap().metadata();
 
-                                for to_send_client in 0..clients.len() {
-                                    if to_send_client == cl_idx {
-                                        continue;
+                                    strat_state.phases.push(StratPhase {
+                                        phase_name: msg.phaseName.clone(),
+                                        floors: map_meta
+                                            .floors
+                                            .into_iter()
+                                            .map(|_| PhaseFloor {
+                                                draw_paths: HashMap::new(),
+                                                arrows: HashMap::new(),
+                                                icons: HashMap::new(),
+                                            })
+                                            .collect(),
+                                    });
+
+                                    for to_send_client in 0..clients.len() {
+                                        if to_send_client == cl_idx {
+                                            continue;
+                                        }
+                                        let _ = clients[to_send_client]
+                                            .ws
+                                            .send_proto(S2CInner::LobbyCreatePhase(msg.clone()))
+                                            .await;
                                     }
-                                    let _ = clients[to_send_client]
-                                        .ws
-                                        .send_proto(S2CInner::LobbyCreatePhase(msg.clone()))
-                                        .await;
                                 }
                             }
                             C2SInner::LobbySetPhaseName(msg) => {
-                                // FIXME: Update lobby's strat state
+                                if let Some(phase) = curr_strat_state
+                                    .as_mut()
+                                    .and_then(|strat| strat.phases.get_mut(msg.idx as usize))
+                                {
+                                    phase.phase_name = msg.phase_name.clone();
 
-                                for to_send_client in 0..clients.len() {
-                                    if to_send_client == cl_idx {
-                                        continue;
+                                    for to_send_client in 0..clients.len() {
+                                        if to_send_client == cl_idx {
+                                            continue;
+                                        }
+                                        let _ = clients[to_send_client]
+                                            .ws
+                                            .send_proto(S2CInner::LobbySetPhaseName(msg.clone()))
+                                            .await;
                                     }
-                                    let _ = clients[to_send_client]
-                                        .ws
-                                        .send_proto(S2CInner::LobbySetPhaseName(msg.clone()))
-                                        .await;
                                 }
                             }
                             C2SInner::LobbySetTeammateLoadout(msg) => {
-                                // FIXME: Update lobby's strat state
+                                if let Some(teammate) = curr_strat_state
+                                    .as_mut()
+                                    .and_then(|strat| strat.teammates.get_mut(msg.idx as usize))
+                                {
+                                    *teammate =
+                                        Teammate::from_proto(msg.newLoadout.clone().unwrap());
 
-                                for to_send_client in 0..clients.len() {
-                                    if to_send_client == cl_idx {
-                                        continue;
+                                    for to_send_client in 0..clients.len() {
+                                        if to_send_client == cl_idx {
+                                            continue;
+                                        }
+                                        let _ = clients[to_send_client]
+                                            .ws
+                                            .send_proto(S2CInner::LobbySetTeammateLoadout(
+                                                msg.clone(),
+                                            ))
+                                            .await;
                                     }
-                                    let _ = clients[to_send_client]
-                                        .ws
-                                        .send_proto(S2CInner::LobbySetTeammateLoadout(msg.clone()))
-                                        .await;
                                 }
                             }
 

@@ -225,7 +225,7 @@ message LobbyDrawCommand {
 
 // LobbyCreatePhase
 message LobbyCreatePhase {
-    string phase_name = 1;
+    string phaseName = 1;
 }
 
 // LobbySetPhaseName

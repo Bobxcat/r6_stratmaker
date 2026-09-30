@@ -738,11 +738,17 @@ type DrawAction =
   { kind: DrawActionKind.DeleteDrawElement, data: DrawElement, floor: number, id: Uuid };
 
 class StratEditingPhase {
-  phaseName: string = "---";
-  floors: StratEditingPhaseFloor[] = [];
+  phaseName: string;
+  floors: StratEditingPhaseFloor[];
 
   private previousDrawActions: DrawAction[] = [];
   redoStack: DrawAction[] = [];
+
+  constructor(phaseName: string, floors: StratEditingPhaseFloor[]
+  ) {
+    this.phaseName = phaseName;
+    this.floors = floors;
+  }
 
   getPreviousDrawActionsRef(): DrawAction[] {
     return this.previousDrawActions;
@@ -908,9 +914,7 @@ class StratEditingState {
 
   /** Use with care! Not networked */
   pushEmptyPhaseRaw(name: string) {
-    var phase = new StratEditingPhase();
-    phase.phaseName = name;
-    phase.floors = this.mapFloors.map((_floorName) => new StratEditingPhaseFloor());
+    var phase = new StratEditingPhase(name, this.mapFloors.map((_floorName) => new StratEditingPhaseFloor()));
     this.phases.push(phase);
   }
 
@@ -1324,9 +1328,7 @@ function App() {
       return StratEditingLoadout.fromProto(teammate);
     }));
     stratEditingState.setPhasesRaw(state.phases.map((protoPhase) => {
-      let phase = new StratEditingPhase();
-      phase.phaseName = protoPhase.phaseName;
-      phase.floors = protoPhase.floors.map((protoFloor) => {
+      const floors = protoPhase.floors.map((protoFloor) => {
         let floor = new StratEditingPhaseFloor();
         for (const id in protoFloor.drawPaths) {
           floor.drawPaths.set(new Uuid(id), DrawPath.fromProto(protoFloor.drawPaths[id]));
@@ -1340,7 +1342,7 @@ function App() {
 
         return floor;
       });
-      return phase;
+      return new StratEditingPhase(protoPhase.phaseName, floors);
     }));
     updateStratEditingStateDisplay();
     redrawFreeDrawCanvasQueued = true;
@@ -1370,6 +1372,9 @@ function App() {
     } else if (msg.getMapMetadataResponse) {
       stratEditingState.selectedFloor = 0;
       stratEditingState.mapFloors = msg.getMapMetadataResponse.floors;
+      if (stratEditingState.getPhasesRef().length == 0) {
+        stratEditingState.pushEmptyPhaseRaw("Phase 0");
+      }
       updateStratEditingStateDisplay();
     } else if (msg.getStratInfoResponse) {
       const state: protos.StratState = msg.getStratInfoResponse.state!;
@@ -2372,12 +2377,16 @@ function App() {
         <div className="row">
           {stratEditingStateDisplay.getTeammateLoadoutsRaw().map((loadout, idx) =>
             <div key={idx} className="col" style={{ border: "2px solid #0f0f0f" }}>
+              {/* Operator and Ability */}
               <button style={{ padding: 0 }} onClick={(_e) => {
                 stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
                 stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.TeamOperator, teammateIndex: idx };
                 updateStratEditingStateDisplay();
               }}>
-                <img src={operatorsIndexReactive.getOperatorIconPath(loadout.operator)} style={{ width: 64, height: 64 }} />
+                <img src={operatorsIndexReactive.getOperatorIconPath(loadout.operator)} style={{
+                  backgroundColor: loadout.color.toCss(),
+                  width: 64, height: 64
+                }} />
               </button>
               <button onClick={(_e) => {
                 if (selectOperatorForTeammateActiveIdx == idx) {
@@ -2410,10 +2419,14 @@ function App() {
               }}>
                 <img
                   src={operatorsIndexReactive.getOperatorAbilityIconPath(loadout.operator)}
-                  style={OperatorsIndex.abilityImgDataStyle}
+                  style={{
+                    backgroundColor: loadout.color.toCss(),
+                    ...OperatorsIndex.abilityImgDataStyle
+                  }}
                 />
               </button>
 
+              {/* Utility */}
               <button style={{ paddingTop: 4, paddingBottom: 4, paddingLeft: 0, paddingRight: 0, height: 56 }} onClick={(_e) => {
                 stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
                 stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.TeamUtility, teammateIndex: idx };
@@ -2421,7 +2434,10 @@ function App() {
               }}>
                 <img
                   src={operatorsIndexReactive.getUtilityIconPath(loadout.util)}
-                  style={OperatorsIndex.abilityImgDataStyle}
+                  style={{
+                    backgroundColor: loadout.color.toCss(),
+                    ...OperatorsIndex.abilityImgDataStyle
+                  }}
                 />
               </button>
               <button onClick={(_e) => {
@@ -2443,7 +2459,7 @@ function App() {
 
                       updateStratEditingStateDisplay();
                       redrawFreeDrawCanvas(canvasIds.freeDraw);
-                    }, stratEditingState.getTeammateLoadoutClone(idx)!.operator)}
+                    }, "2vw", stratEditingState.getTeammateLoadoutClone(idx)!.operator)}
                   </div>
                 </div>
               )}

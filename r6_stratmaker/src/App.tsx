@@ -1344,6 +1344,20 @@ function App() {
       });
       return new StratEditingPhase(protoPhase.phaseName, floors);
     }));
+
+    // Select the floor with the most stuff on it, out of all the floors on the first phase
+    stratEditingState.selectedPhase = 0;
+    stratEditingState.selectedFloor = 0;
+    const phase0 = stratEditingState.getPhasesRef()[0];
+    if (phase0) {
+      for (let floorIdx = 0; floorIdx < phase0.floors.length; floorIdx += 1) {
+        if (phase0.floors[floorIdx].allDrawElements().length >
+          phase0.floors[stratEditingState.selectedFloor].allDrawElements().length) {
+          stratEditingState.selectedFloor = floorIdx;
+        }
+      }
+    }
+
     updateStratEditingStateDisplay();
     redrawFreeDrawCanvasQueued = true;
   }
@@ -1370,7 +1384,6 @@ function App() {
       stratEditingState.stratId = msg.createEmptyStratResponse.stratId;
       setCurrPage(Page.StratEditorPage);
     } else if (msg.getMapMetadataResponse) {
-      stratEditingState.selectedFloor = 0;
       stratEditingState.mapFloors = msg.getMapMetadataResponse.floors;
       if (stratEditingState.getPhasesRef().length == 0) {
         stratEditingState.pushEmptyPhaseRaw("Phase 0");

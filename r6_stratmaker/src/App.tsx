@@ -1096,7 +1096,7 @@ class OperatorInfo {
 }
 
 class OperatorsIndex {
-  static readonly abilityImgDataStyle: React.CSSProperties = { maxHeight: 48, maxWidth: 56 };
+  static readonly abilityImgDataStyle: React.CSSProperties = { maxHeight: "2.5vw", maxWidth: "4vw" };
 
   // Part of the JSON...
   attackers: string[] = [];
@@ -2298,40 +2298,51 @@ function App() {
     return (
       <>
         {/* Menuing buttons */}
-        <button onClick={(_) => {
-          switch (stratEditingState.mode) {
-            case StratEditingMode.Singleplayer: {
-              saveProgress().then((() => {
-                stratEditingState.reset();
-                updateStratEditingStateDisplay();
-                sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
-                setCurrPage(Page.StratListPage);
-              }));
-              break;
-            }
-            case StratEditingMode.Lobby: {
-              stratEditingState.reset();
-              updateStratEditingStateDisplay();
-              setCurrPage(Page.InLobbySelectStratPage);
-              break;
-            }
-          }
-        }}>Back to Strat list</button>
+        <div className="row">
+          <div className="col">
+            <button style={{ width: "15vw", margin: "0.25vw" }} onClick={(_) => {
+              switch (stratEditingState.mode) {
+                case StratEditingMode.Singleplayer: {
+                  saveProgress().then((() => {
+                    stratEditingState.reset();
+                    updateStratEditingStateDisplay();
+                    sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
+                    setCurrPage(Page.StratListPage);
+                  }));
+                  break;
+                }
+                case StratEditingMode.Lobby: {
+                  stratEditingState.reset();
+                  updateStratEditingStateDisplay();
+                  setCurrPage(Page.InLobbySelectStratPage);
+                  break;
+                }
+              }
+            }}>Back to Strat list</button>
 
-        {stratEditingStateDisplay.mode == StratEditingMode.Singleplayer && (<button onClick={(_) => {
-          saveProgress()
-        }}>Save Progress</button>)}
+            {stratEditingStateDisplay.mode == StratEditingMode.Singleplayer && (
+              <button
+                style={{ width: "15vw", margin: "0.25vw" }}
+                onClick={(_) => {
+                  saveProgress()
+                }}>Save Progress</button>
+            )}
 
-        {/* Lobby members display */}
-        {stratEditingStateDisplay.mode == StratEditingMode.Lobby && (<>
-          <p>Lobby Members</p>
-          {stratEditingStateDisplay.lobbyMembers.forEach((member) =>
-            <p>{member}</p>
-          )}
-        </>)}
+            {/* Lobby members display */}
+            {stratEditingStateDisplay.mode == StratEditingMode.Lobby && (
+              <div style={{ width: "15vw", margin: "0.25vw" }}>
+                <p>Lobby Members</p>
+                <>
+                  {stratEditingStateDisplay.lobbyMembers.forEach((member) =>
+                    <p>{member}</p>
+                  )}
+                </>
+              </div>)}
+          </div>
+        </div>
 
         {/* Edit strat name */}
-        <div className="row">
+        <div className="row" style={{ margin: "0.25vw" }}>
           <p>Title: </p>
           <input
             value={stratEditingStateDisplay.stratName}
@@ -2342,7 +2353,7 @@ function App() {
         </div>
 
         {/* Edit current phase name & select phase */}
-        <div className="row">
+        <div className="row" style={{ margin: "0.25vw" }}>
           <p>Current Phase: </p>
           <input
             value={stratEditingStateDisplay.getPhasesRef()[stratEditingState.selectedPhase]?.phaseName}
@@ -2351,7 +2362,7 @@ function App() {
               updateStratEditingStateDisplay();
             }} />
         </div>
-        <div className="row">
+        <div className="row" style={{ margin: "0.25vw" }}>
           {stratEditingStateDisplay.getPhasesRef().map((phase, i) =>
             <button key={i} onClick={(e) => {
               e.preventDefault();
@@ -2372,112 +2383,116 @@ function App() {
           }}>Create new phase</button>
         </div>
 
-        {/* List of floors */}
-        <p>Current Floor: {stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.selectedFloor]}</p>
+        {/* Team operator bar */}
         <div className="row">
-          {stratEditingStateDisplay.mapFloors.map((floor_name, i) =>
-            <button key={i} onClick={(e) => {
-              e.preventDefault();
-              stratEditingState.selectedFloor = i;
-              redrawFreeDrawCanvas(canvasIds.freeDraw);
-              updateStratEditingStateDisplay();
-            }}>{floor_name}</button>
-          )}
-        </div>
-
-        {/* Team operator selector */}
-        <p>Team</p>
-        <div className="row">
-          {stratEditingStateDisplay.getTeammateLoadoutsRaw().map((loadout, idx) =>
-            <div key={idx} className="col" style={{ border: "2px solid #0f0f0f" }}>
-              {/* Operator and Ability */}
-              <button style={{ padding: 0 }} onClick={(_e) => {
-                stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
-                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.TeamOperator, teammateIndex: idx };
-                updateStratEditingStateDisplay();
-              }}>
-                <img src={operatorsIndexReactive.getOperatorIconPath(loadout.operator)} style={{
-                  backgroundColor: loadout.color.toCss(),
-                  width: 64, height: 64
-                }} />
-              </button>
-              <button onClick={(_e) => {
-                if (selectOperatorForTeammateActiveIdx == idx) {
-                  setSelectOperatorForTeammateActiveIdx(undefined);
-                } else {
-                  setSelectOperatorForTeammateActiveIdx(idx);
-                }
-              }}>Select Operator</button>
-              {selectOperatorForTeammateActiveIdx == idx && (
-                <div style={{ position: "relative", zIndex: 1000, padding: 0 }}>
-                  <div style={{ position: "absolute", zIndex: 1001, top: "32px", left: "-50%", backgroundColor: "#bababa", border: "2px solid #0f0f0f", borderRadius: "8px" }}>
-                    {operatorTileListComponent((opName) => {
-                      stratEditingState.mapTeammateLoadout(idx, (l) => {
-                        l.operator = opName;
-                        l.util = "";
-                        return l;
-                      });
-                      setSelectOperatorForTeammateActiveIdx(undefined);
-
-                      updateStratEditingStateDisplay();
-                      redrawFreeDrawCanvas(canvasIds.freeDraw);
-                    }, false, true, true, 10)}
-                  </div>
-                </div>
-              )}
-              <button style={{ paddingTop: 4, paddingBottom: 4, paddingLeft: 0, paddingRight: 0, height: 56 }} onClick={(_e) => {
-                stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
-                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.TeamAbility, teammateIndex: idx };
-                updateStratEditingStateDisplay();
-              }}>
-                <img
-                  src={operatorsIndexReactive.getOperatorAbilityIconPath(loadout.operator)}
-                  style={{
-                    backgroundColor: loadout.color.toCss(),
-                    ...OperatorsIndex.abilityImgDataStyle
-                  }}
-                />
-              </button>
-
-              {/* Utility */}
-              <button style={{ paddingTop: 4, paddingBottom: 4, paddingLeft: 0, paddingRight: 0, height: 56 }} onClick={(_e) => {
-                stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
-                stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.TeamUtility, teammateIndex: idx };
-                updateStratEditingStateDisplay();
-              }}>
-                <img
-                  src={operatorsIndexReactive.getUtilityIconPath(loadout.util)}
-                  style={{
-                    backgroundColor: loadout.color.toCss(),
-                    ...OperatorsIndex.abilityImgDataStyle
-                  }}
-                />
-              </button>
-              <button onClick={(_e) => {
-                if (selectUtilityForTeammateActiveIdx == idx) {
-                  setSelectUtilityForTeammateActiveIdx(undefined);
-                } else {
-                  setSelectUtilityForTeammateActiveIdx(idx);
-                }
-              }}>Select Utility</button>
-              {selectUtilityForTeammateActiveIdx == idx && (
-                <div style={{ position: "relative", zIndex: 1000, padding: 0 }}>
-                  <div style={{ position: "absolute", zIndex: 1001, top: "32px", left: "-50%", backgroundColor: "#bababa", border: "2px solid #0f0f0f", borderRadius: "8px" }}>
-                    {utilityTileListComponent((util) => {
-                      stratEditingState.mapTeammateLoadout(idx, (l) => {
-                        l.util = util;
-                        return l;
-                      })
-                      setSelectUtilityForTeammateActiveIdx(undefined);
-
-                      updateStratEditingStateDisplay();
-                      redrawFreeDrawCanvas(canvasIds.freeDraw);
-                    }, "2vw", stratEditingState.getTeammateLoadoutClone(idx)!.operator)}
-                  </div>
-                </div>
-              )}
+          {/* Floor Selector */}
+          <div className="col" style={{ margin: "0.5vw" }}>
+            <p>{stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.selectedFloor]}</p>
+            <div className="col">
+              {stratEditingStateDisplay.mapFloors.map((floor_name, i) =>
+                <button key={i} onClick={(e) => {
+                  e.preventDefault();
+                  stratEditingState.selectedFloor = i;
+                  redrawFreeDrawCanvas(canvasIds.freeDraw);
+                  updateStratEditingStateDisplay();
+                }}>{floor_name}</button>
+              ).reverse()}
             </div>
-          )}
+          </div>
+
+          <div className="row" style={{ margin: "0.5vw", borderRadius: "0.5vw", border: "2px solid #0f0f0f" }}>
+            {stratEditingStateDisplay.getTeammateLoadoutsRaw().map((loadout, idx) =>
+              <div key={idx} className="col" style={{ margin: "0.1vw" }}>
+                {/* Operator and Ability */}
+                <button style={{ padding: 0, borderRadius: 0 }} onClick={(_e) => {
+                  stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
+                  stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.TeamOperator, teammateIndex: idx };
+                  updateStratEditingStateDisplay();
+                }}>
+                  <img src={operatorsIndexReactive.getOperatorIconPath(loadout.operator)} style={{
+                    backgroundColor: loadout.color.toCss(),
+                    width: "4vw", height: "4vw"
+                  }} />
+                </button>
+                <button style={{ padding: 0, borderRadius: 0 }} onClick={(_e) => {
+                  if (selectOperatorForTeammateActiveIdx == idx) {
+                    setSelectOperatorForTeammateActiveIdx(undefined);
+                  } else {
+                    setSelectOperatorForTeammateActiveIdx(idx);
+                  }
+                }}>Select Operator</button>
+                {selectOperatorForTeammateActiveIdx == idx && (
+                  <div style={{ position: "relative", zIndex: 1000, padding: 0 }}>
+                    <div style={{ position: "absolute", zIndex: 1001, top: "0.5vw", left: "-60%", backgroundColor: "#bababa", border: "2px solid #0f0f0f", borderRadius: "8px" }}>
+                      {operatorTileListComponent((opName) => {
+                        stratEditingState.mapTeammateLoadout(idx, (l) => {
+                          l.operator = opName;
+                          l.util = "";
+                          return l;
+                        });
+                        setSelectOperatorForTeammateActiveIdx(undefined);
+
+                        updateStratEditingStateDisplay();
+                        redrawFreeDrawCanvas(canvasIds.freeDraw);
+                      }, false, true, true, 10)}
+                    </div>
+                  </div>
+                )}
+                <button style={{ paddingTop: 4, paddingBottom: 4, paddingLeft: 0, paddingRight: 0, height: "3vw", borderRadius: 0 }} onClick={(_e) => {
+                  stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
+                  stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.TeamAbility, teammateIndex: idx };
+                  updateStratEditingStateDisplay();
+                }}>
+                  <img
+                    src={operatorsIndexReactive.getOperatorAbilityIconPath(loadout.operator)}
+                    style={{
+                      backgroundColor: loadout.color.toCss(),
+                      ...OperatorsIndex.abilityImgDataStyle
+                    }}
+                  />
+                </button>
+
+                {/* Utility */}
+                <button style={{ paddingTop: 4, paddingBottom: 4, paddingLeft: 0, paddingRight: 0, height: "3vw", borderRadius: 0 }} onClick={(_e) => {
+                  stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
+                  stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.TeamUtility, teammateIndex: idx };
+                  updateStratEditingStateDisplay();
+                }}>
+                  <img
+                    src={operatorsIndexReactive.getUtilityIconPath(loadout.util)}
+                    style={{
+                      backgroundColor: loadout.color.toCss(),
+                      ...OperatorsIndex.abilityImgDataStyle
+                    }}
+                  />
+                </button>
+                <button style={{ borderRadius: 0 }} onClick={(_e) => {
+                  if (selectUtilityForTeammateActiveIdx == idx) {
+                    setSelectUtilityForTeammateActiveIdx(undefined);
+                  } else {
+                    setSelectUtilityForTeammateActiveIdx(idx);
+                  }
+                }}>Select Utility</button>
+                {selectUtilityForTeammateActiveIdx == idx && (
+                  <div style={{ position: "relative", zIndex: 1000, padding: 0 }}>
+                    <div style={{ position: "absolute", zIndex: 1001, top: "32px", left: "-50%", backgroundColor: "#bababa", border: "2px solid #0f0f0f", borderRadius: "8px" }}>
+                      {utilityTileListComponent((util) => {
+                        stratEditingState.mapTeammateLoadout(idx, (l) => {
+                          l.util = util;
+                          return l;
+                        })
+                        setSelectUtilityForTeammateActiveIdx(undefined);
+
+                        updateStratEditingStateDisplay();
+                        redrawFreeDrawCanvas(canvasIds.freeDraw);
+                      }, "2vw", stratEditingState.getTeammateLoadoutClone(idx)!.operator)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
         </div>
 
         {/* Toolbar and draw area */}
@@ -2522,7 +2537,7 @@ function App() {
 
           {/* Toolbar */}
           <div className="col" id="tool-selector-bar" style={{ margin: "0.5vw" }}>
-            <p style={{ fontSize: "1vw" }}>{DrawTool[stratEditingState.selectedDrawTool]}</p>
+            <p>{DrawTool[stratEditingState.selectedDrawTool]}</p>
             <div style={{ border: "2px solid #0f0f0f", borderRadius: "0.5vw" }}>
               {tileListComponent(StratEditingState.freeDrawPalette, (color) => <>
                 <div style={{
@@ -2538,9 +2553,9 @@ function App() {
                 updateStratEditingStateDisplay();
               }, 3)}
             </div>
-            <button style={{ fontSize: "1vw" }} onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.SelectAndEdit; updateStratEditingStateDisplay(); }}>Select and edit</button>
-            <button style={{ fontSize: "1vw" }} onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.FreeDraw; updateStratEditingStateDisplay(); }}>Free draw</button>
-            <button style={{ fontSize: "1vw" }} onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.Arrow; updateStratEditingStateDisplay(); }}>Arrow</button>
+            <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.SelectAndEdit; updateStratEditingStateDisplay(); }}>Select and edit</button>
+            <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.FreeDraw; updateStratEditingStateDisplay(); }}>Free draw</button>
+            <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.Arrow; updateStratEditingStateDisplay(); }}>Arrow</button>
           </div>
         </div>
       </>

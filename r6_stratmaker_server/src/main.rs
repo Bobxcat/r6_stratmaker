@@ -82,7 +82,35 @@ pub enum MapId {
 impl MapId {
     pub fn all_maps() -> &'static [MapId] {
         use MapId::*;
-        &[Chalet, Coastline]
+        &[
+            Bank,
+            Border,
+            CalypsoCasino,
+            Chalet,
+            CloseQuarter,
+            Clubhouse,
+            Coastline,
+            Consulate,
+            EmeraldPlains,
+            Favela,
+            Fortress,
+            HerefordBase,
+            House,
+            Kafe,
+            Kanal,
+            Lair,
+            NighthavenLabs,
+            Oregon,
+            Outback,
+            PresidentialPlane,
+            Skyscraper,
+            StadiumAlpha,
+            StadiumBravo,
+            ThemePark,
+            Tower,
+            Villa,
+            Yacht,
+        ]
     }
 
     pub fn from_map_name(s: &str) -> Option<Self> {

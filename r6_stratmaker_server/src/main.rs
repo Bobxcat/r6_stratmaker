@@ -50,8 +50,33 @@ pub struct MapMetadata {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MapId {
+    Bank,
+    Border,
+    CalypsoCasino,
     Chalet,
+    CloseQuarter,
+    Clubhouse,
     Coastline,
+    Consulate,
+    EmeraldPlains,
+    Favela,
+    Fortress,
+    HerefordBase,
+    House,
+    Kafe,
+    Kanal,
+    Lair,
+    NighthavenLabs,
+    Oregon,
+    Outback,
+    PresidentialPlane,
+    Skyscraper,
+    StadiumAlpha,
+    StadiumBravo,
+    ThemePark,
+    Tower,
+    Villa,
+    Yacht,
 }
 
 impl MapId {
@@ -72,13 +97,113 @@ impl MapId {
 
     pub fn metadata(&self) -> &'static MapMetadata {
         match self {
+            MapId::Bank => &MapMetadata {
+                name: "bank",
+                floors: &["basement", "floor_1", "floor_2", "roof"],
+            },
+            MapId::Border => &MapMetadata {
+                name: "border",
+                floors: &["floor_1", "floor_2", "roof"],
+            },
+            MapId::CalypsoCasino => &MapMetadata {
+                name: "calypso_casino",
+                floors: &["basement", "floor_1", "floor_2", "roof"],
+            },
             MapId::Chalet => &MapMetadata {
                 name: "chalet",
+                floors: &["basement", "floor_1", "floor_2", "roof"],
+            },
+            MapId::CloseQuarter => &MapMetadata {
+                name: "close_quarter",
+                floors: &["floor_1", "floor_2"],
+            },
+            MapId::Clubhouse => &MapMetadata {
+                name: "clubhouse",
                 floors: &["basement", "floor_1", "floor_2", "roof"],
             },
             MapId::Coastline => &MapMetadata {
                 name: "coastline",
                 floors: &["floor_1", "floor_2", "roof"],
+            },
+            MapId::Consulate => &MapMetadata {
+                name: "consulate",
+                floors: &["basement", "floor_1", "floor_2", "roof"],
+            },
+            MapId::EmeraldPlains => &MapMetadata {
+                name: "emerald_plains",
+                floors: &["floor_1", "floor_2", "roof"],
+            },
+            MapId::Favela => &MapMetadata {
+                name: "favela",
+                floors: &["basement", "floor_1", "floor_2", "floor_3", "roof"],
+            },
+            MapId::Fortress => &MapMetadata {
+                name: "fortress",
+                floors: &["floor_1", "floor_2", "roof"],
+            },
+            MapId::HerefordBase => &MapMetadata {
+                name: "hereford_base",
+                floors: &["basement", "floor_1", "floor_2", "floor_3", "roof"],
+            },
+            MapId::House => &MapMetadata {
+                name: "house",
+                floors: &["basement", "floor_1", "floor_2", "roof"],
+            },
+            MapId::Kafe => &MapMetadata {
+                name: "kafe",
+                floors: &["floor_1", "floor_2", "floor_3", "roof"],
+            },
+            MapId::Kanal => &MapMetadata {
+                name: "kanal",
+                floors: &["basement", "floor_1", "floor_2", "roof"],
+            },
+            MapId::Lair => &MapMetadata {
+                name: "lair",
+                floors: &["basement", "floor_1", "floor_2", "roof"],
+            },
+            MapId::NighthavenLabs => &MapMetadata {
+                name: "nighthaven_labs",
+                floors: &["basement", "floor_1", "floor_2", "roof"],
+            },
+            MapId::Oregon => &MapMetadata {
+                name: "oregon",
+                floors: &["basement", "floor_1", "floor_2", "floor_3", "roof"],
+            },
+            MapId::Outback => &MapMetadata {
+                name: "outback",
+                floors: &["floor_1", "floor_2", "roof"],
+            },
+            MapId::PresidentialPlane => &MapMetadata {
+                name: "presidential_plane",
+                floors: &["floor_1", "floor_2", "floor_3", "roof"],
+            },
+            MapId::Skyscraper => &MapMetadata {
+                name: "skyscraper",
+                floors: &["floor_1", "floor_2", "roof"],
+            },
+            MapId::StadiumAlpha => &MapMetadata {
+                name: "stadium_alpha",
+                floors: &["basement", "floor_1", "floor_2", "roof", "gantry"],
+            },
+            MapId::StadiumBravo => &MapMetadata {
+                name: "stadium_bravo",
+                floors: &["basement", "floor_1", "floor_2", "roof"],
+            },
+            MapId::ThemePark => &MapMetadata {
+                name: "theme_park",
+                floors: &["floor_1", "floor_2", "roof"],
+            },
+            MapId::Tower => &MapMetadata {
+                name: "tower",
+                floors: &["basement", "floor_1", "floor_2", "roof"],
+            },
+            MapId::Villa => &MapMetadata {
+                name: "villa",
+                floors: &["basement", "floor_1", "floor_2", "roof"],
+            },
+            MapId::Yacht => &MapMetadata {
+                name: "yacht",
+                floors: &["floor_1", "floor_2", "floor_3", "floor_4", "roof"],
             },
         }
     }

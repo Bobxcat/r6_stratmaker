@@ -169,6 +169,14 @@ export interface SaveStrat {
 export interface SaveStratResponse {
 }
 
+/** DeleteStrat */
+export interface DeleteStrat {
+  stratId: string;
+}
+
+export interface DeleteStratResponse {
+}
+
 /** CreateLobby */
 export interface CreateLobby {
 }
@@ -289,6 +297,7 @@ export interface Client2Server {
   getMapMetadata?: GetMapMetadata | undefined;
   getStratInfo?: GetStratInfo | undefined;
   saveStrat?: SaveStrat | undefined;
+  deleteStrat?: DeleteStrat | undefined;
   createLobby?: CreateLobby | undefined;
   getLobbyList?: GetLobbyList | undefined;
   joinLobby?: JoinLobby | undefined;
@@ -307,6 +316,7 @@ export interface Server2Client {
   getMapMetadataResponse?: GetMapMetadataResponse | undefined;
   getStratInfoResponse?: GetStratInfoResponse | undefined;
   saveStratResponse?: SaveStratResponse | undefined;
+  deleteStratResponse?: DeleteStratResponse | undefined;
   createLobbyResponse?: CreateLobbyResponse | undefined;
   getLobbyListResponse?: GetLobbyListResponse | undefined;
   updateLobbyMembers?: UpdateLobbyMembers | undefined;
@@ -3094,6 +3104,131 @@ export const SaveStratResponse: MessageFns<SaveStratResponse> = {
   },
 };
 
+function createBaseDeleteStrat(): DeleteStrat {
+  return { stratId: "" };
+}
+
+export const DeleteStrat: MessageFns<DeleteStrat> = {
+  encode(message: DeleteStrat, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.stratId !== "") {
+      writer.uint32(10).string(message.stratId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): DeleteStrat {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseDeleteStrat();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.stratId = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): DeleteStrat {
+    return {
+      stratId: isSet(object.stratId)
+        ? globalThis.String(object.stratId)
+        : isSet(object.strat_id)
+        ? globalThis.String(object.strat_id)
+        : "",
+    };
+  },
+
+  toJSON(message: DeleteStrat): unknown {
+    const obj: any = {};
+    if (message.stratId !== "") {
+      obj.stratId = message.stratId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteStrat>, I>>(base?: I): DeleteStrat {
+    return DeleteStrat.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteStrat>, I>>(object: I): DeleteStrat {
+    const message = createBaseDeleteStrat();
+    message.stratId = object.stratId ?? "";
+    return message;
+  },
+};
+
+function createBaseDeleteStratResponse(): DeleteStratResponse {
+  return {};
+}
+
+export const DeleteStratResponse: MessageFns<DeleteStratResponse> = {
+  encode(_: DeleteStratResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): DeleteStratResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseDeleteStratResponse();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(_: any): DeleteStratResponse {
+    return {};
+  },
+
+  toJSON(_: DeleteStratResponse): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<DeleteStratResponse>, I>>(base?: I): DeleteStratResponse {
+    return DeleteStratResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<DeleteStratResponse>, I>>(_: I): DeleteStratResponse {
+    const message = createBaseDeleteStratResponse();
+    return message;
+  },
+};
+
 function createBaseCreateLobby(): CreateLobby {
   return {};
 }
@@ -4900,6 +5035,7 @@ function createBaseClient2Server(): Client2Server {
     getMapMetadata: undefined,
     getStratInfo: undefined,
     saveStrat: undefined,
+    deleteStrat: undefined,
     createLobby: undefined,
     getLobbyList: undefined,
     joinLobby: undefined,
@@ -4933,6 +5069,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.saveStrat !== undefined) {
       SaveStrat.encode(message.saveStrat, writer.uint32(58).fork()).join();
+    }
+    if (message.deleteStrat !== undefined) {
+      DeleteStrat.encode(message.deleteStrat, writer.uint32(66).fork()).join();
     }
     if (message.createLobby !== undefined) {
       CreateLobby.encode(message.createLobby, writer.uint32(810).fork()).join();
@@ -5028,6 +5167,14 @@ export const Client2Server: MessageFns<Client2Server> = {
             }
 
             message.saveStrat = SaveStrat.decode(reader, reader.uint32());
+            continue;
+          }
+          case 8: {
+            if (tag !== 66) {
+              break;
+            }
+
+            message.deleteStrat = DeleteStrat.decode(reader, reader.uint32());
             continue;
           }
           case 101: {
@@ -5139,6 +5286,11 @@ export const Client2Server: MessageFns<Client2Server> = {
         : isSet(object.save_strat)
         ? SaveStrat.fromJSON(object.save_strat)
         : undefined,
+      deleteStrat: isSet(object.deleteStrat)
+        ? DeleteStrat.fromJSON(object.deleteStrat)
+        : isSet(object.delete_strat)
+        ? DeleteStrat.fromJSON(object.delete_strat)
+        : undefined,
       createLobby: isSet(object.createLobby)
         ? CreateLobby.fromJSON(object.createLobby)
         : isSet(object.create_lobby)
@@ -5205,6 +5357,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     if (message.saveStrat !== undefined) {
       obj.saveStrat = SaveStrat.toJSON(message.saveStrat);
     }
+    if (message.deleteStrat !== undefined) {
+      obj.deleteStrat = DeleteStrat.toJSON(message.deleteStrat);
+    }
     if (message.createLobby !== undefined) {
       obj.createLobby = CreateLobby.toJSON(message.createLobby);
     }
@@ -5256,6 +5411,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     message.saveStrat = (object.saveStrat !== undefined && object.saveStrat !== null)
       ? SaveStrat.fromPartial(object.saveStrat)
       : undefined;
+    message.deleteStrat = (object.deleteStrat !== undefined && object.deleteStrat !== null)
+      ? DeleteStrat.fromPartial(object.deleteStrat)
+      : undefined;
     message.createLobby = (object.createLobby !== undefined && object.createLobby !== null)
       ? CreateLobby.fromPartial(object.createLobby)
       : undefined;
@@ -5294,6 +5452,7 @@ function createBaseServer2Client(): Server2Client {
     getMapMetadataResponse: undefined,
     getStratInfoResponse: undefined,
     saveStratResponse: undefined,
+    deleteStratResponse: undefined,
     createLobbyResponse: undefined,
     getLobbyListResponse: undefined,
     updateLobbyMembers: undefined,
@@ -5329,6 +5488,9 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.saveStratResponse !== undefined) {
       SaveStratResponse.encode(message.saveStratResponse, writer.uint32(58).fork()).join();
+    }
+    if (message.deleteStratResponse !== undefined) {
+      DeleteStratResponse.encode(message.deleteStratResponse, writer.uint32(66).fork()).join();
     }
     if (message.createLobbyResponse !== undefined) {
       CreateLobbyResponse.encode(message.createLobbyResponse, writer.uint32(810).fork()).join();
@@ -5430,6 +5592,14 @@ export const Server2Client: MessageFns<Server2Client> = {
             }
 
             message.saveStratResponse = SaveStratResponse.decode(reader, reader.uint32());
+            continue;
+          }
+          case 8: {
+            if (tag !== 66) {
+              break;
+            }
+
+            message.deleteStratResponse = DeleteStratResponse.decode(reader, reader.uint32());
             continue;
           }
           case 101: {
@@ -5561,6 +5731,11 @@ export const Server2Client: MessageFns<Server2Client> = {
         : isSet(object.save_strat_response)
         ? SaveStratResponse.fromJSON(object.save_strat_response)
         : undefined,
+      deleteStratResponse: isSet(object.deleteStratResponse)
+        ? DeleteStratResponse.fromJSON(object.deleteStratResponse)
+        : isSet(object.delete_strat_response)
+        ? DeleteStratResponse.fromJSON(object.delete_strat_response)
+        : undefined,
       createLobbyResponse: isSet(object.createLobbyResponse)
         ? CreateLobbyResponse.fromJSON(object.createLobbyResponse)
         : isSet(object.create_lobby_response)
@@ -5637,6 +5812,9 @@ export const Server2Client: MessageFns<Server2Client> = {
     if (message.saveStratResponse !== undefined) {
       obj.saveStratResponse = SaveStratResponse.toJSON(message.saveStratResponse);
     }
+    if (message.deleteStratResponse !== undefined) {
+      obj.deleteStratResponse = DeleteStratResponse.toJSON(message.deleteStratResponse);
+    }
     if (message.createLobbyResponse !== undefined) {
       obj.createLobbyResponse = CreateLobbyResponse.toJSON(message.createLobbyResponse);
     }
@@ -5697,6 +5875,9 @@ export const Server2Client: MessageFns<Server2Client> = {
       : undefined;
     message.saveStratResponse = (object.saveStratResponse !== undefined && object.saveStratResponse !== null)
       ? SaveStratResponse.fromPartial(object.saveStratResponse)
+      : undefined;
+    message.deleteStratResponse = (object.deleteStratResponse !== undefined && object.deleteStratResponse !== null)
+      ? DeleteStratResponse.fromPartial(object.deleteStratResponse)
       : undefined;
     message.createLobbyResponse = (object.createLobbyResponse !== undefined && object.createLobbyResponse !== null)
       ? CreateLobbyResponse.fromPartial(object.createLobbyResponse)

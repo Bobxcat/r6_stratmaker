@@ -349,36 +349,70 @@ async fn handle_generic_message(
                 .await?;
         }
         C2SInner::SaveStrat(msg) => {
-            // FIXME: A client can save strats that aren't their own, and can do so while in a lobby
-
             let strat_id = StratId(Uuid::try_parse(&msg.strat_id).context(format!(
                 "{}: {}",
                 line!(),
                 msg.strat_id
             ))?);
-            let Some(state) = msg.state.clone().into_option() else {
-                return Ok(None);
-            };
+            if database
+                .get::<UsersKeyspace>(&cl_state.username)
+                .await?
+                .is_some_and(|entry| entry.strats.contains(&strat_id))
+            {
+                // The user owns this strat, and can choose to save it
+                let Some(state) = msg.state.clone().into_option() else {
+                    return Ok(None);
+                };
 
-            let Some(mut strat) = database.get::<StratsKeyspace>(&strat_id).await? else {
-                return Ok(None);
-            };
+                let Some(mut strat) = database.get::<StratsKeyspace>(&strat_id).await? else {
+                    return Ok(None);
+                };
 
-            strat = StratEntry {
-                strat_name: state.strat_name,
-                map: strat.map,
-                teammates: state
-                    .teammates
-                    .into_iter()
-                    .map(Teammate::from_proto)
-                    .collect(),
-                phases: state
-                    .phases
-                    .into_iter()
-                    .map(StratPhase::from_proto)
-                    .collect(),
-            };
-            database.insert::<StratsKeyspace>(&strat_id, &strat).await?;
+                strat = StratEntry {
+                    strat_name: state.strat_name,
+                    map: strat.map,
+                    teammates: state
+                        .teammates
+                        .into_iter()
+                        .map(Teammate::from_proto)
+                        .collect(),
+                    phases: state
+                        .phases
+                        .into_iter()
+                        .map(StratPhase::from_proto)
+                        .collect(),
+                };
+                database.insert::<StratsKeyspace>(&strat_id, &strat).await?;
+            }
+        }
+        C2SInner::DeleteStrat(msg) => {
+            let strat_id = StratId(Uuid::try_parse(&msg.strat_id).context(format!(
+                "{}: {}",
+                line!(),
+                msg.strat_id
+            ))?);
+            if database
+                .get::<UsersKeyspace>(&cl_state.username)
+                .await?
+                .is_some_and(|entry| entry.strats.contains(&strat_id))
+            {
+                // The user owns this strat, and can choose to delete it
+
+                let mut user_entry = database
+                    .get::<UsersKeyspace>(&cl_state.username)
+                    .await?
+                    .unwrap();
+                if let Some(strat_idx_in_user) =
+                    user_entry.strats.iter().position(|s| s == &strat_id)
+                {
+                    user_entry.strats.remove(strat_idx_in_user);
+                    database
+                        .insert::<UsersKeyspace>(&cl_state.username, &user_entry)
+                        .await?;
+                }
+
+                database.remove::<StratsKeyspace>(&strat_id).await?;
+            }
         }
         C2SInner::GetLobbyList(_msg) => {
             let lobbies = {
@@ -738,6 +772,7 @@ fn lobby_loop(
                             | C2SInner::CreateEmptyStrat(..)
                             | C2SInner::GetMapMetadata(..)
                             | C2SInner::GetStratInfo(..)
+                            | C2SInner::DeleteStrat(..)
                             | C2SInner::SaveStrat(..)
                             | C2SInner::GetLobbyList(..) => {
                                 context_println!("WARN: {msg:?} Should be handled generically",);
@@ -824,6 +859,7 @@ async fn client_loop(
                     | C2SInner::GetMapMetadata(..)
                     | C2SInner::GetStratInfo(..)
                     | C2SInner::SaveStrat(..)
+                    | C2SInner::DeleteStrat(..)
                     | C2SInner::GetLobbyList(..)
                     | C2SInner::LobbyLoadStrat(..)
                     | C2SInner::LobbyDrawCommand(..)

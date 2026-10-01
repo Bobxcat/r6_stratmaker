@@ -2338,6 +2338,21 @@ function App() {
                   )}
                 </>
               </div>)}
+
+            {stratEditingStateDisplay.mode == StratEditingMode.Singleplayer && (
+              <button style={{ width: "15vw", margin: "0.25vw" }} onClick={(_) => {
+                if (window.confirm(`Are you sure you want to delete strat \"${stratEditingState.stratName}\"?`)) {
+                  if (window.confirm(`Are you really really sure you want to delete strat \"${stratEditingState.stratName}\"?`)) {
+                    sendNetworkMessage(protos.Client2Server.create({ deleteStrat: { stratId: stratEditingState.stratId } })).then(() => {
+                      sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
+                    });
+                    stratEditingState.reset();
+                    updateStratEditingStateDisplay();
+                    setCurrPage(Page.StratListPage);
+                  }
+                }
+              }}
+              >Delete Strat</button>)}
           </div>
         </div>
 
@@ -2475,7 +2490,7 @@ function App() {
                 }}>Select Utility</button>
                 {selectUtilityForTeammateActiveIdx == idx && (
                   <div style={{ position: "relative", zIndex: 1000, padding: 0 }}>
-                    <div style={{ position: "absolute", zIndex: 1001, top: "32px", left: "-50%", backgroundColor: "#bababa", border: "2px solid #0f0f0f", borderRadius: "8px" }}>
+                    <div style={{ position: "absolute", zIndex: 1001, top: "0.5vw", left: "0%", backgroundColor: "#bababa", border: "2px solid #0f0f0f", borderRadius: "8px" }}>
                       {utilityTileListComponent((util) => {
                         stratEditingState.mapTeammateLoadout(idx, (l) => {
                           l.util = util;

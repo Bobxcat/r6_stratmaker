@@ -483,6 +483,13 @@ impl DatabaseHandle {
         }
     }
 
+    pub async fn remove<Keyspace: DBKeyspace>(&self, key: &Keyspace::Key) -> anyhow::Result<()> {
+        let keyspace = self.get_keyspace(Keyspace::keyspace_id()).clone();
+        let key = serde_json::to_vec(key)?;
+        tokio::task::spawn_blocking(move || keyspace.remove(key)).await??;
+        Ok(())
+    }
+
     pub async fn insert<Keyspace: DBKeyspace>(
         &self,
         key: &Keyspace::Key,

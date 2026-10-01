@@ -135,6 +135,13 @@ message SaveStrat {
 
 message SaveStratResponse {}
 
+// DeleteStrat
+message DeleteStrat {
+    string strat_id = 1;
+}
+
+message DeleteStratResponse {}
+
 // CreateLobby
 message CreateLobby {}
 
@@ -249,6 +256,7 @@ message Client2Server {
         GetMapMetadata get_map_metadata = 5;
         GetStratInfo get_strat_info = 6;
         SaveStrat save_strat = 7;
+        DeleteStrat delete_strat = 8;
 
         CreateLobby create_lobby = 101;
         GetLobbyList get_lobby_list = 102;
@@ -270,6 +278,7 @@ message Server2Client {
         GetMapMetadataResponse get_map_metadata_response = 5;
         GetStratInfoResponse get_strat_info_response = 6;
         SaveStratResponse save_strat_response = 7;
+        DeleteStratResponse delete_strat_response = 8;
 
         CreateLobbyResponse create_lobby_response = 101;
         GetLobbyListResponse get_lobby_list_response = 102;

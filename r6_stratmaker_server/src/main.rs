@@ -33,9 +33,13 @@ const PING_PERIOD: Duration = Duration::from_secs(3);
 
 macro_rules! context_println {
     ($($arg:tt)*) => {
+        let time_str = format!(
+            "[{}]",
+            chrono::offset::Utc::now().format("%Y-%m-%d %H:%M:%S%.3f")
+        );
         let context_str = format!("[{}/{}:{}]", file!(), line!(), column!());
-        print!("{context_str:<30}");
-        println!($($arg)*)
+        let final_str = format!("{time_str} {context_str:<25} {}", format!($($arg)*));
+        println!("{final_str}");
     };
 }
 

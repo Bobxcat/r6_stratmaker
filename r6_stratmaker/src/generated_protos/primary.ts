@@ -142,6 +142,14 @@ export interface CreateEmptyStratResponse {
   stratId: string;
 }
 
+/** GetMapList */
+export interface GetMapList {
+}
+
+export interface GetMapListResponse {
+  maps: string[];
+}
+
 /** GetMapMetadata */
 export interface GetMapMetadata {
   map: string;
@@ -149,6 +157,8 @@ export interface GetMapMetadata {
 
 export interface GetMapMetadataResponse {
   floors: string[];
+  boundsMin: Point | undefined;
+  boundsMax: Point | undefined;
 }
 
 /** GetStratInfo */
@@ -298,6 +308,7 @@ export interface Client2Server {
   getStratInfo?: GetStratInfo | undefined;
   saveStrat?: SaveStrat | undefined;
   deleteStrat?: DeleteStrat | undefined;
+  getMapList?: GetMapList | undefined;
   createLobby?: CreateLobby | undefined;
   getLobbyList?: GetLobbyList | undefined;
   joinLobby?: JoinLobby | undefined;
@@ -317,6 +328,7 @@ export interface Server2Client {
   getStratInfoResponse?: GetStratInfoResponse | undefined;
   saveStratResponse?: SaveStratResponse | undefined;
   deleteStratResponse?: DeleteStratResponse | undefined;
+  getMapListResponse?: GetMapListResponse | undefined;
   createLobbyResponse?: CreateLobbyResponse | undefined;
   getLobbyListResponse?: GetLobbyListResponse | undefined;
   updateLobbyMembers?: UpdateLobbyMembers | undefined;
@@ -2683,6 +2695,125 @@ export const CreateEmptyStratResponse: MessageFns<CreateEmptyStratResponse> = {
   },
 };
 
+function createBaseGetMapList(): GetMapList {
+  return {};
+}
+
+export const GetMapList: MessageFns<GetMapList> = {
+  encode(_: GetMapList, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GetMapList {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseGetMapList();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(_: any): GetMapList {
+    return {};
+  },
+
+  toJSON(_: GetMapList): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetMapList>, I>>(base?: I): GetMapList {
+    return GetMapList.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetMapList>, I>>(_: I): GetMapList {
+    const message = createBaseGetMapList();
+    return message;
+  },
+};
+
+function createBaseGetMapListResponse(): GetMapListResponse {
+  return { maps: [] };
+}
+
+export const GetMapListResponse: MessageFns<GetMapListResponse> = {
+  encode(message: GetMapListResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.maps) {
+      writer.uint32(10).string(v!);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GetMapListResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseGetMapListResponse();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.maps.push(reader.string());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): GetMapListResponse {
+    return { maps: globalThis.Array.isArray(object?.maps) ? object.maps.map((e: any) => globalThis.String(e)) : [] };
+  },
+
+  toJSON(message: GetMapListResponse): unknown {
+    const obj: any = {};
+    if (message.maps?.length) {
+      obj.maps = message.maps;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GetMapListResponse>, I>>(base?: I): GetMapListResponse {
+    return GetMapListResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GetMapListResponse>, I>>(object: I): GetMapListResponse {
+    const message = createBaseGetMapListResponse();
+    message.maps = object.maps?.map((e) => e) || [];
+    return message;
+  },
+};
+
 function createBaseGetMapMetadata(): GetMapMetadata {
   return { map: "" };
 }
@@ -2751,13 +2882,19 @@ export const GetMapMetadata: MessageFns<GetMapMetadata> = {
 };
 
 function createBaseGetMapMetadataResponse(): GetMapMetadataResponse {
-  return { floors: [] };
+  return { floors: [], boundsMin: undefined, boundsMax: undefined };
 }
 
 export const GetMapMetadataResponse: MessageFns<GetMapMetadataResponse> = {
   encode(message: GetMapMetadataResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     for (const v of message.floors) {
       writer.uint32(10).string(v!);
+    }
+    if (message.boundsMin !== undefined) {
+      Point.encode(message.boundsMin, writer.uint32(18).fork()).join();
+    }
+    if (message.boundsMax !== undefined) {
+      Point.encode(message.boundsMax, writer.uint32(26).fork()).join();
     }
     return writer;
   },
@@ -2783,6 +2920,22 @@ export const GetMapMetadataResponse: MessageFns<GetMapMetadataResponse> = {
             message.floors.push(reader.string());
             continue;
           }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.boundsMin = Point.decode(reader, reader.uint32());
+            continue;
+          }
+          case 3: {
+            if (tag !== 26) {
+              break;
+            }
+
+            message.boundsMax = Point.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -2798,6 +2951,8 @@ export const GetMapMetadataResponse: MessageFns<GetMapMetadataResponse> = {
   fromJSON(object: any): GetMapMetadataResponse {
     return {
       floors: globalThis.Array.isArray(object?.floors) ? object.floors.map((e: any) => globalThis.String(e)) : [],
+      boundsMin: isSet(object.boundsMin) ? Point.fromJSON(object.boundsMin) : undefined,
+      boundsMax: isSet(object.boundsMax) ? Point.fromJSON(object.boundsMax) : undefined,
     };
   },
 
@@ -2805,6 +2960,12 @@ export const GetMapMetadataResponse: MessageFns<GetMapMetadataResponse> = {
     const obj: any = {};
     if (message.floors?.length) {
       obj.floors = message.floors;
+    }
+    if (message.boundsMin !== undefined) {
+      obj.boundsMin = Point.toJSON(message.boundsMin);
+    }
+    if (message.boundsMax !== undefined) {
+      obj.boundsMax = Point.toJSON(message.boundsMax);
     }
     return obj;
   },
@@ -2815,6 +2976,12 @@ export const GetMapMetadataResponse: MessageFns<GetMapMetadataResponse> = {
   fromPartial<I extends Exact<DeepPartial<GetMapMetadataResponse>, I>>(object: I): GetMapMetadataResponse {
     const message = createBaseGetMapMetadataResponse();
     message.floors = object.floors?.map((e) => e) || [];
+    message.boundsMin = (object.boundsMin !== undefined && object.boundsMin !== null)
+      ? Point.fromPartial(object.boundsMin)
+      : undefined;
+    message.boundsMax = (object.boundsMax !== undefined && object.boundsMax !== null)
+      ? Point.fromPartial(object.boundsMax)
+      : undefined;
     return message;
   },
 };
@@ -5036,6 +5203,7 @@ function createBaseClient2Server(): Client2Server {
     getStratInfo: undefined,
     saveStrat: undefined,
     deleteStrat: undefined,
+    getMapList: undefined,
     createLobby: undefined,
     getLobbyList: undefined,
     joinLobby: undefined,
@@ -5072,6 +5240,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.deleteStrat !== undefined) {
       DeleteStrat.encode(message.deleteStrat, writer.uint32(66).fork()).join();
+    }
+    if (message.getMapList !== undefined) {
+      GetMapList.encode(message.getMapList, writer.uint32(74).fork()).join();
     }
     if (message.createLobby !== undefined) {
       CreateLobby.encode(message.createLobby, writer.uint32(810).fork()).join();
@@ -5175,6 +5346,14 @@ export const Client2Server: MessageFns<Client2Server> = {
             }
 
             message.deleteStrat = DeleteStrat.decode(reader, reader.uint32());
+            continue;
+          }
+          case 9: {
+            if (tag !== 74) {
+              break;
+            }
+
+            message.getMapList = GetMapList.decode(reader, reader.uint32());
             continue;
           }
           case 101: {
@@ -5291,6 +5470,11 @@ export const Client2Server: MessageFns<Client2Server> = {
         : isSet(object.delete_strat)
         ? DeleteStrat.fromJSON(object.delete_strat)
         : undefined,
+      getMapList: isSet(object.getMapList)
+        ? GetMapList.fromJSON(object.getMapList)
+        : isSet(object.get_map_list)
+        ? GetMapList.fromJSON(object.get_map_list)
+        : undefined,
       createLobby: isSet(object.createLobby)
         ? CreateLobby.fromJSON(object.createLobby)
         : isSet(object.create_lobby)
@@ -5360,6 +5544,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     if (message.deleteStrat !== undefined) {
       obj.deleteStrat = DeleteStrat.toJSON(message.deleteStrat);
     }
+    if (message.getMapList !== undefined) {
+      obj.getMapList = GetMapList.toJSON(message.getMapList);
+    }
     if (message.createLobby !== undefined) {
       obj.createLobby = CreateLobby.toJSON(message.createLobby);
     }
@@ -5414,6 +5601,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     message.deleteStrat = (object.deleteStrat !== undefined && object.deleteStrat !== null)
       ? DeleteStrat.fromPartial(object.deleteStrat)
       : undefined;
+    message.getMapList = (object.getMapList !== undefined && object.getMapList !== null)
+      ? GetMapList.fromPartial(object.getMapList)
+      : undefined;
     message.createLobby = (object.createLobby !== undefined && object.createLobby !== null)
       ? CreateLobby.fromPartial(object.createLobby)
       : undefined;
@@ -5453,6 +5643,7 @@ function createBaseServer2Client(): Server2Client {
     getStratInfoResponse: undefined,
     saveStratResponse: undefined,
     deleteStratResponse: undefined,
+    getMapListResponse: undefined,
     createLobbyResponse: undefined,
     getLobbyListResponse: undefined,
     updateLobbyMembers: undefined,
@@ -5491,6 +5682,9 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.deleteStratResponse !== undefined) {
       DeleteStratResponse.encode(message.deleteStratResponse, writer.uint32(66).fork()).join();
+    }
+    if (message.getMapListResponse !== undefined) {
+      GetMapListResponse.encode(message.getMapListResponse, writer.uint32(74).fork()).join();
     }
     if (message.createLobbyResponse !== undefined) {
       CreateLobbyResponse.encode(message.createLobbyResponse, writer.uint32(810).fork()).join();
@@ -5600,6 +5794,14 @@ export const Server2Client: MessageFns<Server2Client> = {
             }
 
             message.deleteStratResponse = DeleteStratResponse.decode(reader, reader.uint32());
+            continue;
+          }
+          case 9: {
+            if (tag !== 74) {
+              break;
+            }
+
+            message.getMapListResponse = GetMapListResponse.decode(reader, reader.uint32());
             continue;
           }
           case 101: {
@@ -5736,6 +5938,11 @@ export const Server2Client: MessageFns<Server2Client> = {
         : isSet(object.delete_strat_response)
         ? DeleteStratResponse.fromJSON(object.delete_strat_response)
         : undefined,
+      getMapListResponse: isSet(object.getMapListResponse)
+        ? GetMapListResponse.fromJSON(object.getMapListResponse)
+        : isSet(object.get_map_list_response)
+        ? GetMapListResponse.fromJSON(object.get_map_list_response)
+        : undefined,
       createLobbyResponse: isSet(object.createLobbyResponse)
         ? CreateLobbyResponse.fromJSON(object.createLobbyResponse)
         : isSet(object.create_lobby_response)
@@ -5815,6 +6022,9 @@ export const Server2Client: MessageFns<Server2Client> = {
     if (message.deleteStratResponse !== undefined) {
       obj.deleteStratResponse = DeleteStratResponse.toJSON(message.deleteStratResponse);
     }
+    if (message.getMapListResponse !== undefined) {
+      obj.getMapListResponse = GetMapListResponse.toJSON(message.getMapListResponse);
+    }
     if (message.createLobbyResponse !== undefined) {
       obj.createLobbyResponse = CreateLobbyResponse.toJSON(message.createLobbyResponse);
     }
@@ -5878,6 +6088,9 @@ export const Server2Client: MessageFns<Server2Client> = {
       : undefined;
     message.deleteStratResponse = (object.deleteStratResponse !== undefined && object.deleteStratResponse !== null)
       ? DeleteStratResponse.fromPartial(object.deleteStratResponse)
+      : undefined;
+    message.getMapListResponse = (object.getMapListResponse !== undefined && object.getMapListResponse !== null)
+      ? GetMapListResponse.fromPartial(object.getMapListResponse)
       : undefined;
     message.createLobbyResponse = (object.createLobbyResponse !== undefined && object.createLobbyResponse !== null)
       ? CreateLobbyResponse.fromPartial(object.createLobbyResponse)

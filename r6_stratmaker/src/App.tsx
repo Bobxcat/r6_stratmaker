@@ -846,6 +846,7 @@ class StratEditingState {
   mapFloors: string[] = [];
   mapImgWidth: number = 1600;
   mapImgHeight: number = 900;
+  mapImgBounds: Aabb = new Aabb();
   prevCanvasScales: DeepMap<string, number> = new DeepMap();
   selectedFloor: number = 0;
 
@@ -871,7 +872,7 @@ class StratEditingState {
     }
     this.teamLoadouts[idx] = loadout;
     if (this.mode == StratEditingMode.Lobby) {
-      sendNetworkMessage(protos.Client2Server.create({
+      websocket?.sendProto(protos.Client2Server.create({
         lobbySetTeammateLoadout: {
           idx,
           newLoadout: {
@@ -908,7 +909,7 @@ class StratEditingState {
     const phaseName = `Phase ${this.phases.length}`;
     this.pushEmptyPhaseRaw(phaseName);
     if (this.mode == StratEditingMode.Lobby) {
-      sendNetworkMessage(protos.Client2Server.create({ lobbyCreatePhase: { phaseName } }));
+      websocket?.sendProto(protos.Client2Server.create({ lobbyCreatePhase: { phaseName } }));
     }
   }
 
@@ -946,7 +947,7 @@ class StratEditingState {
       const drawEnum = drawElement.asEnum();
       switch (drawEnum.kind) {
         case DrawElementKind.DrawPath: {
-          sendNetworkMessage(protos.Client2Server.create({
+          websocket?.sendProto(protos.Client2Server.create({
             lobbyDrawCommand: {
               phase,
               floor,
@@ -956,7 +957,7 @@ class StratEditingState {
           break;
         }
         case DrawElementKind.Arrow: {
-          sendNetworkMessage(protos.Client2Server.create({
+          websocket?.sendProto(protos.Client2Server.create({
             lobbyDrawCommand: {
               phase,
               floor,
@@ -966,7 +967,7 @@ class StratEditingState {
           break;
         }
         case DrawElementKind.Icon: {
-          sendNetworkMessage(protos.Client2Server.create({
+          websocket?.sendProto(protos.Client2Server.create({
             lobbyDrawCommand: {
               phase,
               floor,
@@ -989,7 +990,7 @@ class StratEditingState {
     }
 
     if (this.mode == StratEditingMode.Lobby) {
-      sendNetworkMessage(protos.Client2Server.create({
+      websocket?.sendProto(protos.Client2Server.create({
         lobbySetPhaseName: {
           idx: phase,
           phaseName: newName,
@@ -1013,7 +1014,7 @@ class StratEditingState {
       if (this.mode == StratEditingMode.Lobby) {
         switch (elemKind!) {
           case DrawElementKind.DrawPath: {
-            sendNetworkMessage(protos.Client2Server.create({
+            websocket?.sendProto(protos.Client2Server.create({
               lobbyDrawCommand: {
                 phase,
                 floor,
@@ -1023,7 +1024,7 @@ class StratEditingState {
             break;
           }
           case DrawElementKind.Arrow: {
-            sendNetworkMessage(protos.Client2Server.create({
+            websocket?.sendProto(protos.Client2Server.create({
               lobbyDrawCommand: {
                 phase,
                 floor,
@@ -1033,7 +1034,7 @@ class StratEditingState {
             break;
           }
           case DrawElementKind.Icon: {
-            sendNetworkMessage(protos.Client2Server.create({
+            websocket?.sendProto(protos.Client2Server.create({
               lobbyDrawCommand: {
                 phase,
                 floor,
@@ -1087,7 +1088,7 @@ let canvasScale: number = 1;
 
 const inputCanvasState = InputCanvasState.Instance;
 
-const mapList = ["chalet", "coastline"];
+let mapList: string[] = [];
 
 class OperatorInfo {
   op_name: string = "";
@@ -1235,11 +1236,6 @@ function println(msg: string) {
   }
 }
 
-async function sendNetworkMessage(msg: protos.Client2Server) {
-  const msgRaw = protos.Client2Server.encode(msg).finish();
-  await websocket?.send(Array.from(msgRaw));
-}
-
 // FIXME: For some reason, a client in a lobby that initiates loading a strat will fail to
 // redraw the canvas when `redrawFreeDrawCanvas` is called immediately, while the others will succeed.
 // For this reason, we need to trigger a second redraw with a slight delay
@@ -1298,11 +1294,23 @@ function App() {
     loadOperatorsIndex();
   }, []);
 
+  // Load map list
+  useEffect(() => {
+    async function fetchMapList() {
+      if (websocket) {
+        await websocket?.sendProto(protos.Client2Server.create({ getMapList: {} }));
+      }
+    }
+    if (currPage == Page.StratListPage) {
+      fetchMapList()
+    }
+  }, [currPage])
+
   //** Returns whether or not the size of the canvas has changed */
   function recalculateStratEditingCanvasSize(): boolean {
     let width = window.innerWidth / 2;
-    let height = (stratEditingState.mapImgHeight / stratEditingState.mapImgWidth) * width;
-    canvasScale = width / stratEditingState.mapImgWidth;
+    let height = (stratEditingState.mapImgBounds.height() / stratEditingState.mapImgBounds.width()) * width;
+    canvasScale = width / stratEditingState.mapImgBounds.width();
     if (Math.abs(width - stratEditingCanvasWidth) > 0.01) {
       setStratEditingCanvasWidth(width);
       setStratEditingCanvasHeight(height);
@@ -1362,9 +1370,7 @@ function App() {
     redrawFreeDrawCanvasQueued = true;
   }
 
-  async function handleNetworkMessage(msgRaw: Uint8Array) {
-    const msg = protos.Server2Client.decode(msgRaw);
-
+  async function handleNetworkMessage(msg: protos.Server2Client) {
     if (!msg.lobbyDrawCommand) {
       println(`Received Message: ${JSON.stringify(msg)}`);
     }
@@ -1372,7 +1378,7 @@ function App() {
     if (msg.helloResponse) {
       setCurrPage(Page.LoginPage);
     } else if (msg.loginResponse) {
-      sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
+      websocket?.sendProto(protos.Client2Server.create({ getStratList: {} }));
       setCurrPage(Page.StratListPage);
     } else if (msg.getStratListResponse) {
       var newStratList: Array<StratMetadata> = [];
@@ -1388,7 +1394,13 @@ function App() {
       if (stratEditingState.getPhasesRef().length == 0) {
         stratEditingState.pushEmptyPhaseRaw("Phase 0");
       }
+      stratEditingState.mapImgBounds = Aabb.fromPoints([
+        Vec2.fromProto(msg.getMapMetadataResponse.boundsMin!),
+        Vec2.fromProto(msg.getMapMetadataResponse.boundsMax!)
+      ]);
       updateStratEditingStateDisplay();
+    } else if (msg.getMapListResponse) {
+      mapList = msg.getMapListResponse.maps;
     } else if (msg.getStratInfoResponse) {
       const state: protos.StratState = msg.getStratInfoResponse.state!;
       updateStratEditingStateFromProto(state);
@@ -1417,7 +1429,7 @@ function App() {
       updateStratEditingStateFromProto(msg.lobbySetCurrentStrat.strat!);
       redrawFreeDrawCanvasQueueDeferred();
 
-      await sendNetworkMessage(protos.Client2Server.create({ getMapMetadata: { map: msg.lobbySetCurrentStrat.map } }));
+      await websocket?.sendProto(protos.Client2Server.create({ getMapMetadata: { map: msg.lobbySetCurrentStrat.map } }));
     } else if (msg.lobbyDrawCommand) {
       let cmd = msg.lobbyDrawCommand;
       let phaseFloor = stratEditingState.getPhasesRef()[cmd.phase].floors[cmd.floor];
@@ -1472,7 +1484,6 @@ function App() {
         )}
       </div>
     </>)
-    //
   }
 
   function utilityTileListComponent(onClick: (util: string) => void, imgSize: string, utilForOp?: string, rowWidthOverride?: number) {
@@ -1516,7 +1527,7 @@ function App() {
       ws.addListener((msg) => {
         handleNetworkMessage(msg);
       });
-      await sendNetworkMessage(protos.Client2Server.create({ hello: {} }));
+      await websocket?.sendProto(protos.Client2Server.create({ hello: {} }));
 
       setConnectionState(ConnectionState.Connected);
     }
@@ -1543,7 +1554,7 @@ function App() {
 
   function loginPageComponent() {
     function commenceLogin(username: string) {
-      sendNetworkMessage(protos.Client2Server.create({ loginRequest: { username } }))
+      websocket?.sendProto(protos.Client2Server.create({ loginRequest: { username } }))
     }
 
     return (<>
@@ -1571,13 +1582,13 @@ function App() {
       stratEditingState.map = stratMeta.map;
       stratEditingState.mode = StratEditingMode.Singleplayer;
       updateStratEditingStateDisplay();
-      await sendNetworkMessage(protos.Client2Server.create({ getStratInfo: { stratId: stratMeta.uuid } }));
-      await sendNetworkMessage(protos.Client2Server.create({ getMapMetadata: { map: stratMeta.map } }));
+      await websocket?.sendProto(protos.Client2Server.create({ getStratInfo: { stratId: stratMeta.uuid } }));
+      await websocket?.sendProto(protos.Client2Server.create({ getMapMetadata: { map: stratMeta.map } }));
     }
 
     return (<>
       <button onClick={(_) => {
-        sendNetworkMessage(protos.Client2Server.create({ getLobbyList: {} }));
+        websocket?.sendProto(protos.Client2Server.create({ getLobbyList: {} }));
         setCurrPage(Page.LobbyListPage);
       }} style={{ width: "fit-content" }}>Join Lobby</button>
 
@@ -1600,15 +1611,15 @@ function App() {
   function lobbyListPageComponent() {
     return (<>
       <button onClick={(_) => {
-        sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
+        websocket?.sendProto(protos.Client2Server.create({ getStratList: {} }));
         setCurrPage(Page.StratListPage);
       }}>Edit Strat</button>
       <button onClick={(_) => {
-        sendNetworkMessage(protos.Client2Server.create({ createLobby: {} }));
+        websocket?.sendProto(protos.Client2Server.create({ createLobby: {} }));
       }}>Create Lobby</button>
       {lobbyList.map((lobby) => <>
         <button key={lobby.lobbyId} onClick={(_) => {
-          sendNetworkMessage(protos.Client2Server.create({ joinLobby: { id: lobby.lobbyId } }))
+          websocket?.sendProto(protos.Client2Server.create({ joinLobby: { id: lobby.lobbyId } }))
         }}>{lobby.lobbyName}</button>
       </>)}
     </>);
@@ -1617,7 +1628,7 @@ function App() {
   function inLobbySelectStratPageComponent() {
     async function loadStrat(strat: LobbyStratMetadata) {
       redrawFreeDrawCanvasQueueDeferred();
-      await sendNetworkMessage(protos.Client2Server.create({ lobbyLoadStrat: { stratId: strat.strat.uuid } }));
+      await websocket?.sendProto(protos.Client2Server.create({ lobbyLoadStrat: { stratId: strat.strat.uuid } }));
     }
 
     return (<>
@@ -1646,18 +1657,17 @@ function App() {
       stratEditingState.map = map;
       stratEditingState.mode = StratEditingMode.Singleplayer;
       updateStratEditingStateDisplay();
-      await sendNetworkMessage(protos.Client2Server.create({ createEmptyStrat: { map } }));
-      await sendNetworkMessage(protos.Client2Server.create({ getMapMetadata: { map } }));
+      await websocket?.sendProto(protos.Client2Server.create({ createEmptyStrat: { map } }));
+      await websocket?.sendProto(protos.Client2Server.create({ getMapMetadata: { map } }));
     }
 
     return (<>
       <p>Select a Map</p>
       <button onClick={(_) => { setCurrPage(Page.StratListPage) }}>Cancel Create Strat</button>
       <div className="row">
-        {mapList.map((mapName) =>
-          <div key={mapName} className="col">
-            <button onClick={(_) => { createNewStrat(mapName) }}>{mapName}</button>
-          </div>
+        {tileListComponent(mapList,
+          (mapName) => <p style={{ width: "8vw", height: "1.5vw" }}>{mapName}</p>,
+          (mapName) => { createNewStrat(mapName) }, 9
         )}
       </div>
     </>)
@@ -2286,7 +2296,7 @@ function App() {
 
       const state: protos.StratState = { stratName: stratEditingState.stratName, phases, teammates };
 
-      await sendNetworkMessage(protos.Client2Server.create({ saveStrat: { stratId: stratEditingState.stratId, state: state } }));
+      await websocket?.sendProto(protos.Client2Server.create({ saveStrat: { stratId: stratEditingState.stratId, state: state } }));
     }
 
     window.onbeforeunload = () => {
@@ -2306,7 +2316,7 @@ function App() {
                   saveProgress().then((() => {
                     stratEditingState.reset();
                     updateStratEditingStateDisplay();
-                    sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
+                    websocket?.sendProto(protos.Client2Server.create({ getStratList: {} }));
                     setCurrPage(Page.StratListPage);
                   }));
                   break;
@@ -2343,8 +2353,8 @@ function App() {
               <button style={{ width: "15vw", margin: "0.25vw" }} onClick={(_) => {
                 if (window.confirm(`Are you sure you want to delete strat \"${stratEditingState.stratName}\"?`)) {
                   if (window.confirm(`Are you really really sure you want to delete strat \"${stratEditingState.stratName}\"?`)) {
-                    sendNetworkMessage(protos.Client2Server.create({ deleteStrat: { stratId: stratEditingState.stratId } })).then(() => {
-                      sendNetworkMessage(protos.Client2Server.create({ getStratList: {} }));
+                    websocket?.sendProto(protos.Client2Server.create({ deleteStrat: { stratId: stratEditingState.stratId } })).then(() => {
+                      websocket?.sendProto(protos.Client2Server.create({ getStratList: {} }));
                     });
                     stratEditingState.reset();
                     updateStratEditingStateDisplay();
@@ -2532,11 +2542,16 @@ function App() {
 
           {/* Draw Area */}
           <div id="draw-area" style={{ margin: 8, display: "grid", gridTemplateColumns: "1", gridTemplateRows: "1" }}>
-            <img src={getFloorImgPath(stratEditingStateDisplay.map, stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.selectedFloor])}
-              style={{ gridColumn: 1, gridRow: 1, zIndex: 0 }}
-              width={stratEditingCanvasWidth}
-              height={stratEditingCanvasHeight}
-            />
+            <div id="map-img-container" style={{
+              overflow: "hidden",
+              gridColumn: 1, gridRow: 1, zIndex: 0,
+              backgroundImage: `url(${getFloorImgPath(stratEditingStateDisplay.map, stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.selectedFloor])}`,
+              backgroundSize: `${(stratEditingCanvasWidth * stratEditingStateDisplay.mapImgWidth / stratEditingStateDisplay.mapImgBounds.width())}px
+                    ${(stratEditingCanvasHeight * stratEditingStateDisplay.mapImgHeight / stratEditingStateDisplay.mapImgBounds.height())}px`,
+              backgroundPositionX: -stratEditingStateDisplay.mapImgBounds.minPt.x * (stratEditingCanvasWidth / stratEditingStateDisplay.mapImgBounds.width()),
+              backgroundPositionY: -stratEditingStateDisplay.mapImgBounds.minPt.y * (stratEditingCanvasHeight / stratEditingStateDisplay.mapImgBounds.height()),
+            }}>
+            </div>
             <canvas id={canvasIds.freeDraw}
               style={{ gridColumn: 1, gridRow: 1, zIndex: 1 }}
               width={stratEditingCanvasWidth}
@@ -2572,7 +2587,7 @@ function App() {
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.FreeDraw; updateStratEditingStateDisplay(); }}>Free draw</button>
             <button onClick={(_) => { stratEditingState.selectedDrawTool = DrawTool.Arrow; updateStratEditingStateDisplay(); }}>Arrow</button>
           </div>
-        </div>
+        </div >
       </>
     );
   }

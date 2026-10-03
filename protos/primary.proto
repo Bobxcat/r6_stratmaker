@@ -109,6 +109,13 @@ message CreateEmptyStratResponse {
     string strat_id = 1;
 }
 
+// GetMapList
+message GetMapList {}
+
+message GetMapListResponse {
+    repeated string maps = 1;
+}
+
 // GetMapMetadata
 message GetMapMetadata {
     string map = 1;
@@ -116,6 +123,8 @@ message GetMapMetadata {
 
 message GetMapMetadataResponse {
     repeated string floors = 1;
+    Point boundsMin = 2;
+    Point boundsMax = 3;
 }
 
 // GetStratInfo
@@ -257,6 +266,7 @@ message Client2Server {
         GetStratInfo get_strat_info = 6;
         SaveStrat save_strat = 7;
         DeleteStrat delete_strat = 8;
+        GetMapList get_map_list = 9;
 
         CreateLobby create_lobby = 101;
         GetLobbyList get_lobby_list = 102;
@@ -279,6 +289,7 @@ message Server2Client {
         GetStratInfoResponse get_strat_info_response = 6;
         SaveStratResponse save_strat_response = 7;
         DeleteStratResponse delete_strat_response = 8;
+        GetMapListResponse get_map_list_response = 9;
 
         CreateLobbyResponse create_lobby_response = 101;
         GetLobbyListResponse get_lobby_list_response = 102;

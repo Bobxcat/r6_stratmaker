@@ -1,0 +1,15 @@
+[package]
+name = "map_editor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { version = "0.19.1", features = ["jpeg", "dynamic_linking"] }
+bevy_egui = "0.42.0"
+ordered-float = "5.5.0"
+ron = "0.12.2"
+serde = "1.0.229"
+slotmap = "1.1.1"
+svg = "0.18.0"
+toml = "1.1.6"
+uuid = { version = "1.27.0", features = ["v4"] }

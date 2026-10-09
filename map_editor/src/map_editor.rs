@@ -1,0 +1,1632 @@
+use std::{
+    collections::{HashMap, HashSet},
+    f32::consts::{FRAC_PI_2, PI},
+    num::NonZeroU8,
+    path::PathBuf,
+};
+
+use bevy::{
+    input::{InputSystems, mouse::MouseWheel},
+    math::bounding::{Aabb2d, BoundingVolume},
+    prelude::*,
+};
+use ordered_float::OrderedFloat;
+use serde::{Deserialize, Serialize};
+use svg::Node;
+use uuid::Uuid;
+
+use crate::{AppState, CameraZoom, MainCamera};
+
+const PROJECT_FILE_NAME: &str = "project.ron";
+
+pub struct MapEditorPlugin;
+impl Plugin for MapEditorPlugin {
+    fn build(&self, app: &mut App) {
+        let r = Rect2dOriented::axis_aligned(vec2(13., 10.), vec2(11., 13.));
+        println!("{r:?} {:?}", r.corners_ccw());
+
+        app.insert_resource(MousePos(None))
+            .insert_resource(DrawToolState::PlaceVertex(PlaceVertexToolState::default()))
+            .insert_resource(HoveredDrawElement(None));
+
+        app.add_systems(OnEnter(AppState::MapEditor), load_selected_project);
+        app.add_systems(
+            PreUpdate,
+            (
+                update_mouse_pos,
+                handle_undo,
+                handle_delete_selection,
+                update_hovered_draw_element.after(update_mouse_pos),
+            )
+                .chain()
+                .after(InputSystems)
+                .run_if(in_state(AppState::MapEditor)),
+        );
+        app.add_systems(
+            Update,
+            (
+                change_floor,
+                update_background_image,
+                move_camera,
+                apply_camera_zoom,
+                change_selected_draw_tool,
+                draw_tool_update,
+                update_selection,
+                handle_saving,
+                update_draw_tool_state_display.after(draw_tool_update),
+                update_draw_tool_state_preview.after(draw_tool_update),
+                render_draw_elements.after(draw_tool_update),
+            )
+                .run_if(in_state(AppState::MapEditor)),
+        );
+    }
+}
+
+#[derive(Resource)]
+pub struct MapEditorParameters {
+    pub project_name: String,
+}
+
+fn load_selected_project(
+    mut commands: Commands,
+    params: Res<MapEditorParameters>,
+    assets: Res<AssetServer>,
+) {
+    let project_dir = PathBuf::from("projects").join(&params.project_name);
+    let draw_state_data_file = project_dir.join(PROJECT_FILE_NAME);
+
+    let floors_txt_contents = std::fs::read_to_string(project_dir.join("floors.txt")).unwrap();
+    let floor_names = floors_txt_contents
+        .split("\n")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let viewbox = match std::fs::read_to_string(project_dir.join("viewbox.txt")).map(|txt| {
+        txt.split(",")
+            .map(|elem| elem.trim().to_string())
+            .filter(|elem| !elem.is_empty())
+            .filter_map(|elem| elem.parse::<f32>().ok())
+            .collect::<Vec<_>>()
+    }) {
+        Ok(viewbox_file_parts) if viewbox_file_parts.len() >= 4 => Aabb2d {
+            min: vec2(viewbox_file_parts[0], viewbox_file_parts[1]),
+            max: vec2(viewbox_file_parts[2], viewbox_file_parts[3]),
+        },
+        _ => default_draw_state_viewbox(),
+    };
+
+    let mut draw_state: DrawState = if let Some(loaded) =
+        std::fs::read_to_string(draw_state_data_file)
+            .ok()
+            .and_then(|s| ron::from_str(&s).ok())
+    {
+        loaded
+    } else {
+        DrawState::default()
+    };
+
+    draw_state.floor_names = floor_names;
+    draw_state.viewbox = viewbox;
+
+    {
+        let mut background_img = BackgroundImage {
+            curr_floor_idx: usize::MAX,
+            img_cache: HashMap::new(),
+        };
+
+        for floor_name in &draw_state.floor_names {
+            background_img.get_img(&assets, floor_name, &params.project_name);
+        }
+
+        commands.spawn((DespawnOnExit(AppState::MapEditor), background_img));
+    }
+
+    commands.spawn((
+        DespawnOnExit(AppState::MapEditor),
+        DrawToolStateDisplayLabel,
+        Text::new("---"),
+    ));
+
+    commands.insert_resource(draw_state);
+}
+
+#[derive(Component)]
+pub struct BackgroundImage {
+    curr_floor_idx: usize,
+    img_cache: HashMap<String, Handle<Image>>,
+}
+
+impl BackgroundImage {
+    fn get_img(
+        &mut self,
+        assets: &AssetServer,
+        floor_name: &str,
+        project_name: &str,
+    ) -> Handle<Image> {
+        self.img_cache
+            .entry(floor_name.into())
+            .or_insert_with(|| {
+                let img_path = PathBuf::from("map_images")
+                    .join(&project_name)
+                    .join(format!("{}.jpg", floor_name));
+                assets.load(img_path)
+            })
+            .clone()
+    }
+}
+
+fn update_background_image(
+    mut commands: Commands,
+    imgs: Query<(Entity, &mut BackgroundImage)>,
+    draw_state: Res<DrawState>,
+    params: Res<MapEditorParameters>,
+    assets: Res<AssetServer>,
+) {
+    for (e, mut img) in imgs {
+        if img.curr_floor_idx == draw_state.curr_floor {
+            continue;
+        }
+        img.curr_floor_idx = draw_state.curr_floor;
+
+        let img = img.get_img(
+            &assets,
+            &draw_state.floor_names[draw_state.curr_floor],
+            &params.project_name,
+        );
+        let mut sprite = Sprite::from_image(img);
+        sprite.color = Color::linear_rgba(1., 1., 1., 0.6);
+
+        commands.entity(e).insert(sprite);
+    }
+}
+
+const SINGLE_DOOR_LENGTH_INSIDE: f32 = 1.4;
+const DOUBLE_DOOR_LENGTH_INSIDE: f32 = 2.25;
+const HATCH_SIDE_LENGTH: f32 = 1.;
+
+fn non_zero_u8_one() -> NonZeroU8 {
+    NonZeroU8::new(1).unwrap()
+}
+
+fn default_draw_state_viewbox() -> Aabb2d {
+    Aabb2d::new(Vec2::ZERO, vec2(600., 400.))
+}
+
+struct DistanceToLineResult {
+    distance: f32,
+    nearest_pt: Vec2,
+}
+
+trait Vec2Ext {
+    fn distance_to_line(
+        self,
+        line_start: Vec2,
+        line_end: Vec2,
+        continues_forwards: bool,
+        continues_backwards: bool,
+    ) -> DistanceToLineResult;
+}
+
+impl Vec2Ext for Vec2 {
+    fn distance_to_line(
+        self,
+        line_start: Vec2,
+        line_end: Vec2,
+        continues_forwards: bool,
+        continues_backwards: bool,
+    ) -> DistanceToLineResult {
+        if line_start.distance_squared(line_end) < 0.0001 {
+            return DistanceToLineResult {
+                distance: line_start.distance(self),
+                nearest_pt: line_start,
+            };
+        }
+
+        let b = line_end - line_start;
+        let p = self - line_start;
+
+        let b_orth = vec2(-b.y, b.x).normalize();
+
+        let signed_dist = p.dot(b_orth);
+
+        let mut nearest_pt = p - b_orth * signed_dist;
+
+        let t = if b.x.abs() > b.y.abs() {
+            nearest_pt.x / b.x
+        } else {
+            nearest_pt.y / b.y
+        };
+
+        if t > 1. && !continues_forwards {
+            nearest_pt = b;
+        } else if t < 0. && !continues_backwards {
+            nearest_pt = Vec2::ZERO;
+        }
+
+        nearest_pt += line_start;
+
+        DistanceToLineResult {
+            distance: self.distance(nearest_pt),
+            nearest_pt,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Rect2dOriented {
+    diagonal_start: Vec2,
+    diagonal_end: Vec2,
+    /// Should be in the range (0, pi/2]
+    cross_diagonal_rotation: f32,
+}
+
+impl Rect2dOriented {
+    fn axis_aligned(start: Vec2, end: Vec2) -> Self {
+        Self {
+            diagonal_start: start,
+            diagonal_end: end,
+            cross_diagonal_rotation: -2. * (end - start).to_angle(),
+        }
+    }
+
+    fn center(&self) -> Vec2 {
+        0.5 * (self.diagonal_start + self.diagonal_end)
+    }
+
+    /// Returns the points on the cross diagonal starting from the "right" side
+    fn cross_diagonal_points(&self) -> [Vec2; 2] {
+        let offset = Vec2::from_angle(self.cross_diagonal_rotation)
+            .rotate(self.diagonal_end - self.diagonal_start)
+            * 0.5;
+        [self.center() + offset, self.center() - offset]
+    }
+
+    fn corners_ccw(&self) -> [Vec2; 4] {
+        let cross = self.cross_diagonal_points();
+        [self.diagonal_start, cross[0], self.diagonal_end, cross[1]]
+    }
+
+    /// Returns this rectangle in the form of `(center and rotation, size)`
+    fn as_rotated_center_size(&self) -> (Isometry2d, Vec2) {
+        let cross = self.cross_diagonal_points();
+        let size = vec2(
+            cross[1].distance(self.diagonal_start),
+            cross[0].distance(self.diagonal_start),
+        );
+        let rot = FRAC_PI_2 + (cross[0] - self.diagonal_start).to_angle();
+
+        (Isometry2d::new(self.center(), Rot2::radians(rot)), size)
+    }
+
+    fn contains(&self, pt: Vec2) -> bool {
+        let [a, b] = [self.diagonal_start, self.diagonal_end];
+        let [c, d] = self.cross_diagonal_points();
+        Vec2::dot(c - a, pt - a) >= 0.
+            && Vec2::dot(d - a, pt - a) >= 0.
+            && Vec2::dot(c - b, pt - b) >= 0.
+            && Vec2::dot(d - b, pt - b) >= 0.
+    }
+}
+
+struct Circle {
+    center: Vec2,
+    radius: f32,
+}
+
+impl Circle {
+    /// Returns the circumcircle of three points
+    fn from_three_points(points: [Vec2; 3]) -> Option<Self> {
+        let bisector0_start = 0.5 * (points[0] + points[1]);
+        let bisector0_dir = Vec2::Y.rotate(points[0] - points[1]);
+
+        let bisector1_start = 0.5 * (points[0] + points[2]);
+        let bisector1_dir = Vec2::Y.rotate(points[0] - points[2]);
+
+        LineIntersection::calculate(
+            bisector0_start,
+            bisector0_dir,
+            bisector1_start,
+            bisector1_dir,
+        )
+        .map(|int| Self {
+            center: int.point,
+            radius: int.point.distance(points[0]),
+        })
+    }
+}
+
+struct LineIntersection {
+    point: Vec2,
+    dist_along_a: f32,
+    dist_along_b: f32,
+}
+
+impl LineIntersection {
+    fn calculate(a_start: Vec2, a_dir: Vec2, b_start: Vec2, b_dir: Vec2) -> Option<Self> {
+        let a_dir = a_dir.try_normalize()?;
+        let b_dir = b_dir.try_normalize()?;
+
+        let mut pts = [a_start, b_start, a_dir, b_dir];
+
+        if b_dir.y.abs() > b_dir.x.abs() {
+            pts = pts.map(|v| vec2(v.y, v.x));
+        }
+
+        let [d, e, m, n] = pts;
+
+        let n_slope = n.y / n.x;
+
+        let t = (n_slope * (d.x - e.x) - d.y + e.y) / (m.y - n_slope * m.x);
+
+        if !t.is_finite() {
+            return None;
+        }
+
+        let dist_along_b = (d.x - e.x + m.x * t) / n.x;
+
+        Some(Self {
+            point: a_start + a_dir * t,
+            dist_along_a: t,
+            dist_along_b,
+        })
+    }
+}
+
+/// Excludes the start and end points!
+fn evenly_spaced_points_along_line(
+    start: Vec2,
+    end: Vec2,
+    num_points: u32,
+) -> impl Iterator<Item = Vec2> {
+    (0..num_points).map(move |i| {
+        let t = (i + 1) as f32 / (num_points + 1) as f32;
+        (1. - t) * start + t * end
+    })
+}
+
+trait OptDrawElementIdExt {
+    fn as_kind<T: DrawElementKind>(self) -> Option<T::Id>;
+}
+
+impl OptDrawElementIdExt for Option<DrawElementId> {
+    fn as_kind<T: DrawElementKind>(self) -> Option<T::Id> {
+        self.and_then(|id| id.as_kind::<T>())
+    }
+}
+
+trait DrawElementKind {
+    type Id: Copy + Eq;
+
+    fn id_from_any(id: DrawElementId) -> Option<Self::Id>;
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct VertexId {
+    floor: usize,
+    id: Uuid,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WallId {
+    floor: usize,
+    id: Uuid,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RectId {
+    floor: usize,
+    id: Uuid,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CircleByThreePointsId {
+    floor: usize,
+    id: Uuid,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+enum WallKind {
+    #[default]
+    Indestructable,
+    Destructable,
+    Half,
+}
+
+#[derive(Debug, Default)]
+struct PlaceVertexToolState {
+    prev_point: Option<VertexId>,
+    current_placement: Option<Vertex>,
+}
+
+#[derive(Debug)]
+struct WallToolState {
+    start: Option<VertexId>,
+    kind: WallKind,
+    destructable_segment_count: NonZeroU8,
+}
+
+impl Default for WallToolState {
+    fn default() -> Self {
+        Self {
+            start: Default::default(),
+            kind: Default::default(),
+            destructable_segment_count: non_zero_u8_one(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum ShapeKind {
+    RectangleByDiagonal {
+        start: Option<VertexId>,
+        skew_angle: f32,
+    },
+    RectangleAxisAligned {
+        start: Option<VertexId>,
+    },
+    CircleFromThreePoints {
+        first_two: Vec<VertexId>,
+    },
+}
+
+impl Default for ShapeKind {
+    fn default() -> Self {
+        Self::RectangleAxisAligned { start: None }
+    }
+}
+
+#[derive(Debug, Default)]
+struct ShapeToolState {
+    kind: ShapeKind,
+}
+
+#[derive(Resource, Debug)]
+enum DrawToolState {
+    PlaceVertex(PlaceVertexToolState),
+    Wall(WallToolState),
+    Shape(ShapeToolState),
+}
+
+#[derive(Component)]
+struct DrawToolStateDisplayLabel;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Vertex {
+    pos: Vec2,
+}
+
+impl DrawElementKind for Vertex {
+    type Id = VertexId;
+
+    fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
+        match id {
+            DrawElementId::Vertex(id) => Some(id),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Wall {
+    start: VertexId,
+    end: VertexId,
+    kind: WallKind,
+    #[serde(default = "non_zero_u8_one")]
+    destructable_segment_count: NonZeroU8,
+}
+
+impl DrawElementKind for Wall {
+    type Id = WallId;
+
+    fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
+        match id {
+            DrawElementId::Wall(id) => Some(id),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Rect {
+    start: VertexId,
+    end: VertexId,
+    skew: f32,
+}
+
+impl DrawElementKind for Rect {
+    type Id = RectId;
+
+    fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
+        match id {
+            DrawElementId::Rect(id) => Some(id),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CircleByThreePoints {
+    points: [VertexId; 3],
+}
+
+impl DrawElementKind for CircleByThreePoints {
+    type Id = CircleByThreePointsId;
+
+    fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
+        match id {
+            DrawElementId::CircleByThreePoints(id) => Some(id),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DrawElementId {
+    Vertex(VertexId),
+    Wall(WallId),
+    Rect(RectId),
+    CircleByThreePoints(CircleByThreePointsId),
+}
+
+impl DrawElementId {
+    fn as_kind<T: DrawElementKind>(self) -> Option<T::Id> {
+        T::id_from_any(self)
+    }
+
+    fn floor(self) -> usize {
+        match self {
+            DrawElementId::Vertex(id) => id.floor,
+            DrawElementId::Wall(id) => id.floor,
+            DrawElementId::Rect(id) => id.floor,
+            DrawElementId::CircleByThreePoints(id) => id.floor,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum PrevDrawAction {
+    PlaceObject(DrawElementId),
+}
+
+/// It's expected that, at any time, any `DrawElementId` within the DrawState is valid
+#[derive(Resource, Serialize, Deserialize)]
+struct DrawState {
+    #[serde(default)]
+    vertices: HashMap<VertexId, Vertex>,
+    #[serde(default)]
+    walls: HashMap<WallId, Wall>,
+    #[serde(default)]
+    rectangles: HashMap<RectId, Rect>,
+    #[serde(default)]
+    circles_by_three_points: HashMap<CircleByThreePointsId, CircleByThreePoints>,
+
+    #[serde(skip)]
+    #[serde(default = "default_draw_state_viewbox")]
+    viewbox: Aabb2d,
+    #[serde(skip)]
+    floor_names: Vec<String>,
+    #[serde(skip)]
+    prev_actions: Vec<PrevDrawAction>,
+    #[serde(skip)]
+    selection: HashSet<DrawElementId>,
+    #[serde(skip)]
+    curr_floor: usize,
+}
+
+impl Default for DrawState {
+    fn default() -> Self {
+        Self {
+            vertices: Default::default(),
+            walls: Default::default(),
+            rectangles: Default::default(),
+            circles_by_three_points: Default::default(),
+            viewbox: default_draw_state_viewbox(),
+            floor_names: Default::default(),
+            prev_actions: Default::default(),
+            selection: Default::default(),
+            curr_floor: Default::default(),
+        }
+    }
+}
+
+impl DrawState {
+    const SELECT_DISTANCE: f32 = 8.;
+
+    fn render_floor_to_svg(&self, floor: usize, style: &RenderStyle) -> svg::Document {
+        fn create_path_data(
+            points: impl IntoIterator<Item = Vec2>,
+        ) -> svg::node::element::path::Data {
+            let mut data = svg::node::element::path::Data::new();
+
+            let mut started = false;
+
+            for pt in points {
+                if started {
+                    data = data.line_to((pt.x, pt.y));
+                } else {
+                    started = true;
+                    data = data.move_to((pt.x, pt.y));
+                }
+            }
+
+            data.close()
+        }
+
+        let mut document = svg::Document::new();
+
+        document.append(
+            svg::node::element::Rectangle::new()
+                .set("x", self.viewbox.min.x)
+                .set("y", self.viewbox.min.y)
+                .set("width", self.viewbox.max.x - self.viewbox.min.x)
+                .set("height", self.viewbox.max.y - self.viewbox.min.y)
+                .set("fill", "#614cb6"),
+        );
+
+        for (id, rect) in &self.rectangles {
+            if id.floor != floor {
+                continue;
+            }
+
+            let (start, end) = (&self.vertices[&rect.start], &self.vertices[&rect.end]);
+            let start_pos = vec2(start.pos.x, start.pos.y);
+            let end_pos = vec2(end.pos.x, end.pos.y);
+
+            let rect_math = Rect2dOriented {
+                diagonal_start: start_pos,
+                diagonal_end: end_pos,
+                cross_diagonal_rotation: rect.skew,
+            };
+
+            let data = create_path_data(rect_math.corners_ccw().map(|v| vec2(v.x, -v.y)));
+
+            let color = style.polygon_color;
+
+            document.append(
+                svg::node::element::Path::new()
+                    .set("fill", color.to_srgba().to_hex())
+                    .set("stroke", "none")
+                    .set("d", data),
+            );
+        }
+
+        for (id, circle) in &self.circles_by_three_points {
+            if id.floor != floor {
+                continue;
+            }
+
+            let circle_math =
+                Circle::from_three_points(circle.points.map(|vtx| self.vertices[&vtx].pos))
+                    .unwrap();
+
+            let color = style.polygon_color;
+
+            document.append(
+                svg::node::element::Circle::new()
+                    .set("fill", color.to_srgba().to_hex())
+                    .set("stroke", "none")
+                    .set("cx", circle_math.center.x)
+                    .set("cy", -circle_math.center.y)
+                    .set("r", circle_math.radius),
+            )
+        }
+
+        for (id, wall) in &self.walls {
+            if id.floor != floor {
+                continue;
+            }
+
+            let (start, end) = (&self.vertices[&wall.start], &self.vertices[&wall.end]);
+            let start_pos = vec2(start.pos.x, -start.pos.y);
+            let end_pos = vec2(end.pos.x, -end.pos.y);
+
+            let data = create_path_data([start_pos, end_pos]);
+
+            let color = match wall.kind {
+                WallKind::Indestructable => style.wall_indestructable_color,
+                WallKind::Destructable => style.wall_destructable_color,
+                WallKind::Half => todo!(),
+            };
+
+            document.append(
+                svg::node::element::Path::new()
+                    .set("fill", "none")
+                    .set("stroke", color.to_srgba().to_hex())
+                    .set("stroke-width", 3)
+                    .set("d", data),
+            );
+
+            let cross_axis = Vec2::from_angle(FRAC_PI_2)
+                .rotate(end_pos - start_pos)
+                .normalize_or_zero()
+                * 5.;
+
+            for tick_center in evenly_spaced_points_along_line(
+                start_pos,
+                end_pos,
+                if let WallKind::Destructable = wall.kind {
+                    wall.destructable_segment_count.get() as u32 - 1
+                } else {
+                    0
+                },
+            ) {
+                let tick_start = tick_center - cross_axis;
+                let tick_end = tick_center + cross_axis;
+
+                let data = create_path_data([tick_start, tick_end]);
+
+                document.append(
+                    svg::node::element::Path::new()
+                        .set("fill", "none")
+                        .set("stroke", color.to_srgba().to_hex())
+                        .set("stroke-width", 1.5)
+                        .set("d", data),
+                );
+            }
+        }
+
+        document = document.set(
+            "viewBox",
+            (
+                self.viewbox.min.x,
+                self.viewbox.min.y,
+                self.viewbox.max.x - self.viewbox.min.x,
+                self.viewbox.max.y - self.viewbox.min.y,
+            ),
+        );
+
+        document
+    }
+
+    fn save_and_render(&self, save_dir: impl AsRef<std::path::Path>) {
+        let save_dir = save_dir.as_ref();
+        std::fs::create_dir_all(save_dir).unwrap();
+
+        std::fs::write(
+            save_dir.join(PROJECT_FILE_NAME),
+            ron::to_string(self).unwrap(),
+        )
+        .unwrap();
+
+        for floor in 0..self.floor_names.len() {
+            let floor_name = &self.floor_names[floor];
+            for style in RenderStyle::load_all() {
+                let path = save_dir.join(format!("{floor_name}_{}.svg", style.name));
+
+                let document = self.render_floor_to_svg(floor, &style);
+
+                svg::save(path, &document).unwrap();
+            }
+        }
+    }
+
+    fn remove_element(&mut self, generic_id: DrawElementId) {
+        match generic_id {
+            DrawElementId::Vertex(id) => {
+                self.vertices.remove(&id);
+                self.selection.remove(&generic_id);
+
+                self.walls
+                    .retain(|_, wall| wall.start != id && wall.end != id);
+                self.rectangles
+                    .retain(|_, rect| rect.start != id && rect.end != id);
+            }
+            DrawElementId::Wall(id) => {
+                self.walls.remove(&id);
+                self.selection.remove(&generic_id);
+            }
+            DrawElementId::Rect(id) => {
+                self.rectangles.remove(&id);
+                self.selection.remove(&generic_id);
+            }
+            DrawElementId::CircleByThreePoints(id) => {
+                self.circles_by_three_points.remove(&id);
+                self.selection.remove(&generic_id);
+            }
+        }
+    }
+
+    fn all_draw_elements(&self) -> impl Iterator<Item = DrawElementId> {
+        self.vertices
+            .keys()
+            .map(|id| DrawElementId::Vertex(*id))
+            .chain(self.walls.keys().map(|id| DrawElementId::Wall(*id)))
+            .chain(self.rectangles.keys().map(|id| DrawElementId::Rect(*id)))
+    }
+
+    fn distance_to(&self, id: &DrawElementId, mouse_pos: Vec2) -> f32 {
+        match id {
+            DrawElementId::Vertex(id) => self.vertices[id].pos.distance(mouse_pos),
+            DrawElementId::Wall(id) => {
+                let wall = &self.walls[id];
+                mouse_pos
+                    .distance_to_line(
+                        self.vertices[&wall.start].pos,
+                        self.vertices[&wall.end].pos,
+                        false,
+                        false,
+                    )
+                    .distance
+            }
+            DrawElementId::Rect(id) => {
+                let rect = &self.rectangles[id];
+                let rect_math = Rect2dOriented {
+                    diagonal_start: self.vertices[&rect.start].pos,
+                    diagonal_end: self.vertices[&rect.end].pos,
+                    cross_diagonal_rotation: rect.skew,
+                };
+
+                // FIXME: Maybe add actual distance calculation? Although selection should require clicking within the shape
+                if rect_math.contains(mouse_pos) {
+                    0.
+                } else {
+                    1000.
+                }
+            }
+            DrawElementId::CircleByThreePoints(id) => {
+                let circle = &self.circles_by_three_points[id];
+                if let Some(circle_math) =
+                    Circle::from_three_points(circle.points.map(|vtx| self.vertices[&vtx].pos))
+                {
+                    if mouse_pos.distance(circle_math.center) <= circle_math.radius {
+                        0.
+                    } else {
+                        1000.
+                    }
+                } else {
+                    1000.
+                }
+            }
+        }
+    }
+
+    fn pick(&self, mouse_pos: Vec2, vertex_has_priority: bool) -> Option<DrawElementId> {
+        let mut ret: Option<(DrawElementId, f32)> = None;
+
+        for id in self.all_draw_elements() {
+            if id.floor() != self.curr_floor {
+                continue;
+            }
+
+            let dist = self.distance_to(&id, mouse_pos);
+            if dist < Self::SELECT_DISTANCE
+                && ret.is_none_or(|(ret_id, ret_dist)| {
+                    if vertex_has_priority {
+                        match (id, ret_id) {
+                            (DrawElementId::Vertex(_), DrawElementId::Vertex(_)) => dist < ret_dist,
+                            (DrawElementId::Vertex(_), _) => true,
+                            (_, DrawElementId::Vertex(_)) => false,
+                            (_, _) => dist < ret_dist,
+                        }
+                    } else {
+                        dist < ret_dist
+                    }
+                })
+            {
+                ret = Some((id, dist));
+            }
+        }
+
+        ret.map(|(id, _)| id)
+    }
+
+    fn bounding_box(&self, id: &DrawElementId) -> Aabb2d {
+        match id {
+            DrawElementId::Vertex(id) => Aabb2d::new(self.vertices[id].pos, Vec2::splat(5.)),
+            DrawElementId::Wall(id) => {
+                let wall = &self.walls[id];
+                let start = &self.vertices[&wall.start];
+                let end = &self.vertices[&wall.end];
+
+                Aabb2d {
+                    min: Vec2::min(start.pos, end.pos),
+                    max: Vec2::max(start.pos, end.pos),
+                }
+            }
+            DrawElementId::Rect(id) => {
+                let rect = &self.rectangles[id];
+                let start = &self.vertices[&rect.start];
+                let end = &self.vertices[&rect.end];
+
+                Aabb2d::from_point_cloud(
+                    Isometry2d::IDENTITY,
+                    &Rect2dOriented {
+                        diagonal_start: start.pos,
+                        diagonal_end: end.pos,
+                        cross_diagonal_rotation: rect.skew,
+                    }
+                    .corners_ccw(),
+                )
+            }
+            DrawElementId::CircleByThreePoints(id) => {
+                let circle = &self.circles_by_three_points[id];
+                if let Some(circle_math) =
+                    Circle::from_three_points(circle.points.map(|vtx| self.vertices[&vtx].pos))
+                {
+                    Aabb2d::new(circle_math.center, Vec2::splat(circle_math.radius))
+                } else {
+                    Aabb2d::new(Vec2::ZERO, Vec2::ZERO)
+                }
+            }
+        }
+    }
+
+    fn selection_as<T: DrawElementKind>(&self) -> Vec<T::Id> {
+        self.selection
+            .iter()
+            .filter_map(|id| T::id_from_any(*id))
+            .collect()
+    }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct RenderStyle {
+    #[serde(skip)]
+    name: String,
+    wall_indestructable_color: Color,
+    wall_destructable_color: Color,
+    polygon_color: Color,
+}
+
+impl RenderStyle {
+    fn load_all() -> Vec<RenderStyle> {
+        let path = "assets/styles";
+        let mut styles = vec![];
+        for f in std::fs::read_dir(path).unwrap() {
+            let Ok(f) = f else {
+                continue;
+            };
+            if let Ok(f_str) = std::fs::read_to_string(f.path()) {
+                if let Ok(mut style) = toml::from_str::<RenderStyle>(&f_str) {
+                    let mut style_name = PathBuf::from(f.file_name());
+                    style_name.set_extension("");
+                    style.name = style_name.to_string_lossy().into();
+
+                    styles.push(style);
+                }
+            }
+        }
+
+        styles
+    }
+}
+
+#[derive(Resource, Debug, Default, Deref)]
+pub struct HoveredDrawElement(pub Option<DrawElementId>);
+
+#[derive(Resource, Debug, Default, Deref)]
+pub struct MousePos(pub Option<Vec2>);
+
+fn update_mouse_pos(
+    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
+    window: Single<&Window>,
+    mut mouse_world_coords: ResMut<MousePos>,
+) {
+    mouse_world_coords.0 = window.cursor_position().map(|pos| {
+        let (camera, camera_transform) = camera.into_inner();
+        camera
+            .viewport_to_world_2d(camera_transform, pos)
+            .unwrap_or(vec2(0.0, 0.0))
+    });
+}
+
+fn update_hovered_draw_element(
+    mut hovered_elem: ResMut<HoveredDrawElement>,
+    mouse_pos: Res<MousePos>,
+    draw_state: Res<DrawState>,
+) {
+    hovered_elem.0 = mouse_pos
+        .0
+        .and_then(|mouse_pos| draw_state.pick(mouse_pos, true));
+}
+
+fn move_camera(
+    camera: Single<(&Camera, &mut CameraZoom, &mut Transform), With<MainCamera>>,
+    time: Res<Time>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut scroll_wheel_reader: MessageReader<MouseWheel>,
+) {
+    let (_, mut zoom, mut trans) = camera.into_inner();
+
+    let mut delta = Vec2::ZERO;
+
+    if keyboard.pressed(KeyCode::KeyW) {
+        delta.y += 1.;
+    }
+    if keyboard.pressed(KeyCode::KeyS) {
+        delta.y -= 1.;
+    }
+    if keyboard.pressed(KeyCode::KeyA) {
+        delta.x -= 1.;
+    }
+    if keyboard.pressed(KeyCode::KeyD) {
+        delta.x += 1.;
+    }
+
+    trans.translation += delta.extend(0.) * 500. * zoom.curr * time.delta_secs();
+
+    for scroll_event in scroll_wheel_reader.read() {
+        zoom.zoom(scroll_event.y * 0.003);
+    }
+}
+
+fn apply_camera_zoom(cameras: Query<(&CameraZoom, &mut Projection)>) {
+    for (zoom, mut proj) in cameras {
+        match &mut *proj {
+            Projection::Orthographic(proj) => proj.scale = zoom.curr,
+            _ => todo!(),
+        }
+    }
+}
+
+fn update_draw_tool_state_display(
+    disp: Query<&mut Text, With<DrawToolStateDisplayLabel>>,
+    tool_state: Res<DrawToolState>,
+) {
+    for mut text in disp {
+        text.0 = format!("{:?}", *tool_state);
+    }
+}
+
+fn render_vertex(gizmos: &mut Gizmos, vertex: &Vertex) {
+    gizmos.cross_2d(
+        Isometry2d::from_translation(vertex.pos),
+        4.,
+        Color::linear_rgb(1., 0., 0.),
+    );
+}
+
+fn render_wall(gizmos: &mut Gizmos, start: Vec2, end: Vec2, kind: WallKind, num_ticks: u32) {
+    let color: Color;
+    match kind {
+        WallKind::Indestructable => {
+            color = Color::linear_rgb(0.05, 0.05, 0.1);
+        }
+        WallKind::Destructable => {
+            color = Color::linear_rgb(0.95, 0.95, 0.2);
+        }
+        WallKind::Half => {
+            color = Color::linear_rgb(0.95, 0.95, 1.);
+        }
+    }
+    gizmos.line_2d(start, end, color);
+
+    let cross_axis = Vec2::from_angle(FRAC_PI_2)
+        .rotate(end - start)
+        .normalize_or_zero()
+        * 2.;
+
+    for tick_center in evenly_spaced_points_along_line(start, end, num_ticks) {
+        gizmos.line_2d(tick_center - cross_axis, tick_center + cross_axis, color);
+    }
+}
+
+fn render_rect(gizmos: &mut Gizmos, rect: Rect2dOriented) {
+    let color = Color::linear_rgb(0.05, 0.05, 0.1);
+
+    let (iso, size) = rect.as_rotated_center_size();
+    gizmos.rect_2d(iso, size, color);
+}
+
+fn render_draw_elements(mut gizmos: Gizmos, draw_state: Res<DrawState>) {
+    gizmos.rect_2d(
+        Isometry2d::from_translation(draw_state.viewbox.center()),
+        draw_state.viewbox.half_size() * 2.,
+        Color::linear_rgb(0., 1., 0.),
+    );
+
+    for id in &draw_state.selection {
+        let aabb = draw_state.bounding_box(id);
+        gizmos.rect_2d(
+            Isometry2d::from_translation(aabb.center()),
+            aabb.half_size() * 2.,
+            Color::linear_rgb(0., 0., 1.),
+        );
+    }
+
+    for (id, vtx) in &draw_state.vertices {
+        if id.floor == draw_state.curr_floor {
+            render_vertex(&mut gizmos, vtx);
+        }
+    }
+
+    for (id, wall) in &draw_state.walls {
+        if id.floor == draw_state.curr_floor {
+            render_wall(
+                &mut gizmos,
+                draw_state.vertices[&wall.start].pos,
+                draw_state.vertices[&wall.end].pos,
+                wall.kind,
+                if let WallKind::Destructable = wall.kind {
+                    wall.destructable_segment_count.get() as u32 - 1
+                } else {
+                    0
+                },
+            );
+        }
+    }
+
+    for (id, rect) in &draw_state.rectangles {
+        if id.floor == draw_state.curr_floor {
+            render_rect(
+                &mut gizmos,
+                Rect2dOriented {
+                    diagonal_start: draw_state.vertices[&rect.start].pos,
+                    diagonal_end: draw_state.vertices[&rect.end].pos,
+                    cross_diagonal_rotation: rect.skew,
+                },
+            );
+        }
+    }
+
+    for (id, circle) in &draw_state.circles_by_three_points {
+        if id.floor == draw_state.curr_floor {
+            let circle_math =
+                Circle::from_three_points(circle.points.map(|vtx| draw_state.vertices[&vtx].pos))
+                    .unwrap();
+
+            gizmos.circle_2d(
+                Isometry2d::from_translation(circle_math.center),
+                circle_math.radius,
+                Color::WHITE,
+            );
+        }
+    }
+}
+
+fn update_draw_tool_state_preview(
+    mut gizmos: Gizmos,
+    tool_state: Res<DrawToolState>,
+    draw_state: Res<DrawState>,
+    mouse_pos: Res<MousePos>,
+    hovered_elem: Res<HoveredDrawElement>,
+) {
+    let Some(mouse_pos) = mouse_pos.0 else {
+        return;
+    };
+
+    if let Some(vtx) = hovered_elem.0.as_kind::<Vertex>() {
+        gizmos.circle_2d(
+            Isometry2d::from_translation(draw_state.vertices[&vtx].pos),
+            6.,
+            Color::linear_rgb(1., 0.2, 0.2),
+        );
+    }
+
+    let hovered_vtx_or_mouse_pos = match hovered_elem.0.as_kind::<Vertex>() {
+        Some(vtx) => draw_state.vertices[&vtx].pos,
+        None => mouse_pos,
+    };
+
+    match &*tool_state {
+        DrawToolState::PlaceVertex(tool_state) => {
+            if let Some(pos) = &tool_state.current_placement {
+                render_vertex(&mut gizmos, pos);
+            }
+        }
+        DrawToolState::Wall(tool_state) => {
+            if let Some(start) = tool_state.start {
+                let start_pos = draw_state.vertices[&start].pos;
+                let end_pos = hovered_vtx_or_mouse_pos;
+
+                render_wall(
+                    &mut gizmos,
+                    start_pos,
+                    end_pos,
+                    tool_state.kind,
+                    if let WallKind::Destructable = tool_state.kind {
+                        tool_state.destructable_segment_count.get() as u32 - 1
+                    } else {
+                        0
+                    },
+                );
+            }
+        }
+        DrawToolState::Shape(tool_state) => {
+            match tool_state.kind.clone() {
+                ShapeKind::RectangleByDiagonal { start, skew_angle } => {
+                    if let Some(start) = start {
+                        let start_pos = draw_state.vertices[&start].pos;
+                        let end_pos = hovered_vtx_or_mouse_pos;
+
+                        render_rect(
+                            &mut gizmos,
+                            Rect2dOriented {
+                                diagonal_start: start_pos,
+                                diagonal_end: end_pos,
+                                cross_diagonal_rotation: skew_angle,
+                            },
+                        );
+                    }
+                }
+                ShapeKind::RectangleAxisAligned { start } => {
+                    if let Some(start) = start {
+                        let start_pos = draw_state.vertices[&start].pos;
+                        let end_pos = hovered_vtx_or_mouse_pos;
+
+                        render_rect(
+                            &mut gizmos,
+                            Rect2dOriented::axis_aligned(start_pos, end_pos),
+                        );
+                    }
+                }
+                ShapeKind::CircleFromThreePoints { first_two } => {
+                    if first_two.len() == 2 {
+                        let a = draw_state.vertices[&first_two[0]].pos;
+                        let b = draw_state.vertices[&first_two[1]].pos;
+                        let end = hovered_vtx_or_mouse_pos;
+
+                        if let Some(circle) = Circle::from_three_points([a, b, end]) {
+                            gizmos.circle_2d(
+                                Isometry2d::from_translation(circle.center),
+                                circle.radius,
+                                Color::WHITE,
+                            );
+                        }
+                    }
+                }
+            }
+            //
+        }
+    }
+}
+
+fn change_selected_draw_tool(
+    mut tool_state: ResMut<DrawToolState>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if keyboard.just_pressed(KeyCode::Digit1) {
+        *tool_state = DrawToolState::PlaceVertex(PlaceVertexToolState::default());
+    }
+    if keyboard.just_pressed(KeyCode::Digit2) {
+        *tool_state = DrawToolState::Wall(WallToolState::default());
+    }
+    if keyboard.just_pressed(KeyCode::Digit3) {
+        *tool_state = DrawToolState::Shape(ShapeToolState::default());
+    }
+}
+
+fn draw_tool_update(
+    mut tool_state: ResMut<DrawToolState>,
+    mut draw_state: ResMut<DrawState>,
+    mouse_pos: Res<MousePos>,
+    hovered_element: Res<HoveredDrawElement>,
+    mouse_button: Res<ButtonInput<MouseButton>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+) {
+    let Some(mouse_pos) = mouse_pos.0 else {
+        return;
+    };
+
+    let just_clicked = mouse_button.just_pressed(MouseButton::Left);
+
+    match &mut *tool_state {
+        DrawToolState::PlaceVertex(tool_state) => {
+            if let Some(prev_pt) = tool_state.prev_point
+                && !draw_state.vertices.contains_key(&prev_pt)
+            {
+                tool_state.prev_point = None;
+            }
+
+            enum Constraint {
+                AngleSnapping { snap: f32, from_pt: VertexId },
+                IntersectionOfTwo { take_coords: [VertexId; 2] },
+                None,
+            }
+
+            let selection = draw_state.selection_as::<Vertex>();
+
+            let selected_pt_or_prev = if selection.len() == 1 {
+                Some(selection[0])
+            } else if let Some(prev_pt) = tool_state.prev_point {
+                Some(prev_pt)
+            } else {
+                None
+            };
+
+            let constraint = if let Some(from_pt) = selected_pt_or_prev
+                && keyboard.pressed(KeyCode::ControlLeft)
+            {
+                Constraint::AngleSnapping {
+                    snap: 22.5f32.to_radians(),
+                    from_pt,
+                }
+            } else if selection.len() == 2 {
+                Constraint::IntersectionOfTwo {
+                    take_coords: selection
+                        .try_into()
+                        .expect("There should be 2 selected vertices"),
+                }
+            } else {
+                Constraint::None
+            };
+
+            let pos = match constraint {
+                Constraint::AngleSnapping { snap, from_pt } => {
+                    let from_pt = draw_state.vertices[&from_pt].clone();
+                    let (dir, dist) = (mouse_pos - from_pt.pos).normalize_and_length();
+                    let angle = dir.to_angle();
+                    let angle_snapped = (angle / snap).round() * snap;
+
+                    from_pt.pos + Vec2::from_angle(angle_snapped) * dist
+                }
+                Constraint::IntersectionOfTwo { take_coords } => {
+                    let candidates: [Vec2; 2] = std::array::from_fn(|idx| {
+                        let take_x = draw_state.vertices[&take_coords[idx]].pos;
+                        let take_y = draw_state.vertices[&take_coords[1 - idx]].pos;
+                        vec2(take_x.x, take_y.y)
+                    });
+                    candidates
+                        .into_iter()
+                        .min_by_key(|x| OrderedFloat(x.distance_squared(mouse_pos)))
+                        .unwrap()
+                }
+                Constraint::None => mouse_pos,
+            };
+
+            tool_state.current_placement = Some(Vertex { pos });
+
+            if let Some(vtx) = tool_state.current_placement.clone()
+                && just_clicked
+            {
+                let id = VertexId {
+                    floor: draw_state.curr_floor,
+                    id: Uuid::new_v4(),
+                };
+                draw_state.vertices.insert(id, vtx);
+                draw_state.selection.clear();
+                draw_state
+                    .prev_actions
+                    .push(PrevDrawAction::PlaceObject(DrawElementId::Vertex(id)));
+
+                tool_state.prev_point = Some(id);
+            }
+        }
+        DrawToolState::Wall(tool_state) => {
+            if keyboard.just_pressed(KeyCode::KeyR) {
+                tool_state.kind = WallKind::Indestructable;
+            } else if keyboard.just_pressed(KeyCode::KeyT) {
+                tool_state.kind = WallKind::Destructable;
+            } else if keyboard.just_pressed(KeyCode::KeyY) {
+                tool_state.kind = WallKind::Half;
+            }
+
+            if keyboard.just_pressed(KeyCode::Equal) {
+                tool_state.destructable_segment_count =
+                    tool_state.destructable_segment_count.saturating_add(1);
+            }
+            if keyboard.just_pressed(KeyCode::Minus) {
+                tool_state.destructable_segment_count =
+                    (tool_state.destructable_segment_count.get() - 1)
+                        .try_into()
+                        .unwrap_or(non_zero_u8_one());
+            }
+
+            if let Some(vtx) = hovered_element.0.as_kind::<Vertex>()
+                && just_clicked
+            {
+                match tool_state.start {
+                    Some(start) => {
+                        let wall = Wall {
+                            start,
+                            end: vtx,
+                            kind: tool_state.kind,
+                            destructable_segment_count: tool_state.destructable_segment_count,
+                        };
+                        let id = WallId {
+                            floor: draw_state.curr_floor,
+                            id: Uuid::new_v4(),
+                        };
+                        draw_state.walls.insert(id, wall);
+                        draw_state.selection.clear();
+                        draw_state
+                            .prev_actions
+                            .push(PrevDrawAction::PlaceObject(DrawElementId::Wall(id)));
+
+                        tool_state.start = None;
+                        tool_state.destructable_segment_count = non_zero_u8_one();
+                    }
+                    None => tool_state.start = Some(vtx),
+                }
+            }
+        }
+        DrawToolState::Shape(tool_state) => {
+            if keyboard.just_pressed(KeyCode::KeyR) {
+                tool_state.kind = ShapeKind::RectangleAxisAligned { start: None };
+            } else if keyboard.just_pressed(KeyCode::KeyT) {
+                tool_state.kind = ShapeKind::RectangleByDiagonal {
+                    start: None,
+                    skew_angle: 1.,
+                };
+            } else if keyboard.just_pressed(KeyCode::KeyY) {
+                tool_state.kind = ShapeKind::CircleFromThreePoints { first_two: vec![] };
+            }
+
+            match &mut tool_state.kind {
+                ShapeKind::RectangleByDiagonal { start, skew_angle } => {
+                    let skew_change_speed = if keyboard.pressed(KeyCode::ShiftLeft) {
+                        0.05
+                    } else {
+                        0.75
+                    };
+                    if keyboard.pressed(KeyCode::Equal) {
+                        *skew_angle += skew_change_speed * time.delta_secs();
+                    }
+                    if keyboard.pressed(KeyCode::Minus) {
+                        *skew_angle -= skew_change_speed * time.delta_secs();
+                    }
+                    *skew_angle = skew_angle.clamp(0., PI);
+
+                    if let Some(vtx) = hovered_element.0.as_kind::<Vertex>()
+                        && just_clicked
+                    {
+                        match *start {
+                            Some(start_vtx) => {
+                                let rect = Rect {
+                                    start: start_vtx,
+                                    end: vtx,
+                                    skew: *skew_angle,
+                                };
+                                let id = RectId {
+                                    floor: draw_state.curr_floor,
+                                    id: Uuid::new_v4(),
+                                };
+                                draw_state.rectangles.insert(id, rect);
+                                draw_state.selection.clear();
+                                draw_state
+                                    .prev_actions
+                                    .push(PrevDrawAction::PlaceObject(DrawElementId::Rect(id)));
+
+                                *start = None;
+                            }
+                            None => *start = Some(vtx),
+                        }
+                    }
+                }
+                ShapeKind::RectangleAxisAligned { start } => {
+                    if let Some(vtx) = hovered_element.0.as_kind::<Vertex>()
+                        && just_clicked
+                    {
+                        match *start {
+                            Some(start_vtx) => {
+                                let skew = Rect2dOriented::axis_aligned(
+                                    draw_state.vertices[&start_vtx].pos,
+                                    draw_state.vertices[&vtx].pos,
+                                )
+                                .cross_diagonal_rotation;
+                                let rect = Rect {
+                                    start: start_vtx,
+                                    end: vtx,
+                                    skew,
+                                };
+                                let id = RectId {
+                                    floor: draw_state.curr_floor,
+                                    id: Uuid::new_v4(),
+                                };
+                                draw_state.rectangles.insert(id, rect);
+                                draw_state.selection.clear();
+                                draw_state
+                                    .prev_actions
+                                    .push(PrevDrawAction::PlaceObject(DrawElementId::Rect(id)));
+
+                                *start = None;
+                            }
+                            None => *start = Some(vtx),
+                        }
+                    }
+                }
+                ShapeKind::CircleFromThreePoints { first_two } => {
+                    if let Some(vtx) = hovered_element.0.as_kind::<Vertex>()
+                        && just_clicked
+                    {
+                        first_two.push(vtx);
+                        if first_two.len() > 2 {
+                            if let Some(_) = Circle::from_three_points(
+                                first_two
+                                    .iter()
+                                    .map(|vtx| draw_state.vertices[vtx].pos)
+                                    .collect::<Vec<_>>()
+                                    .try_into()
+                                    .unwrap(),
+                            ) {
+                                let id = CircleByThreePointsId {
+                                    floor: draw_state.curr_floor,
+                                    id: Uuid::new_v4(),
+                                };
+                                draw_state.circles_by_three_points.insert(
+                                    id,
+                                    CircleByThreePoints {
+                                        points: first_two.clone().try_into().unwrap(),
+                                    },
+                                );
+                                draw_state.selection.clear();
+                                first_two.clear();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn handle_undo(
+    mut tool_state: ResMut<DrawToolState>,
+    mut draw_state: ResMut<DrawState>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if keyboard.pressed(KeyCode::ControlLeft) && keyboard.just_pressed(KeyCode::KeyZ) {
+        let Some(prev_action) = draw_state.prev_actions.pop() else {
+            return;
+        };
+
+        match prev_action {
+            PrevDrawAction::PlaceObject(id) => draw_state.remove_element(id),
+        }
+    }
+}
+
+fn update_selection(
+    mut draw_state: ResMut<DrawState>,
+    mouse_button: Res<ButtonInput<MouseButton>>,
+    hovered_elem: Res<HoveredDrawElement>,
+) {
+    if mouse_button.just_pressed(MouseButton::Right) {
+        if let Some(hovered) = hovered_elem.0 {
+            if !draw_state.selection.insert(hovered) {
+                draw_state.selection.remove(&hovered);
+            }
+        }
+    }
+}
+
+fn handle_delete_selection(mut draw_state: ResMut<DrawState>, keyboard: Res<ButtonInput<KeyCode>>) {
+    if keyboard.just_pressed(KeyCode::Delete) {
+        for id in draw_state.selection.clone() {
+            draw_state.remove_element(id);
+        }
+    }
+}
+
+fn handle_saving(
+    draw_state: Res<DrawState>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    params: Res<MapEditorParameters>,
+) {
+    if keyboard.just_pressed(KeyCode::KeyS) && keyboard.pressed(KeyCode::ControlLeft) {
+        draw_state.save_and_render(format!("projects/{}", params.project_name));
+    }
+}
+
+fn change_floor(
+    mut draw_state: ResMut<DrawState>,
+    mut tool_state: ResMut<DrawToolState>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    let prev_floor = draw_state.curr_floor;
+    if keyboard.just_pressed(KeyCode::Period) {
+        draw_state.curr_floor =
+            (draw_state.curr_floor + 1).clamp(0, draw_state.floor_names.len() - 1);
+    }
+    if keyboard.just_pressed(KeyCode::Comma) {
+        draw_state.curr_floor = draw_state.curr_floor.saturating_sub(1);
+    }
+
+    if draw_state.curr_floor != prev_floor {
+        draw_state.selection.clear();
+        match &mut *tool_state {
+            DrawToolState::PlaceVertex(tool_state) => tool_state.prev_point = None,
+            DrawToolState::Wall(tool_state) => tool_state.start = None,
+            DrawToolState::Shape(tool_state) => match &mut tool_state.kind {
+                ShapeKind::RectangleByDiagonal {
+                    start,
+                    skew_angle: _,
+                } => *start = None,
+                ShapeKind::RectangleAxisAligned { start } => *start = None,
+                ShapeKind::CircleFromThreePoints { first_two } => first_two.clear(),
+            },
+        }
+    }
+}

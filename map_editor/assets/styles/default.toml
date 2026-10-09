@@ -1,0 +1,17 @@
+[wall_indestructable_color.Oklcha]
+lightness = 1.0
+chroma = 1.0
+hue = 1.0
+alpha = 1.0
+
+[wall_destructable_color.LinearRgba]
+red = 1.0
+green = 1.0
+blue = 1.0
+alpha = 1.0
+
+[polygon_color.LinearRgba]
+red = 1.0
+green = 1.0
+blue = 1.0
+alpha = 1.0

@@ -1,0 +1,4 @@
+basement
+floor_1
+floor_2
+roof

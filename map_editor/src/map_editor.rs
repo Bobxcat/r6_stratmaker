@@ -1094,6 +1094,7 @@ impl DrawState {
                 .set("fill", "#614cb6"),
         );
 
+        // Rectangles
         for (id, rect) in &self.rectangles {
             if id.floor != floor {
                 continue;
@@ -1114,6 +1115,7 @@ impl DrawState {
             );
         }
 
+        // Circles
         for (id, circle) in &self.circles_by_three_points {
             if id.floor != floor {
                 continue;
@@ -1134,12 +1136,48 @@ impl DrawState {
             )
         }
 
+        // Hatches
+        for (id, hatch) in &self.hatches {
+            if id.floor != floor {
+                continue;
+            }
+
+            let stroke_width = 0.15 * self.pixels_per_meter();
+
+            let hatch_res = hatch.resolve(self);
+            let aabb = hatch_res.bounding_box();
+
+            let bot_left = aabb.min;
+            let top_left = vec2(aabb.min.x, aabb.max.y);
+            let top_right = aabb.max;
+            let bot_right = vec2(aabb.max.x, aabb.min.y);
+
+            let color = style.wall_destructable_color;
+
+            document.append(
+                svg::node::element::Path::new()
+                    .set("transform", transform)
+                    .set("fill", "none")
+                    .set("stroke", color.to_srgba().to_hex())
+                    .set("stroke-width", stroke_width)
+                    .set("stroke-linejoin", "round")
+                    .set(
+                        "d",
+                        create_path_data([
+                            bot_left, top_right, top_left, bot_right, bot_left, top_left,
+                            top_right, bot_right,
+                        ]),
+                    ),
+            );
+        }
+
+        // Walls & Doors
         for (wall_id, wall) in &self.walls {
             if wall_id.floor != floor {
                 continue;
             }
 
-            let stroke_width = 3;
+            let stroke_width = 0.3 * self.pixels_per_meter();
 
             let wall = wall.resolve(self);
 
@@ -1161,7 +1199,7 @@ impl DrawState {
             for (_, door) in doors_on_wall {
                 let door = door.resolve(self);
 
-                let door_width = door.kind.size_meters().x;
+                let door_width = door.kind.size_meters().x * self.pixels_per_meter();
 
                 let door_start = door.center - wall_dir * door_width / 2.;
                 let door_end = door_start + wall_dir * door_width;

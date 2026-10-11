@@ -253,6 +253,16 @@ impl Vec2Ext for Vec2 {
     }
 }
 
+fn oriented_bounding_box_contains(
+    pt: Vec2,
+    obb_center: Vec2,
+    obb_halfsize: Vec2,
+    obb_rotation: f32,
+) -> bool {
+    let pt_trans = Vec2::from_angle(-obb_rotation).rotate(pt - obb_center);
+    pt_trans.x.abs() <= obb_halfsize.x && pt_trans.y.abs() <= obb_halfsize.y
+}
+
 #[derive(Debug, Clone)]
 struct Rect2dOriented {
     diagonal_start: Vec2,
@@ -300,12 +310,8 @@ impl Rect2dOriented {
     }
 
     fn contains(&self, pt: Vec2) -> bool {
-        let [a, b] = [self.diagonal_start, self.diagonal_end];
-        let [c, d] = self.cross_diagonal_points();
-        Vec2::dot(c - a, pt - a) >= 0.
-            && Vec2::dot(d - a, pt - a) >= 0.
-            && Vec2::dot(c - b, pt - b) >= 0.
-            && Vec2::dot(d - b, pt - b) >= 0.
+        let (iso, size) = self.as_rotated_center_size();
+        oriented_bounding_box_contains(pt, iso.translation, 0.5 * size, iso.rotation.as_radians())
     }
 }
 
@@ -481,11 +487,26 @@ struct ShapeToolState {
     kind: ShapeKind,
 }
 
+#[derive(Debug, Default, Clone)]
+enum DoorKind {
+    #[default]
+    Single,
+    Double,
+    SingleWindow,
+    DoubleWindow,
+}
+
+#[derive(Debug, Default)]
+struct DoorToolState {
+    kind: DoorKind,
+}
+
 #[derive(Resource, Debug)]
 enum DrawToolState {
     PlaceVertex(PlaceVertexToolState),
     Wall(WallToolState),
     Shape(ShapeToolState),
+    Door(DoorToolState),
 }
 
 #[derive(Component)]
@@ -833,6 +854,11 @@ impl DrawState {
             .map(|id| DrawElementId::Vertex(*id))
             .chain(self.walls.keys().map(|id| DrawElementId::Wall(*id)))
             .chain(self.rectangles.keys().map(|id| DrawElementId::Rect(*id)))
+            .chain(
+                self.circles_by_three_points
+                    .keys()
+                    .map(|id| DrawElementId::CircleByThreePoints(*id)),
+            )
     }
 
     fn distance_to(&self, id: &DrawElementId, mouse_pos: Vec2) -> f32 {
@@ -1109,21 +1135,30 @@ fn render_rect(gizmos: &mut Gizmos, rect: Rect2dOriented) {
     gizmos.rect_2d(iso, size, color);
 }
 
+fn render_door(gizmos: &mut Gizmos, center: Vec2, dir: Vec2, kind: DoorKind) {
+    println!("FOO: {center:?} {dir:?} {kind:?}");
+    let color = match kind {
+        DoorKind::Single | DoorKind::Double => Color::linear_rgb(1., 0., 0.),
+        DoorKind::SingleWindow | DoorKind::DoubleWindow => Color::linear_rgb(0., 1., 0.),
+    };
+    let width = 10.
+        * match kind {
+            DoorKind::Single | DoorKind::Double => SINGLE_DOOR_LENGTH_INSIDE,
+            DoorKind::SingleWindow | DoorKind::DoubleWindow => DOUBLE_DOOR_LENGTH_INSIDE,
+        };
+    gizmos.rounded_rect_2d(
+        Isometry2d::new(center, Rot2::radians(dir.to_angle())),
+        vec2(width, 5.),
+        color,
+    );
+}
+
 fn render_draw_elements(mut gizmos: Gizmos, draw_state: Res<DrawState>) {
     gizmos.rect_2d(
         Isometry2d::from_translation(draw_state.viewbox.center()),
         draw_state.viewbox.half_size() * 2.,
         Color::linear_rgb(0., 1., 0.),
     );
-
-    for id in &draw_state.selection {
-        let aabb = draw_state.bounding_box(id);
-        gizmos.rect_2d(
-            Isometry2d::from_translation(aabb.center()),
-            aabb.half_size() * 2.,
-            Color::linear_rgb(0., 0., 1.),
-        );
-    }
 
     for (id, vtx) in &draw_state.vertices {
         if id.floor == draw_state.curr_floor {
@@ -1172,6 +1207,15 @@ fn render_draw_elements(mut gizmos: Gizmos, draw_state: Res<DrawState>) {
                 Color::WHITE,
             );
         }
+    }
+
+    for id in &draw_state.selection {
+        let aabb = draw_state.bounding_box(id);
+        gizmos.rect_2d(
+            Isometry2d::from_translation(aabb.center()),
+            aabb.half_size() * 2.,
+            Color::linear_rgb(0., 0., 1.),
+        );
     }
 }
 
@@ -1269,6 +1313,22 @@ fn update_draw_tool_state_preview(
             }
             //
         }
+        DrawToolState::Door(tool_state) => {
+            if let Some(hovered_wall) = hovered_elem.0.as_kind::<Wall>() {
+                let wall = &draw_state.walls[&hovered_wall];
+                let wall_start = &draw_state.vertices[&wall.start];
+                let wall_end = &draw_state.vertices[&wall.end];
+                let center = mouse_pos
+                    .distance_to_line(wall_start.pos, wall_end.pos, false, false)
+                    .nearest_pt;
+                render_door(
+                    &mut gizmos,
+                    center,
+                    (wall_end.pos - wall_start.pos).normalize_or(Vec2::X),
+                    tool_state.kind.clone(),
+                );
+            }
+        }
     }
 }
 
@@ -1284,6 +1344,9 @@ fn change_selected_draw_tool(
     }
     if keyboard.just_pressed(KeyCode::Digit3) {
         *tool_state = DrawToolState::Shape(ShapeToolState::default());
+    }
+    if keyboard.just_pressed(KeyCode::Digit4) {
+        *tool_state = DrawToolState::Door(DoorToolState::default());
     }
 }
 
@@ -1549,6 +1612,23 @@ fn draw_tool_update(
                 }
             }
         }
+        DrawToolState::Door(tool_state) => {
+            if keyboard.just_pressed(KeyCode::KeyR) {
+                tool_state.kind = DoorKind::Single;
+            } else if keyboard.just_pressed(KeyCode::KeyT) {
+                tool_state.kind = DoorKind::Double;
+            } else if keyboard.just_pressed(KeyCode::KeyY) {
+                tool_state.kind = DoorKind::SingleWindow;
+            } else if keyboard.just_pressed(KeyCode::KeyU) {
+                tool_state.kind = DoorKind::DoubleWindow;
+            }
+
+            if let Some(wall) = hovered_element.0.as_kind::<Wall>()
+                && just_clicked
+            {
+                todo!("Place!")
+            }
+        }
     }
 }
 
@@ -1627,6 +1707,7 @@ fn change_floor(
                 ShapeKind::RectangleAxisAligned { start } => *start = None,
                 ShapeKind::CircleFromThreePoints { first_two } => first_two.clear(),
             },
+            DrawToolState::Door(_tool_state) => (),
         }
     }
 }

@@ -22,6 +22,9 @@ const PROJECT_FILE_NAME: &str = "project.ron";
 pub struct MapEditorPlugin;
 impl Plugin for MapEditorPlugin {
     fn build(&self, app: &mut App) {
+        app.init_gizmo_group::<ScaleReferenceGizmoConfigGroup>()
+            .add_systems(OnEnter(AppState::MapEditor), init_gizmo_configs);
+
         app.insert_resource(MousePos(None))
             .insert_resource(DrawToolState::PlaceVertex(PlaceVertexToolState::default()))
             .insert_resource(HoveredDrawElement(None));
@@ -128,6 +131,13 @@ fn load_selected_project(
     commands.insert_resource(draw_state);
 }
 
+fn init_gizmo_configs(mut config_store: ResMut<GizmoConfigStore>) {
+    let config = config_store
+        .config_mut::<ScaleReferenceGizmoConfigGroup>()
+        .0;
+    config.line.style = GizmoLineStyle::Dotted;
+}
+
 #[derive(Component)]
 pub struct BackgroundImage {
     curr_floor_idx: usize,
@@ -180,9 +190,7 @@ fn update_background_image(
 
 const SINGLE_DOOR_LENGTH_INSIDE: f32 = 1.4;
 const DOUBLE_DOOR_LENGTH_INSIDE: f32 = 2.25;
-const HATCH_SIDE_LENGTH: f32 = 3.;
-/// FIXME: Define this per-project using a reference distance between vertices
-const PIXELS_PER_METER: f32 = 10.;
+const HATCH_SIDE_LENGTH: f32 = 2.5;
 
 fn non_zero_u8_one() -> NonZeroU8 {
     NonZeroU8::new(1).unwrap()
@@ -362,7 +370,8 @@ trait DrawElementKind {
 }
 
 trait DrawElementResolved {
-    fn render_gizmo(&self, gizmos: &mut Gizmos);
+    type GizmoCfg: GizmoConfigGroup;
+    fn render_gizmo(&self, gizmos: &mut Gizmos<Self::GizmoCfg>);
     fn bounding_box(&self) -> Aabb2d;
 }
 
@@ -382,6 +391,11 @@ new_id_type!(RectId);
 new_id_type!(CircleByThreePointsId);
 new_id_type!(DoorId);
 new_id_type!(HatchId);
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+struct ScaleReferenceId {
+    floor: usize,
+}
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
 enum WallKind {
@@ -450,14 +464,13 @@ enum DoorKind {
 
 impl DoorKind {
     /// The x-coordinate is the "wide" direction
-    fn base_size(&self) -> Vec2 {
-        let width = PIXELS_PER_METER
-            * match self {
-                DoorKind::Single | DoorKind::SingleWindow => SINGLE_DOOR_LENGTH_INSIDE,
-                DoorKind::Double | DoorKind::DoubleWindow => DOUBLE_DOOR_LENGTH_INSIDE,
-            };
+    fn size_meters(&self) -> Vec2 {
+        let width = match self {
+            DoorKind::Single | DoorKind::SingleWindow => SINGLE_DOOR_LENGTH_INSIDE,
+            DoorKind::Double | DoorKind::DoubleWindow => DOUBLE_DOOR_LENGTH_INSIDE,
+        };
 
-        vec2(width, 5.)
+        vec2(width, 0.5)
     }
 }
 
@@ -469,6 +482,12 @@ struct DoorToolState {
 #[derive(Debug, Default)]
 struct HatchToolState {}
 
+#[derive(Debug, Default)]
+struct ScaleReferenceToolState {
+    start: Option<VertexId>,
+    meters: f32,
+}
+
 #[derive(Resource, Debug)]
 enum DrawToolState {
     PlaceVertex(PlaceVertexToolState),
@@ -476,6 +495,7 @@ enum DrawToolState {
     Shape(ShapeToolState),
     Door(DoorToolState),
     Hatch(HatchToolState),
+    ScaleReference(ScaleReferenceToolState),
 }
 
 #[derive(Component)]
@@ -507,6 +527,7 @@ impl DrawElementKind for Vertex {
 }
 
 impl DrawElementResolved for Vertex {
+    type GizmoCfg = DefaultGizmoConfigGroup;
     fn render_gizmo(&self, gizmos: &mut Gizmos) {
         gizmos.cross_2d(
             Isometry2d::from_translation(self.pos),
@@ -564,6 +585,7 @@ impl DrawElementKind for Wall {
 }
 
 impl DrawElementResolved for Wall<Vec2> {
+    type GizmoCfg = DefaultGizmoConfigGroup;
     fn render_gizmo(&self, gizmos: &mut Gizmos) {
         let color: Color;
         match self.kind {
@@ -685,6 +707,7 @@ impl DrawElementKind for Rect {
 }
 
 impl DrawElementResolved for Rect<Vec2> {
+    type GizmoCfg = DefaultGizmoConfigGroup;
     fn render_gizmo(&self, gizmos: &mut Gizmos) {
         let color = Color::linear_rgb(0.05, 0.05, 0.1);
 
@@ -725,6 +748,7 @@ impl DrawElementKind for CircleByThreePoints {
 }
 
 impl DrawElementResolved for CircleByThreePoints<Vec2> {
+    type GizmoCfg = DefaultGizmoConfigGroup;
     fn render_gizmo(&self, gizmos: &mut Gizmos) {
         let circle_math = Circle::from_three_points(self.points).unwrap();
 
@@ -743,23 +767,35 @@ impl DrawElementResolved for CircleByThreePoints<Vec2> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Door<W = WallId> {
-    wall: W,
+struct Door {
+    wall: WallId,
     center: Vec2,
     kind: DoorKind,
 }
 
-impl Door<Wall<Vec2>> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DoorResolved {
+    wall: Wall<Vec2>,
+    center: Vec2,
+    kind: DoorKind,
+    pixels_per_meter: f32,
+}
+
+impl DoorResolved {
     fn get_gizmo_rect(&self) -> Rect<Vec2> {
         let dir = self.wall.end - self.wall.start;
 
-        Rect::from_rotated_center_size(self.center, dir.to_angle(), self.kind.base_size())
+        Rect::from_rotated_center_size(
+            self.center,
+            dir.to_angle(),
+            self.kind.size_meters() * self.pixels_per_meter,
+        )
     }
 }
 
 impl DrawElementKind for Door {
     type Id = DoorId;
-    type Resolved = Door<Wall<Vec2>>;
+    type Resolved = DoorResolved;
 
     fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
         match id {
@@ -773,27 +809,25 @@ impl DrawElementKind for Door {
     }
 
     fn resolve(&self, draw_state: &DrawState) -> Self::Resolved {
-        Door {
+        DoorResolved {
             wall: Wall::get_resolved(draw_state, self.wall),
             center: self.center,
             kind: self.kind.clone(),
+            pixels_per_meter: draw_state.pixels_per_meter(),
         }
     }
 }
 
-impl DrawElementResolved for Door<Wall<Vec2>> {
+impl DrawElementResolved for DoorResolved {
+    type GizmoCfg = DefaultGizmoConfigGroup;
     fn render_gizmo(&self, gizmos: &mut Gizmos) {
-        let dir = (self.wall.end - self.wall.start).normalize_or(Vec2::X);
-
         let color = match self.kind {
             DoorKind::Single | DoorKind::Double => Color::linear_rgb(1., 0., 0.),
             DoorKind::SingleWindow | DoorKind::DoubleWindow => Color::linear_rgb(0., 1., 0.),
         };
-        gizmos.rounded_rect_2d(
-            Isometry2d::new(self.center, Rot2::radians(dir.to_angle())),
-            self.kind.base_size(),
-            color,
-        );
+        let rect = self.get_gizmo_rect();
+        let (iso, size) = rect.as_rotated_center_size();
+        gizmos.rounded_rect_2d(iso, size, color);
     }
 
     fn bounding_box(&self) -> Aabb2d {
@@ -802,13 +836,19 @@ impl DrawElementResolved for Door<Wall<Vec2>> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Hatch<V = VertexId> {
-    top_left: V,
+struct Hatch {
+    top_left: VertexId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HatchResolved {
+    top_left: Vec2,
+    pixels_per_meter: f32,
 }
 
 impl DrawElementKind for Hatch {
     type Id = HatchId;
-    type Resolved = Hatch<Vec2>;
+    type Resolved = HatchResolved;
 
     fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
         match id {
@@ -822,13 +862,15 @@ impl DrawElementKind for Hatch {
     }
 
     fn resolve(&self, draw_state: &DrawState) -> Self::Resolved {
-        Hatch {
+        HatchResolved {
             top_left: draw_state.vertices[&self.top_left].pos,
+            pixels_per_meter: draw_state.pixels_per_meter(),
         }
     }
 }
 
-impl DrawElementResolved for Hatch<Vec2> {
+impl DrawElementResolved for HatchResolved {
+    type GizmoCfg = DefaultGizmoConfigGroup;
     fn render_gizmo(&self, gizmos: &mut Gizmos) {
         let aabb = self.bounding_box();
         gizmos.rect_2d(
@@ -842,12 +884,78 @@ impl DrawElementResolved for Hatch<Vec2> {
         Aabb2d {
             min: vec2(
                 self.top_left.x,
-                self.top_left.y - PIXELS_PER_METER * HATCH_SIDE_LENGTH,
+                self.top_left.y - self.pixels_per_meter * HATCH_SIDE_LENGTH,
             ),
             max: vec2(
-                self.top_left.x + PIXELS_PER_METER * HATCH_SIDE_LENGTH,
+                self.top_left.x + self.pixels_per_meter * HATCH_SIDE_LENGTH,
                 self.top_left.y,
             ),
+        }
+    }
+}
+
+#[derive(Default, Reflect, GizmoConfigGroup)]
+struct ScaleReferenceGizmoConfigGroup;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ScaleReference<V = VertexId> {
+    endpoints: [V; 2],
+    meters: f32,
+}
+
+impl DrawElementKind for ScaleReference {
+    type Id = ScaleReferenceId;
+    type Resolved = ScaleReference<Vec2>;
+
+    fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
+        match id {
+            DrawElementId::ScaleReference(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    fn get(draw_state: &DrawState, _: Self::Id) -> &Self {
+        &draw_state.scale_reference.as_ref().unwrap().1
+    }
+
+    fn resolve(&self, draw_state: &DrawState) -> Self::Resolved {
+        ScaleReference {
+            endpoints: self.endpoints.map(|v| draw_state.vertices[&v].pos),
+            meters: self.meters,
+        }
+    }
+}
+
+impl DrawElementResolved for ScaleReference<Vec2> {
+    type GizmoCfg = ScaleReferenceGizmoConfigGroup;
+    fn render_gizmo(&self, gizmos: &mut Gizmos<ScaleReferenceGizmoConfigGroup>) {
+        let color = Color::linear_rgb(0., 0.4, 1.);
+
+        gizmos.line_2d(self.endpoints[0], self.endpoints[1], color);
+
+        let dir = if self.endpoints[1].x > self.endpoints[0].x {
+            self.endpoints[1] - self.endpoints[0]
+        } else {
+            self.endpoints[0] - self.endpoints[1]
+        }
+        .normalize_or(Vec2::Y);
+        let center = (self.endpoints[0] + self.endpoints[1]) / 2.;
+        gizmos.text_2d(
+            Isometry2d::new(
+                center + Vec2::from_angle(FRAC_PI_2).rotate(dir) * 8.,
+                Rot2::radians(dir.to_angle()),
+            ),
+            &format!("{}m", self.meters),
+            10.,
+            Vec2::ZERO,
+            color,
+        );
+    }
+
+    fn bounding_box(&self) -> Aabb2d {
+        Aabb2d {
+            min: self.endpoints[0].min(self.endpoints[1]),
+            max: self.endpoints[0].max(self.endpoints[1]),
         }
     }
 }
@@ -860,6 +968,7 @@ pub enum DrawElementId {
     CircleByThreePoints(CircleByThreePointsId),
     Door(DoorId),
     Hatch(HatchId),
+    ScaleReference(ScaleReferenceId),
 }
 
 impl DrawElementId {
@@ -875,6 +984,7 @@ impl DrawElementId {
             DrawElementId::CircleByThreePoints(id) => id.floor,
             DrawElementId::Door(id) => id.floor,
             DrawElementId::Hatch(id) => id.floor,
+            DrawElementId::ScaleReference(id) => id.floor,
         }
     }
 }
@@ -899,6 +1009,8 @@ struct DrawState {
     doors: HashMap<DoorId, Door>,
     #[serde(default)]
     hatches: HashMap<HatchId, Hatch>,
+    #[serde(default)]
+    scale_reference: Option<(ScaleReferenceId, ScaleReference)>,
 
     #[serde(skip)]
     #[serde(default = "default_draw_state_viewbox")]
@@ -922,6 +1034,7 @@ impl Default for DrawState {
             circles_by_three_points: Default::default(),
             doors: Default::default(),
             hatches: Default::default(),
+            scale_reference: None,
 
             viewbox: default_draw_state_viewbox(),
             floor_names: Default::default(),
@@ -934,6 +1047,19 @@ impl Default for DrawState {
 
 impl DrawState {
     const SELECT_DISTANCE: f32 = 8.;
+
+    fn pixels_per_meter(&self) -> f32 {
+        match &self.scale_reference {
+            Some((_, scale_ref)) => {
+                let scale_ref = scale_ref.resolve(self);
+                let dist_px = scale_ref.endpoints[0].distance(scale_ref.endpoints[1]);
+                let dist_m = scale_ref.meters;
+
+                dist_px / dist_m
+            }
+            None => 10.,
+        }
+    }
 
     fn render_floor_to_svg(&self, floor: usize, style: &RenderStyle) -> svg::Document {
         fn create_path_data(
@@ -1035,7 +1161,7 @@ impl DrawState {
             for (_, door) in doors_on_wall {
                 let door = door.resolve(self);
 
-                let door_width = door.kind.base_size().x;
+                let door_width = door.kind.size_meters().x;
 
                 let door_start = door.center - wall_dir * door_width / 2.;
                 let door_end = door_start + wall_dir * door_width;
@@ -1135,6 +1261,24 @@ impl DrawState {
                     .retain(|_, wall| wall.start != id && wall.end != id);
                 self.rectangles
                     .retain(|_, rect| rect.start != id && rect.end != id);
+                self.circles_by_three_points
+                    .retain(|_, c| !c.points.contains(&id));
+
+                for id in self.doors.keys().cloned().collect::<Vec<_>>() {
+                    if !self.walls.contains_key(&self.doors[&id].wall) {
+                        self.doors.remove(&id);
+                    }
+                }
+
+                self.hatches.retain(|_, hatch| hatch.top_left != id);
+
+                if self
+                    .scale_reference
+                    .as_ref()
+                    .is_some_and(|(_, scale_ref)| scale_ref.endpoints.contains(&id))
+                {
+                    self.scale_reference = None;
+                }
             }
             DrawElementId::Wall(id) => {
                 self.walls.remove(&id);
@@ -1152,6 +1296,9 @@ impl DrawState {
             DrawElementId::Hatch(id) => {
                 self.hatches.remove(&id);
             }
+            DrawElementId::ScaleReference(_) => {
+                self.scale_reference = None;
+            }
         }
     }
 
@@ -1168,20 +1315,20 @@ impl DrawState {
             )
             .chain(self.doors.keys().map(|id| DrawElementId::Door(*id)))
             .chain(self.hatches.keys().map(|id| DrawElementId::Hatch(*id)))
+            .chain(
+                self.scale_reference
+                    .as_ref()
+                    .map(|(id, _)| DrawElementId::ScaleReference(*id)),
+            )
     }
 
     fn distance_to(&self, id: &DrawElementId, mouse_pos: Vec2) -> f32 {
         match id {
             DrawElementId::Vertex(id) => self.vertices[id].pos.distance(mouse_pos),
             DrawElementId::Wall(id) => {
-                let wall = &self.walls[id];
+                let wall = Wall::get_resolved(self, *id);
                 mouse_pos
-                    .distance_to_line(
-                        self.vertices[&wall.start].pos,
-                        self.vertices[&wall.end].pos,
-                        false,
-                        false,
-                    )
+                    .distance_to_line(wall.start, wall.end, false, false)
                     .distance
             }
             DrawElementId::Rect(id) => {
@@ -1226,6 +1373,12 @@ impl DrawState {
 
                 if rect.contains(mouse_pos) { 0. } else { 1000. }
             }
+            DrawElementId::ScaleReference(id) => {
+                let scale = ScaleReference::get_resolved(self, *id);
+                mouse_pos
+                    .distance_to_line(scale.endpoints[0], scale.endpoints[1], false, false)
+                    .distance
+            }
         }
     }
 
@@ -1269,6 +1422,9 @@ impl DrawState {
             }
             DrawElementId::Door(id) => Door::get_resolved(self, *id).bounding_box(),
             DrawElementId::Hatch(id) => Hatch::get_resolved(self, *id).bounding_box(),
+            DrawElementId::ScaleReference(id) => {
+                ScaleReference::get_resolved(self, *id).bounding_box()
+            }
         }
     }
 
@@ -1389,7 +1545,11 @@ fn update_draw_tool_state_display(
     }
 }
 
-fn render_draw_elements(mut gizmos: Gizmos, draw_state: Res<DrawState>) {
+fn render_draw_elements(
+    mut gizmos: Gizmos,
+    mut gizmos_scale_ref: Gizmos<ScaleReferenceGizmoConfigGroup>,
+    draw_state: Res<DrawState>,
+) {
     gizmos.rect_2d(
         Isometry2d::from_translation(draw_state.viewbox.center()),
         draw_state.viewbox.half_size() * 2.,
@@ -1426,6 +1586,20 @@ fn render_draw_elements(mut gizmos: Gizmos, draw_state: Res<DrawState>) {
         }
     }
 
+    for (id, hatch) in &draw_state.hatches {
+        if id.floor == draw_state.curr_floor {
+            hatch.resolve(&draw_state).render_gizmo(&mut gizmos);
+        }
+    }
+
+    if let Some((id, scale_ref)) = &draw_state.scale_reference {
+        if id.floor == draw_state.curr_floor {
+            scale_ref
+                .resolve(&draw_state)
+                .render_gizmo(&mut gizmos_scale_ref);
+        }
+    }
+
     for id in &draw_state.selection {
         let aabb = draw_state.bounding_box(id);
         gizmos.rect_2d(
@@ -1438,6 +1612,7 @@ fn render_draw_elements(mut gizmos: Gizmos, draw_state: Res<DrawState>) {
 
 fn update_draw_tool_state_preview(
     mut gizmos: Gizmos,
+    mut gizmos_scale_ref: Gizmos<ScaleReferenceGizmoConfigGroup>,
     tool_state: Res<DrawToolState>,
     draw_state: Res<DrawState>,
     mouse_pos: Res<MousePos>,
@@ -1524,10 +1699,11 @@ fn update_draw_tool_state_preview(
                     .distance_to_line(wall.start, wall.end, false, false)
                     .nearest_pt;
 
-                Door {
+                DoorResolved {
                     wall,
                     center,
                     kind: tool_state.kind.clone(),
+                    pixels_per_meter: draw_state.pixels_per_meter(),
                 }
                 .render_gizmo(&mut gizmos);
             }
@@ -1535,7 +1711,23 @@ fn update_draw_tool_state_preview(
         DrawToolState::Hatch(_tool_state) => {
             let top_left = hovered_vtx_or_mouse_pos;
 
-            Hatch { top_left }.render_gizmo(&mut gizmos);
+            HatchResolved {
+                top_left,
+                pixels_per_meter: draw_state.pixels_per_meter(),
+            }
+            .render_gizmo(&mut gizmos);
+        }
+        DrawToolState::ScaleReference(tool_state) => {
+            if let Some(start) = tool_state.start {
+                let start_pos = draw_state.vertices[&start].pos;
+                let end_pos = hovered_vtx_or_mouse_pos;
+
+                ScaleReference {
+                    endpoints: [start_pos, end_pos],
+                    meters: tool_state.meters,
+                }
+                .render_gizmo(&mut gizmos_scale_ref);
+            }
         }
     }
 }
@@ -1558,6 +1750,9 @@ fn change_selected_draw_tool(
     }
     if keyboard.just_pressed(KeyCode::Digit5) {
         *tool_state = DrawToolState::Hatch(HatchToolState::default());
+    }
+    if keyboard.just_pressed(KeyCode::Digit0) {
+        *tool_state = DrawToolState::ScaleReference(ScaleReferenceToolState::default());
     }
 }
 
@@ -1853,6 +2048,7 @@ fn draw_tool_update(
                     kind: tool_state.kind.clone(),
                 };
                 draw_state.doors.insert(id, door);
+                draw_state.selection.clear();
             }
         }
         DrawToolState::Hatch(_tool_state) => {
@@ -1864,6 +2060,47 @@ fn draw_tool_update(
 
                 let hatch = Hatch { top_left: vtx };
                 draw_state.hatches.insert(id, hatch);
+                draw_state.selection.clear();
+            }
+        }
+        DrawToolState::ScaleReference(tool_state) => {
+            let delta = if keyboard.pressed(KeyCode::ShiftLeft) {
+                1.
+            } else {
+                10.
+            };
+
+            if keyboard.just_pressed(KeyCode::Equal) {
+                tool_state.meters += delta;
+            }
+            if keyboard.just_pressed(KeyCode::Minus) {
+                tool_state.meters -= delta;
+            }
+
+            tool_state.meters = tool_state.meters.max(0.);
+
+            if let Some(vtx) = hovered_element.0.as_kind::<Vertex>()
+                && just_clicked
+            {
+                match tool_state.start {
+                    Some(start) => {
+                        let scale_ref = ScaleReference {
+                            endpoints: [start, vtx],
+                            meters: tool_state.meters,
+                        };
+                        let id = ScaleReferenceId {
+                            floor: draw_state.curr_floor,
+                        };
+                        draw_state.scale_reference = Some((id, scale_ref));
+                        draw_state.selection.clear();
+                        draw_state.prev_actions.push(PrevDrawAction::PlaceObject(
+                            DrawElementId::ScaleReference(id),
+                        ));
+
+                        tool_state.start = None;
+                    }
+                    None => tool_state.start = Some(vtx),
+                }
             }
         }
     }
@@ -1946,6 +2183,10 @@ fn change_floor(
             },
             DrawToolState::Door(_tool_state) => (),
             DrawToolState::Hatch(_tool_state) => (),
+            DrawToolState::ScaleReference(tool_state) => {
+                tool_state.start = None;
+                tool_state.meters = 0.;
+            }
         }
     }
 }

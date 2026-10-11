@@ -22,9 +22,6 @@ const PROJECT_FILE_NAME: &str = "project.ron";
 pub struct MapEditorPlugin;
 impl Plugin for MapEditorPlugin {
     fn build(&self, app: &mut App) {
-        let r = Rect2dOriented::axis_aligned(vec2(13., 10.), vec2(11., 13.));
-        println!("{r:?} {:?}", r.corners_ccw());
-
         app.insert_resource(MousePos(None))
             .insert_resource(DrawToolState::PlaceVertex(PlaceVertexToolState::default()))
             .insert_resource(HoveredDrawElement(None));
@@ -183,7 +180,9 @@ fn update_background_image(
 
 const SINGLE_DOOR_LENGTH_INSIDE: f32 = 1.4;
 const DOUBLE_DOOR_LENGTH_INSIDE: f32 = 2.25;
-const HATCH_SIDE_LENGTH: f32 = 1.;
+const HATCH_SIDE_LENGTH: f32 = 3.;
+/// FIXME: Define this per-project using a reference distance between vertices
+const PIXELS_PER_METER: f32 = 10.;
 
 fn non_zero_u8_one() -> NonZeroU8 {
     NonZeroU8::new(1).unwrap()
@@ -261,58 +260,6 @@ fn oriented_bounding_box_contains(
 ) -> bool {
     let pt_trans = Vec2::from_angle(-obb_rotation).rotate(pt - obb_center);
     pt_trans.x.abs() <= obb_halfsize.x && pt_trans.y.abs() <= obb_halfsize.y
-}
-
-#[derive(Debug, Clone)]
-struct Rect2dOriented {
-    diagonal_start: Vec2,
-    diagonal_end: Vec2,
-    /// Should be in the range (0, pi/2]
-    cross_diagonal_rotation: f32,
-}
-
-impl Rect2dOriented {
-    fn axis_aligned(start: Vec2, end: Vec2) -> Self {
-        Self {
-            diagonal_start: start,
-            diagonal_end: end,
-            cross_diagonal_rotation: -2. * (end - start).to_angle(),
-        }
-    }
-
-    fn center(&self) -> Vec2 {
-        0.5 * (self.diagonal_start + self.diagonal_end)
-    }
-
-    /// Returns the points on the cross diagonal starting from the "right" side
-    fn cross_diagonal_points(&self) -> [Vec2; 2] {
-        let offset = Vec2::from_angle(self.cross_diagonal_rotation)
-            .rotate(self.diagonal_end - self.diagonal_start)
-            * 0.5;
-        [self.center() + offset, self.center() - offset]
-    }
-
-    fn corners_ccw(&self) -> [Vec2; 4] {
-        let cross = self.cross_diagonal_points();
-        [self.diagonal_start, cross[0], self.diagonal_end, cross[1]]
-    }
-
-    /// Returns this rectangle in the form of `(center and rotation, size)`
-    fn as_rotated_center_size(&self) -> (Isometry2d, Vec2) {
-        let cross = self.cross_diagonal_points();
-        let size = vec2(
-            cross[1].distance(self.diagonal_start),
-            cross[0].distance(self.diagonal_start),
-        );
-        let rot = FRAC_PI_2 + (cross[0] - self.diagonal_start).to_angle();
-
-        (Isometry2d::new(self.center(), Rot2::radians(rot)), size)
-    }
-
-    fn contains(&self, pt: Vec2) -> bool {
-        let (iso, size) = self.as_rotated_center_size();
-        oriented_bounding_box_contains(pt, iso.translation, 0.5 * size, iso.rotation.as_radians())
-    }
 }
 
 struct Circle {
@@ -403,33 +350,38 @@ impl OptDrawElementIdExt for Option<DrawElementId> {
 
 trait DrawElementKind {
     type Id: Copy + Eq;
+    type Resolved: DrawElementResolved;
 
     fn id_from_any(id: DrawElementId) -> Option<Self::Id>;
+
+    fn get(draw_state: &DrawState, id: Self::Id) -> &Self;
+    fn resolve(&self, draw_state: &DrawState) -> Self::Resolved;
+    fn get_resolved(draw_state: &DrawState, id: Self::Id) -> Self::Resolved {
+        Self::get(draw_state, id).resolve(draw_state)
+    }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct VertexId {
-    floor: usize,
-    id: Uuid,
+trait DrawElementResolved {
+    fn render_gizmo(&self, gizmos: &mut Gizmos);
+    fn bounding_box(&self) -> Aabb2d;
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct WallId {
-    floor: usize,
-    id: Uuid,
+macro_rules! new_id_type {
+    ($name:ident) => {
+        #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+        pub struct $name {
+            floor: usize,
+            id: Uuid,
+        }
+    };
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct RectId {
-    floor: usize,
-    id: Uuid,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CircleByThreePointsId {
-    floor: usize,
-    id: Uuid,
-}
+new_id_type!(VertexId);
+new_id_type!(WallId);
+new_id_type!(RectId);
+new_id_type!(CircleByThreePointsId);
+new_id_type!(DoorId);
+new_id_type!(HatchId);
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
 enum WallKind {
@@ -487,7 +439,7 @@ struct ShapeToolState {
     kind: ShapeKind,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 enum DoorKind {
     #[default]
     Single,
@@ -496,10 +448,26 @@ enum DoorKind {
     DoubleWindow,
 }
 
+impl DoorKind {
+    /// The x-coordinate is the "wide" direction
+    fn base_size(&self) -> Vec2 {
+        let width = PIXELS_PER_METER
+            * match self {
+                DoorKind::Single | DoorKind::SingleWindow => SINGLE_DOOR_LENGTH_INSIDE,
+                DoorKind::Double | DoorKind::DoubleWindow => DOUBLE_DOOR_LENGTH_INSIDE,
+            };
+
+        vec2(width, 5.)
+    }
+}
+
 #[derive(Debug, Default)]
 struct DoorToolState {
     kind: DoorKind,
 }
+
+#[derive(Debug, Default)]
+struct HatchToolState {}
 
 #[derive(Resource, Debug)]
 enum DrawToolState {
@@ -507,6 +475,7 @@ enum DrawToolState {
     Wall(WallToolState),
     Shape(ShapeToolState),
     Door(DoorToolState),
+    Hatch(HatchToolState),
 }
 
 #[derive(Component)]
@@ -519,6 +488,7 @@ struct Vertex {
 
 impl DrawElementKind for Vertex {
     type Id = VertexId;
+    type Resolved = Self;
 
     fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
         match id {
@@ -526,19 +496,51 @@ impl DrawElementKind for Vertex {
             _ => None,
         }
     }
+
+    fn get(draw_state: &DrawState, id: Self::Id) -> &Self {
+        &draw_state.vertices[&id]
+    }
+
+    fn resolve(&self, _: &DrawState) -> Self::Resolved {
+        self.clone()
+    }
+}
+
+impl DrawElementResolved for Vertex {
+    fn render_gizmo(&self, gizmos: &mut Gizmos) {
+        gizmos.cross_2d(
+            Isometry2d::from_translation(self.pos),
+            4.,
+            Color::linear_rgb(1., 0., 0.),
+        );
+    }
+
+    fn bounding_box(&self) -> Aabb2d {
+        Aabb2d::new(self.pos, Vec2::splat(5.))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Wall {
-    start: VertexId,
-    end: VertexId,
+struct Wall<V = VertexId> {
+    start: V,
+    end: V,
     kind: WallKind,
     #[serde(default = "non_zero_u8_one")]
     destructable_segment_count: NonZeroU8,
 }
 
+impl Wall<Vec2> {
+    fn cross_axis(&self) -> Vec2 {
+        Vec2::from_angle(FRAC_PI_2)
+            .rotate(self.end - self.start)
+            .normalize_or_zero()
+            * 2.
+    }
+}
+
 impl DrawElementKind for Wall {
     type Id = WallId;
+    type Resolved = Wall<Vec2>;
 
     fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
         match id {
@@ -546,17 +548,121 @@ impl DrawElementKind for Wall {
             _ => None,
         }
     }
+
+    fn get(draw_state: &DrawState, id: Self::Id) -> &Self {
+        &draw_state.walls[&id]
+    }
+
+    fn resolve(&self, draw_state: &DrawState) -> Self::Resolved {
+        Wall {
+            start: draw_state.vertices[&self.start].pos,
+            end: draw_state.vertices[&self.end].pos,
+            kind: self.kind,
+            destructable_segment_count: self.destructable_segment_count,
+        }
+    }
+}
+
+impl DrawElementResolved for Wall<Vec2> {
+    fn render_gizmo(&self, gizmos: &mut Gizmos) {
+        let color: Color;
+        match self.kind {
+            WallKind::Indestructable => {
+                color = Color::linear_rgb(0.05, 0.05, 0.1);
+            }
+            WallKind::Destructable => {
+                color = Color::linear_rgb(0.95, 0.95, 0.2);
+            }
+            WallKind::Half => {
+                color = Color::linear_rgb(0.95, 0.95, 1.);
+            }
+        }
+        gizmos.line_2d(self.start, self.end, color);
+
+        let cross_axis = self.cross_axis();
+
+        if let WallKind::Destructable = self.kind {
+            for tick_center in evenly_spaced_points_along_line(
+                self.start,
+                self.end,
+                self.destructable_segment_count.get() as u32 - 1,
+            ) {
+                gizmos.line_2d(tick_center - cross_axis, tick_center + cross_axis, color);
+            }
+        }
+    }
+
+    fn bounding_box(&self) -> Aabb2d {
+        Aabb2d {
+            min: Vec2::min(self.start, self.end),
+            max: Vec2::max(self.start, self.end),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Rect {
-    start: VertexId,
-    end: VertexId,
+struct Rect<V = VertexId> {
+    start: V,
+    end: V,
     skew: f32,
+}
+
+impl Rect<Vec2> {
+    fn axis_aligned(start: Vec2, end: Vec2) -> Self {
+        Self {
+            start,
+            end,
+            skew: -2. * (end - start).to_angle(),
+        }
+    }
+
+    fn center(&self) -> Vec2 {
+        0.5 * (self.start + self.end)
+    }
+
+    /// Returns the points on the cross diagonal starting from the "right" side
+    fn cross_diagonal_points(&self) -> [Vec2; 2] {
+        let offset = Vec2::from_angle(self.skew).rotate(self.end - self.start) * 0.5;
+        [self.center() + offset, self.center() - offset]
+    }
+
+    fn corners_ccw(&self) -> [Vec2; 4] {
+        let cross = self.cross_diagonal_points();
+        [self.start, cross[0], self.end, cross[1]]
+    }
+
+    fn from_rotated_center_size(center: Vec2, rot: f32, size: Vec2) -> Self {
+        let halfsize = 0.5 * size;
+        let rot_vec = Vec2::from_angle(rot);
+
+        let start = center + rot_vec.rotate(vec2(-halfsize.x, halfsize.y));
+        let end = center + rot_vec.rotate(vec2(halfsize.x, -halfsize.y));
+
+        let right = center + rot_vec.rotate(-halfsize);
+
+        let skew = (start - center).angle_to(right - center);
+
+        Self { start, end, skew }
+    }
+
+    /// Returns this rectangle in the form of `(center and rotation, size)`
+    fn as_rotated_center_size(&self) -> (Isometry2d, Vec2) {
+        let cross = self.cross_diagonal_points();
+        let size = vec2(cross[1].distance(self.start), cross[0].distance(self.start));
+        let rot = FRAC_PI_2 + (cross[0] - self.start).to_angle();
+
+        (Isometry2d::new(self.center(), Rot2::radians(rot)), size)
+    }
+
+    fn contains(&self, pt: Vec2) -> bool {
+        let (iso, size) = self.as_rotated_center_size();
+        oriented_bounding_box_contains(pt, iso.translation, 0.5 * size, iso.rotation.as_radians())
+    }
 }
 
 impl DrawElementKind for Rect {
     type Id = RectId;
+    type Resolved = Rect<Vec2>;
 
     fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
         match id {
@@ -564,20 +670,184 @@ impl DrawElementKind for Rect {
             _ => None,
         }
     }
+
+    fn get(draw_state: &DrawState, id: Self::Id) -> &Self {
+        &draw_state.rectangles[&id]
+    }
+
+    fn resolve(&self, draw_state: &DrawState) -> Self::Resolved {
+        Rect {
+            start: draw_state.vertices[&self.start].pos,
+            end: draw_state.vertices[&self.end].pos,
+            skew: self.skew,
+        }
+    }
+}
+
+impl DrawElementResolved for Rect<Vec2> {
+    fn render_gizmo(&self, gizmos: &mut Gizmos) {
+        let color = Color::linear_rgb(0.05, 0.05, 0.1);
+
+        let (iso, size) = self.as_rotated_center_size();
+        gizmos.rect_2d(iso, size, color);
+    }
+
+    fn bounding_box(&self) -> Aabb2d {
+        Aabb2d::from_point_cloud(Isometry2d::IDENTITY, &self.corners_ccw())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct CircleByThreePoints {
-    points: [VertexId; 3],
+struct CircleByThreePoints<V = VertexId> {
+    points: [V; 3],
 }
 
 impl DrawElementKind for CircleByThreePoints {
     type Id = CircleByThreePointsId;
+    type Resolved = CircleByThreePoints<Vec2>;
 
     fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
         match id {
             DrawElementId::CircleByThreePoints(id) => Some(id),
             _ => None,
+        }
+    }
+
+    fn get(draw_state: &DrawState, id: Self::Id) -> &Self {
+        &draw_state.circles_by_three_points[&id]
+    }
+
+    fn resolve(&self, draw_state: &DrawState) -> Self::Resolved {
+        CircleByThreePoints {
+            points: self.points.map(|vtx| draw_state.vertices[&vtx].pos),
+        }
+    }
+}
+
+impl DrawElementResolved for CircleByThreePoints<Vec2> {
+    fn render_gizmo(&self, gizmos: &mut Gizmos) {
+        let circle_math = Circle::from_three_points(self.points).unwrap();
+
+        gizmos.circle_2d(
+            Isometry2d::from_translation(circle_math.center),
+            circle_math.radius,
+            Color::WHITE,
+        );
+    }
+
+    fn bounding_box(&self) -> Aabb2d {
+        let circle_math = Circle::from_three_points(self.points).unwrap();
+
+        Aabb2d::new(circle_math.center, Vec2::splat(circle_math.radius))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Door<W = WallId> {
+    wall: W,
+    center: Vec2,
+    kind: DoorKind,
+}
+
+impl Door<Wall<Vec2>> {
+    fn get_gizmo_rect(&self) -> Rect<Vec2> {
+        let dir = self.wall.end - self.wall.start;
+
+        Rect::from_rotated_center_size(self.center, dir.to_angle(), self.kind.base_size())
+    }
+}
+
+impl DrawElementKind for Door {
+    type Id = DoorId;
+    type Resolved = Door<Wall<Vec2>>;
+
+    fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
+        match id {
+            DrawElementId::Door(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    fn get(draw_state: &DrawState, id: Self::Id) -> &Self {
+        &draw_state.doors[&id]
+    }
+
+    fn resolve(&self, draw_state: &DrawState) -> Self::Resolved {
+        Door {
+            wall: Wall::get_resolved(draw_state, self.wall),
+            center: self.center,
+            kind: self.kind.clone(),
+        }
+    }
+}
+
+impl DrawElementResolved for Door<Wall<Vec2>> {
+    fn render_gizmo(&self, gizmos: &mut Gizmos) {
+        let dir = (self.wall.end - self.wall.start).normalize_or(Vec2::X);
+
+        let color = match self.kind {
+            DoorKind::Single | DoorKind::Double => Color::linear_rgb(1., 0., 0.),
+            DoorKind::SingleWindow | DoorKind::DoubleWindow => Color::linear_rgb(0., 1., 0.),
+        };
+        gizmos.rounded_rect_2d(
+            Isometry2d::new(self.center, Rot2::radians(dir.to_angle())),
+            self.kind.base_size(),
+            color,
+        );
+    }
+
+    fn bounding_box(&self) -> Aabb2d {
+        self.get_gizmo_rect().bounding_box()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Hatch<V = VertexId> {
+    top_left: V,
+}
+
+impl DrawElementKind for Hatch {
+    type Id = HatchId;
+    type Resolved = Hatch<Vec2>;
+
+    fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
+        match id {
+            DrawElementId::Hatch(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    fn get(draw_state: &DrawState, id: Self::Id) -> &Self {
+        &draw_state.hatches[&id]
+    }
+
+    fn resolve(&self, draw_state: &DrawState) -> Self::Resolved {
+        Hatch {
+            top_left: draw_state.vertices[&self.top_left].pos,
+        }
+    }
+}
+
+impl DrawElementResolved for Hatch<Vec2> {
+    fn render_gizmo(&self, gizmos: &mut Gizmos) {
+        let aabb = self.bounding_box();
+        gizmos.rect_2d(
+            Isometry2d::from_translation(aabb.center()),
+            aabb.half_size() * 2.,
+            Color::linear_rgb(1., 1., 0.),
+        );
+    }
+
+    fn bounding_box(&self) -> Aabb2d {
+        Aabb2d {
+            min: vec2(
+                self.top_left.x,
+                self.top_left.y - PIXELS_PER_METER * HATCH_SIDE_LENGTH,
+            ),
+            max: vec2(
+                self.top_left.x + PIXELS_PER_METER * HATCH_SIDE_LENGTH,
+                self.top_left.y,
+            ),
         }
     }
 }
@@ -588,6 +858,8 @@ pub enum DrawElementId {
     Wall(WallId),
     Rect(RectId),
     CircleByThreePoints(CircleByThreePointsId),
+    Door(DoorId),
+    Hatch(HatchId),
 }
 
 impl DrawElementId {
@@ -601,6 +873,8 @@ impl DrawElementId {
             DrawElementId::Wall(id) => id.floor,
             DrawElementId::Rect(id) => id.floor,
             DrawElementId::CircleByThreePoints(id) => id.floor,
+            DrawElementId::Door(id) => id.floor,
+            DrawElementId::Hatch(id) => id.floor,
         }
     }
 }
@@ -621,6 +895,10 @@ struct DrawState {
     rectangles: HashMap<RectId, Rect>,
     #[serde(default)]
     circles_by_three_points: HashMap<CircleByThreePointsId, CircleByThreePoints>,
+    #[serde(default)]
+    doors: HashMap<DoorId, Door>,
+    #[serde(default)]
+    hatches: HashMap<HatchId, Hatch>,
 
     #[serde(skip)]
     #[serde(default = "default_draw_state_viewbox")]
@@ -642,6 +920,9 @@ impl Default for DrawState {
             walls: Default::default(),
             rectangles: Default::default(),
             circles_by_three_points: Default::default(),
+            doors: Default::default(),
+            hatches: Default::default(),
+
             viewbox: default_draw_state_viewbox(),
             floor_names: Default::default(),
             prev_actions: Default::default(),
@@ -674,6 +955,8 @@ impl DrawState {
             data.close()
         }
 
+        let transform = "scale(1, -1)";
+
         let mut document = svg::Document::new();
 
         document.append(
@@ -690,22 +973,15 @@ impl DrawState {
                 continue;
             }
 
-            let (start, end) = (&self.vertices[&rect.start], &self.vertices[&rect.end]);
-            let start_pos = vec2(start.pos.x, start.pos.y);
-            let end_pos = vec2(end.pos.x, end.pos.y);
+            let rect = rect.resolve(self);
 
-            let rect_math = Rect2dOriented {
-                diagonal_start: start_pos,
-                diagonal_end: end_pos,
-                cross_diagonal_rotation: rect.skew,
-            };
-
-            let data = create_path_data(rect_math.corners_ccw().map(|v| vec2(v.x, -v.y)));
+            let data = create_path_data(rect.corners_ccw());
 
             let color = style.polygon_color;
 
             document.append(
                 svg::node::element::Path::new()
+                    .set("transform", transform)
                     .set("fill", color.to_srgba().to_hex())
                     .set("stroke", "none")
                     .set("d", data),
@@ -717,32 +993,29 @@ impl DrawState {
                 continue;
             }
 
-            let circle_math =
-                Circle::from_three_points(circle.points.map(|vtx| self.vertices[&vtx].pos))
-                    .unwrap();
+            let circle_math = Circle::from_three_points(circle.resolve(self).points).unwrap();
 
             let color = style.polygon_color;
 
             document.append(
                 svg::node::element::Circle::new()
+                    .set("transform", transform)
                     .set("fill", color.to_srgba().to_hex())
                     .set("stroke", "none")
                     .set("cx", circle_math.center.x)
-                    .set("cy", -circle_math.center.y)
+                    .set("cy", circle_math.center.y)
                     .set("r", circle_math.radius),
             )
         }
 
-        for (id, wall) in &self.walls {
-            if id.floor != floor {
+        for (wall_id, wall) in &self.walls {
+            if wall_id.floor != floor {
                 continue;
             }
 
-            let (start, end) = (&self.vertices[&wall.start], &self.vertices[&wall.end]);
-            let start_pos = vec2(start.pos.x, -start.pos.y);
-            let end_pos = vec2(end.pos.x, -end.pos.y);
+            let stroke_width = 3;
 
-            let data = create_path_data([start_pos, end_pos]);
+            let wall = wall.resolve(self);
 
             let color = match wall.kind {
                 WallKind::Indestructable => style.wall_indestructable_color,
@@ -750,22 +1023,51 @@ impl DrawState {
                 WallKind::Half => todo!(),
             };
 
+            let doors_on_wall = self
+                .doors
+                .iter()
+                .filter(|(id, door)| id.floor == floor && door.wall == *wall_id)
+                .collect::<Vec<_>>();
+
+            let wall_dir = (wall.end - wall.start).normalize_or_zero();
+            let mut prev_pt = wall.start;
+            // FIXME: This doesn't work because the doors aren't ordered from "start" to "end" of the wall
+            for (_, door) in doors_on_wall {
+                let door = door.resolve(self);
+
+                let door_width = door.kind.base_size().x;
+
+                let door_start = door.center - wall_dir * door_width / 2.;
+                let door_end = door_start + wall_dir * door_width;
+
+                document.append(
+                    svg::node::element::Path::new()
+                        .set("transform", transform)
+                        .set("fill", "none")
+                        .set("stroke", color.to_srgba().to_hex())
+                        .set("stroke-width", stroke_width)
+                        .set("d", create_path_data([prev_pt, door_start])),
+                );
+
+                prev_pt = door_end;
+            }
             document.append(
                 svg::node::element::Path::new()
+                    .set("transform", transform)
                     .set("fill", "none")
                     .set("stroke", color.to_srgba().to_hex())
-                    .set("stroke-width", 3)
-                    .set("d", data),
+                    .set("stroke-width", stroke_width)
+                    .set("d", create_path_data([prev_pt, wall.end])),
             );
 
             let cross_axis = Vec2::from_angle(FRAC_PI_2)
-                .rotate(end_pos - start_pos)
+                .rotate(wall_dir)
                 .normalize_or_zero()
                 * 5.;
 
             for tick_center in evenly_spaced_points_along_line(
-                start_pos,
-                end_pos,
+                wall.start,
+                wall.end,
                 if let WallKind::Destructable = wall.kind {
                     wall.destructable_segment_count.get() as u32 - 1
                 } else {
@@ -779,9 +1081,10 @@ impl DrawState {
 
                 document.append(
                     svg::node::element::Path::new()
+                        .set("transform", transform)
                         .set("fill", "none")
                         .set("stroke", color.to_srgba().to_hex())
-                        .set("stroke-width", 1.5)
+                        .set("stroke-width", stroke_width as f32 / 2.)
                         .set("d", data),
                 );
             }
@@ -823,10 +1126,10 @@ impl DrawState {
     }
 
     fn remove_element(&mut self, generic_id: DrawElementId) {
+        self.selection.remove(&generic_id);
         match generic_id {
             DrawElementId::Vertex(id) => {
                 self.vertices.remove(&id);
-                self.selection.remove(&generic_id);
 
                 self.walls
                     .retain(|_, wall| wall.start != id && wall.end != id);
@@ -835,15 +1138,19 @@ impl DrawState {
             }
             DrawElementId::Wall(id) => {
                 self.walls.remove(&id);
-                self.selection.remove(&generic_id);
+                self.doors.retain(|_, door| door.wall != id);
             }
             DrawElementId::Rect(id) => {
                 self.rectangles.remove(&id);
-                self.selection.remove(&generic_id);
             }
             DrawElementId::CircleByThreePoints(id) => {
                 self.circles_by_three_points.remove(&id);
-                self.selection.remove(&generic_id);
+            }
+            DrawElementId::Door(id) => {
+                self.doors.remove(&id);
+            }
+            DrawElementId::Hatch(id) => {
+                self.hatches.remove(&id);
             }
         }
     }
@@ -859,6 +1166,8 @@ impl DrawState {
                     .keys()
                     .map(|id| DrawElementId::CircleByThreePoints(*id)),
             )
+            .chain(self.doors.keys().map(|id| DrawElementId::Door(*id)))
+            .chain(self.hatches.keys().map(|id| DrawElementId::Hatch(*id)))
     }
 
     fn distance_to(&self, id: &DrawElementId, mouse_pos: Vec2) -> f32 {
@@ -877,10 +1186,10 @@ impl DrawState {
             }
             DrawElementId::Rect(id) => {
                 let rect = &self.rectangles[id];
-                let rect_math = Rect2dOriented {
-                    diagonal_start: self.vertices[&rect.start].pos,
-                    diagonal_end: self.vertices[&rect.end].pos,
-                    cross_diagonal_rotation: rect.skew,
+                let rect_math = Rect {
+                    start: self.vertices[&rect.start].pos,
+                    end: self.vertices[&rect.end].pos,
+                    skew: rect.skew,
                 };
 
                 // FIXME: Maybe add actual distance calculation? Although selection should require clicking within the shape
@@ -903,6 +1212,19 @@ impl DrawState {
                 } else {
                     1000.
                 }
+            }
+            DrawElementId::Door(id) => {
+                let door = Door::get_resolved(self, *id);
+                let rect = door.get_gizmo_rect();
+
+                if rect.contains(mouse_pos) { 0. } else { 1000. }
+            }
+            DrawElementId::Hatch(id) => {
+                let hatch = Hatch::get_resolved(self, *id);
+                let aabb = hatch.bounding_box();
+                let rect = Rect::from_rotated_center_size(aabb.center(), 0., aabb.half_size() * 2.);
+
+                if rect.contains(mouse_pos) { 0. } else { 1000. }
             }
         }
     }
@@ -939,42 +1261,14 @@ impl DrawState {
 
     fn bounding_box(&self, id: &DrawElementId) -> Aabb2d {
         match id {
-            DrawElementId::Vertex(id) => Aabb2d::new(self.vertices[id].pos, Vec2::splat(5.)),
-            DrawElementId::Wall(id) => {
-                let wall = &self.walls[id];
-                let start = &self.vertices[&wall.start];
-                let end = &self.vertices[&wall.end];
-
-                Aabb2d {
-                    min: Vec2::min(start.pos, end.pos),
-                    max: Vec2::max(start.pos, end.pos),
-                }
-            }
-            DrawElementId::Rect(id) => {
-                let rect = &self.rectangles[id];
-                let start = &self.vertices[&rect.start];
-                let end = &self.vertices[&rect.end];
-
-                Aabb2d::from_point_cloud(
-                    Isometry2d::IDENTITY,
-                    &Rect2dOriented {
-                        diagonal_start: start.pos,
-                        diagonal_end: end.pos,
-                        cross_diagonal_rotation: rect.skew,
-                    }
-                    .corners_ccw(),
-                )
-            }
+            DrawElementId::Vertex(id) => Vertex::get_resolved(self, *id).bounding_box(),
+            DrawElementId::Wall(id) => Wall::get_resolved(self, *id).bounding_box(),
+            DrawElementId::Rect(id) => Rect::get_resolved(self, *id).bounding_box(),
             DrawElementId::CircleByThreePoints(id) => {
-                let circle = &self.circles_by_three_points[id];
-                if let Some(circle_math) =
-                    Circle::from_three_points(circle.points.map(|vtx| self.vertices[&vtx].pos))
-                {
-                    Aabb2d::new(circle_math.center, Vec2::splat(circle_math.radius))
-                } else {
-                    Aabb2d::new(Vec2::ZERO, Vec2::ZERO)
-                }
+                CircleByThreePoints::get_resolved(self, *id).bounding_box()
             }
+            DrawElementId::Door(id) => Door::get_resolved(self, *id).bounding_box(),
+            DrawElementId::Hatch(id) => Hatch::get_resolved(self, *id).bounding_box(),
         }
     }
 
@@ -1095,64 +1389,6 @@ fn update_draw_tool_state_display(
     }
 }
 
-fn render_vertex(gizmos: &mut Gizmos, vertex: &Vertex) {
-    gizmos.cross_2d(
-        Isometry2d::from_translation(vertex.pos),
-        4.,
-        Color::linear_rgb(1., 0., 0.),
-    );
-}
-
-fn render_wall(gizmos: &mut Gizmos, start: Vec2, end: Vec2, kind: WallKind, num_ticks: u32) {
-    let color: Color;
-    match kind {
-        WallKind::Indestructable => {
-            color = Color::linear_rgb(0.05, 0.05, 0.1);
-        }
-        WallKind::Destructable => {
-            color = Color::linear_rgb(0.95, 0.95, 0.2);
-        }
-        WallKind::Half => {
-            color = Color::linear_rgb(0.95, 0.95, 1.);
-        }
-    }
-    gizmos.line_2d(start, end, color);
-
-    let cross_axis = Vec2::from_angle(FRAC_PI_2)
-        .rotate(end - start)
-        .normalize_or_zero()
-        * 2.;
-
-    for tick_center in evenly_spaced_points_along_line(start, end, num_ticks) {
-        gizmos.line_2d(tick_center - cross_axis, tick_center + cross_axis, color);
-    }
-}
-
-fn render_rect(gizmos: &mut Gizmos, rect: Rect2dOriented) {
-    let color = Color::linear_rgb(0.05, 0.05, 0.1);
-
-    let (iso, size) = rect.as_rotated_center_size();
-    gizmos.rect_2d(iso, size, color);
-}
-
-fn render_door(gizmos: &mut Gizmos, center: Vec2, dir: Vec2, kind: DoorKind) {
-    println!("FOO: {center:?} {dir:?} {kind:?}");
-    let color = match kind {
-        DoorKind::Single | DoorKind::Double => Color::linear_rgb(1., 0., 0.),
-        DoorKind::SingleWindow | DoorKind::DoubleWindow => Color::linear_rgb(0., 1., 0.),
-    };
-    let width = 10.
-        * match kind {
-            DoorKind::Single | DoorKind::Double => SINGLE_DOOR_LENGTH_INSIDE,
-            DoorKind::SingleWindow | DoorKind::DoubleWindow => DOUBLE_DOOR_LENGTH_INSIDE,
-        };
-    gizmos.rounded_rect_2d(
-        Isometry2d::new(center, Rot2::radians(dir.to_angle())),
-        vec2(width, 5.),
-        color,
-    );
-}
-
 fn render_draw_elements(mut gizmos: Gizmos, draw_state: Res<DrawState>) {
     gizmos.rect_2d(
         Isometry2d::from_translation(draw_state.viewbox.center()),
@@ -1162,50 +1398,31 @@ fn render_draw_elements(mut gizmos: Gizmos, draw_state: Res<DrawState>) {
 
     for (id, vtx) in &draw_state.vertices {
         if id.floor == draw_state.curr_floor {
-            render_vertex(&mut gizmos, vtx);
+            vtx.resolve(&draw_state).render_gizmo(&mut gizmos);
         }
     }
 
     for (id, wall) in &draw_state.walls {
         if id.floor == draw_state.curr_floor {
-            render_wall(
-                &mut gizmos,
-                draw_state.vertices[&wall.start].pos,
-                draw_state.vertices[&wall.end].pos,
-                wall.kind,
-                if let WallKind::Destructable = wall.kind {
-                    wall.destructable_segment_count.get() as u32 - 1
-                } else {
-                    0
-                },
-            );
+            wall.resolve(&draw_state).render_gizmo(&mut gizmos);
         }
     }
 
     for (id, rect) in &draw_state.rectangles {
         if id.floor == draw_state.curr_floor {
-            render_rect(
-                &mut gizmos,
-                Rect2dOriented {
-                    diagonal_start: draw_state.vertices[&rect.start].pos,
-                    diagonal_end: draw_state.vertices[&rect.end].pos,
-                    cross_diagonal_rotation: rect.skew,
-                },
-            );
+            rect.resolve(&draw_state).render_gizmo(&mut gizmos);
         }
     }
 
     for (id, circle) in &draw_state.circles_by_three_points {
         if id.floor == draw_state.curr_floor {
-            let circle_math =
-                Circle::from_three_points(circle.points.map(|vtx| draw_state.vertices[&vtx].pos))
-                    .unwrap();
+            circle.resolve(&draw_state).render_gizmo(&mut gizmos);
+        }
+    }
 
-            gizmos.circle_2d(
-                Isometry2d::from_translation(circle_math.center),
-                circle_math.radius,
-                Color::WHITE,
-            );
+    for (id, door) in &draw_state.doors {
+        if id.floor == draw_state.curr_floor {
+            door.resolve(&draw_state).render_gizmo(&mut gizmos);
         }
     }
 
@@ -1246,7 +1463,7 @@ fn update_draw_tool_state_preview(
     match &*tool_state {
         DrawToolState::PlaceVertex(tool_state) => {
             if let Some(pos) = &tool_state.current_placement {
-                render_vertex(&mut gizmos, pos);
+                pos.render_gizmo(&mut gizmos);
             }
         }
         DrawToolState::Wall(tool_state) => {
@@ -1254,80 +1471,71 @@ fn update_draw_tool_state_preview(
                 let start_pos = draw_state.vertices[&start].pos;
                 let end_pos = hovered_vtx_or_mouse_pos;
 
-                render_wall(
-                    &mut gizmos,
-                    start_pos,
-                    end_pos,
-                    tool_state.kind,
-                    if let WallKind::Destructable = tool_state.kind {
-                        tool_state.destructable_segment_count.get() as u32 - 1
-                    } else {
-                        0
-                    },
-                );
+                Wall {
+                    start: start_pos,
+                    end: end_pos,
+                    kind: tool_state.kind,
+                    destructable_segment_count: tool_state.destructable_segment_count,
+                }
+                .render_gizmo(&mut gizmos);
             }
         }
-        DrawToolState::Shape(tool_state) => {
-            match tool_state.kind.clone() {
-                ShapeKind::RectangleByDiagonal { start, skew_angle } => {
-                    if let Some(start) = start {
-                        let start_pos = draw_state.vertices[&start].pos;
-                        let end_pos = hovered_vtx_or_mouse_pos;
+        DrawToolState::Shape(tool_state) => match tool_state.kind.clone() {
+            ShapeKind::RectangleByDiagonal { start, skew_angle } => {
+                if let Some(start) = start {
+                    let start_pos = draw_state.vertices[&start].pos;
+                    let end_pos = hovered_vtx_or_mouse_pos;
 
-                        render_rect(
-                            &mut gizmos,
-                            Rect2dOriented {
-                                diagonal_start: start_pos,
-                                diagonal_end: end_pos,
-                                cross_diagonal_rotation: skew_angle,
-                            },
+                    Rect {
+                        start: start_pos,
+                        end: end_pos,
+                        skew: skew_angle,
+                    }
+                    .render_gizmo(&mut gizmos);
+                }
+            }
+            ShapeKind::RectangleAxisAligned { start } => {
+                if let Some(start) = start {
+                    let start_pos = draw_state.vertices[&start].pos;
+                    let end_pos = hovered_vtx_or_mouse_pos;
+                    Rect::axis_aligned(start_pos, end_pos).render_gizmo(&mut gizmos);
+                }
+            }
+            ShapeKind::CircleFromThreePoints { first_two } => {
+                if first_two.len() == 2 {
+                    let a = draw_state.vertices[&first_two[0]].pos;
+                    let b = draw_state.vertices[&first_two[1]].pos;
+                    let end = hovered_vtx_or_mouse_pos;
+
+                    if let Some(circle) = Circle::from_three_points([a, b, end]) {
+                        gizmos.circle_2d(
+                            Isometry2d::from_translation(circle.center),
+                            circle.radius,
+                            Color::WHITE,
                         );
                     }
                 }
-                ShapeKind::RectangleAxisAligned { start } => {
-                    if let Some(start) = start {
-                        let start_pos = draw_state.vertices[&start].pos;
-                        let end_pos = hovered_vtx_or_mouse_pos;
-
-                        render_rect(
-                            &mut gizmos,
-                            Rect2dOriented::axis_aligned(start_pos, end_pos),
-                        );
-                    }
-                }
-                ShapeKind::CircleFromThreePoints { first_two } => {
-                    if first_two.len() == 2 {
-                        let a = draw_state.vertices[&first_two[0]].pos;
-                        let b = draw_state.vertices[&first_two[1]].pos;
-                        let end = hovered_vtx_or_mouse_pos;
-
-                        if let Some(circle) = Circle::from_three_points([a, b, end]) {
-                            gizmos.circle_2d(
-                                Isometry2d::from_translation(circle.center),
-                                circle.radius,
-                                Color::WHITE,
-                            );
-                        }
-                    }
-                }
             }
-            //
-        }
+        },
         DrawToolState::Door(tool_state) => {
             if let Some(hovered_wall) = hovered_elem.0.as_kind::<Wall>() {
-                let wall = &draw_state.walls[&hovered_wall];
-                let wall_start = &draw_state.vertices[&wall.start];
-                let wall_end = &draw_state.vertices[&wall.end];
+                let wall = Wall::get_resolved(&draw_state, hovered_wall);
                 let center = mouse_pos
-                    .distance_to_line(wall_start.pos, wall_end.pos, false, false)
+                    .distance_to_line(wall.start, wall.end, false, false)
                     .nearest_pt;
-                render_door(
-                    &mut gizmos,
+
+                Door {
+                    wall,
                     center,
-                    (wall_end.pos - wall_start.pos).normalize_or(Vec2::X),
-                    tool_state.kind.clone(),
-                );
+                    kind: tool_state.kind.clone(),
+                }
+                .render_gizmo(&mut gizmos);
             }
+        }
+        DrawToolState::Hatch(_tool_state) => {
+            let top_left = hovered_vtx_or_mouse_pos;
+
+            Hatch { top_left }.render_gizmo(&mut gizmos);
         }
     }
 }
@@ -1347,6 +1555,9 @@ fn change_selected_draw_tool(
     }
     if keyboard.just_pressed(KeyCode::Digit4) {
         *tool_state = DrawToolState::Door(DoorToolState::default());
+    }
+    if keyboard.just_pressed(KeyCode::Digit5) {
+        *tool_state = DrawToolState::Hatch(HatchToolState::default());
     }
 }
 
@@ -1554,11 +1765,11 @@ fn draw_tool_update(
                     {
                         match *start {
                             Some(start_vtx) => {
-                                let skew = Rect2dOriented::axis_aligned(
+                                let skew = Rect::axis_aligned(
                                     draw_state.vertices[&start_vtx].pos,
                                     draw_state.vertices[&vtx].pos,
                                 )
-                                .cross_diagonal_rotation;
+                                .skew;
                                 let rect = Rect {
                                     start: start_vtx,
                                     end: vtx,
@@ -1623,10 +1834,36 @@ fn draw_tool_update(
                 tool_state.kind = DoorKind::DoubleWindow;
             }
 
-            if let Some(wall) = hovered_element.0.as_kind::<Wall>()
+            if let Some(wall_id) = hovered_element.0.as_kind::<Wall>()
                 && just_clicked
             {
-                todo!("Place!")
+                let id = DoorId {
+                    floor: draw_state.curr_floor,
+                    id: Uuid::new_v4(),
+                };
+
+                let wall = Wall::get_resolved(&draw_state, wall_id);
+                let center = mouse_pos
+                    .distance_to_line(wall.start, wall.end, false, false)
+                    .nearest_pt;
+
+                let door = Door {
+                    wall: wall_id,
+                    center,
+                    kind: tool_state.kind.clone(),
+                };
+                draw_state.doors.insert(id, door);
+            }
+        }
+        DrawToolState::Hatch(_tool_state) => {
+            if let Some(vtx) = hovered_element.0.as_kind::<Vertex>() {
+                let id = HatchId {
+                    floor: draw_state.curr_floor,
+                    id: Uuid::new_v4(),
+                };
+
+                let hatch = Hatch { top_left: vtx };
+                draw_state.hatches.insert(id, hatch);
             }
         }
     }
@@ -1708,6 +1945,7 @@ fn change_floor(
                 ShapeKind::CircleFromThreePoints { first_two } => first_two.clear(),
             },
             DrawToolState::Door(_tool_state) => (),
+            DrawToolState::Hatch(_tool_state) => (),
         }
     }
 }

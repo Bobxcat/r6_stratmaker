@@ -448,9 +448,26 @@ impl Default for ShapeKind {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+enum ShapeHeight {
+    Full,
+    #[default]
+    Half,
+}
+
+impl ShapeHeight {
+    fn gizmo_color(self) -> Color {
+        match self {
+            ShapeHeight::Full => GizmoStyle::get().full_height_color,
+            ShapeHeight::Half => GizmoStyle::get().half_height_color,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct ShapeToolState {
     kind: ShapeKind,
+    height: ShapeHeight,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -587,18 +604,11 @@ impl DrawElementKind for Wall {
 impl DrawElementResolved for Wall<Vec2> {
     type GizmoCfg = DefaultGizmoConfigGroup;
     fn render_gizmo(&self, gizmos: &mut Gizmos) {
-        let color: Color;
-        match self.kind {
-            WallKind::Indestructable => {
-                color = Color::linear_rgb(0.05, 0.05, 0.1);
-            }
-            WallKind::Destructable => {
-                color = Color::linear_rgb(0.95, 0.95, 0.2);
-            }
-            WallKind::Half => {
-                color = Color::linear_rgb(0.95, 0.95, 1.);
-            }
-        }
+        let color = match self.kind {
+            WallKind::Indestructable => GizmoStyle::get().full_height_color,
+            WallKind::Destructable => GizmoStyle::get().destructable_color,
+            WallKind::Half => GizmoStyle::get().half_height_color,
+        };
         gizmos.line_2d(self.start, self.end, color);
 
         let cross_axis = self.cross_axis();
@@ -627,14 +637,17 @@ struct Rect<V = VertexId> {
     start: V,
     end: V,
     skew: f32,
+    #[serde(default)]
+    height: ShapeHeight,
 }
 
 impl Rect<Vec2> {
-    fn axis_aligned(start: Vec2, end: Vec2) -> Self {
+    fn axis_aligned(start: Vec2, end: Vec2, height: ShapeHeight) -> Self {
         Self {
             start,
             end,
             skew: -2. * (end - start).to_angle(),
+            height,
         }
     }
 
@@ -653,7 +666,7 @@ impl Rect<Vec2> {
         [self.start, cross[0], self.end, cross[1]]
     }
 
-    fn from_rotated_center_size(center: Vec2, rot: f32, size: Vec2) -> Self {
+    fn from_rotated_center_size(center: Vec2, rot: f32, size: Vec2, height: ShapeHeight) -> Self {
         let halfsize = 0.5 * size;
         let rot_vec = Vec2::from_angle(rot);
 
@@ -664,7 +677,12 @@ impl Rect<Vec2> {
 
         let skew = (start - center).angle_to(right - center);
 
-        Self { start, end, skew }
+        Self {
+            start,
+            end,
+            skew,
+            height,
+        }
     }
 
     /// Returns this rectangle in the form of `(center and rotation, size)`
@@ -702,6 +720,7 @@ impl DrawElementKind for Rect {
             start: draw_state.vertices[&self.start].pos,
             end: draw_state.vertices[&self.end].pos,
             skew: self.skew,
+            height: self.height,
         }
     }
 }
@@ -709,7 +728,7 @@ impl DrawElementKind for Rect {
 impl DrawElementResolved for Rect<Vec2> {
     type GizmoCfg = DefaultGizmoConfigGroup;
     fn render_gizmo(&self, gizmos: &mut Gizmos) {
-        let color = Color::linear_rgb(0.05, 0.05, 0.1);
+        let color = self.height.gizmo_color();
 
         let (iso, size) = self.as_rotated_center_size();
         gizmos.rect_2d(iso, size, color);
@@ -723,6 +742,8 @@ impl DrawElementResolved for Rect<Vec2> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CircleByThreePoints<V = VertexId> {
     points: [V; 3],
+    #[serde(default)]
+    height: ShapeHeight,
 }
 
 impl DrawElementKind for CircleByThreePoints {
@@ -743,6 +764,7 @@ impl DrawElementKind for CircleByThreePoints {
     fn resolve(&self, draw_state: &DrawState) -> Self::Resolved {
         CircleByThreePoints {
             points: self.points.map(|vtx| draw_state.vertices[&vtx].pos),
+            height: self.height,
         }
     }
 }
@@ -750,13 +772,13 @@ impl DrawElementKind for CircleByThreePoints {
 impl DrawElementResolved for CircleByThreePoints<Vec2> {
     type GizmoCfg = DefaultGizmoConfigGroup;
     fn render_gizmo(&self, gizmos: &mut Gizmos) {
-        let circle_math = Circle::from_three_points(self.points).unwrap();
-
-        gizmos.circle_2d(
-            Isometry2d::from_translation(circle_math.center),
-            circle_math.radius,
-            Color::WHITE,
-        );
+        if let Some(circle_math) = Circle::from_three_points(self.points) {
+            gizmos.circle_2d(
+                Isometry2d::from_translation(circle_math.center),
+                circle_math.radius,
+                self.height.gizmo_color(),
+            );
+        }
     }
 
     fn bounding_box(&self) -> Aabb2d {
@@ -789,6 +811,7 @@ impl DoorResolved {
             self.center,
             dir.to_angle(),
             self.kind.size_meters() * self.pixels_per_meter,
+            ShapeHeight::Full,
         )
     }
 }
@@ -929,7 +952,7 @@ impl DrawElementKind for ScaleReference {
 impl DrawElementResolved for ScaleReference<Vec2> {
     type GizmoCfg = ScaleReferenceGizmoConfigGroup;
     fn render_gizmo(&self, gizmos: &mut Gizmos<ScaleReferenceGizmoConfigGroup>) {
-        let color = Color::linear_rgb(0., 0.4, 1.);
+        let color = GizmoStyle::get().scale_ref_color;
 
         gizmos.line_2d(self.endpoints[0], self.endpoints[1], color);
 
@@ -1091,7 +1114,8 @@ impl DrawState {
                 .set("y", self.viewbox.min.y)
                 .set("width", self.viewbox.max.x - self.viewbox.min.x)
                 .set("height", self.viewbox.max.y - self.viewbox.min.y)
-                .set("fill", "#614cb6"),
+                .set("fill", style.background_color.to_srgba().to_hex()),
+            // .set("fill", "#614cb6"),
         );
 
         // Rectangles
@@ -1104,7 +1128,10 @@ impl DrawState {
 
             let data = create_path_data(rect.corners_ccw());
 
-            let color = style.polygon_color;
+            let color = match rect.height {
+                ShapeHeight::Full => style.full_height_color,
+                ShapeHeight::Half => style.half_height_color,
+            };
 
             document.append(
                 svg::node::element::Path::new()
@@ -1123,7 +1150,10 @@ impl DrawState {
 
             let circle_math = Circle::from_three_points(circle.resolve(self).points).unwrap();
 
-            let color = style.polygon_color;
+            let color = match circle.height {
+                ShapeHeight::Full => style.full_height_color,
+                ShapeHeight::Half => style.half_height_color,
+            };
 
             document.append(
                 svg::node::element::Circle::new()
@@ -1152,7 +1182,7 @@ impl DrawState {
             let top_right = aabb.max;
             let bot_right = vec2(aabb.max.x, aabb.min.y);
 
-            let color = style.wall_destructable_color;
+            let color = style.destructable_color;
 
             document.append(
                 svg::node::element::Path::new()
@@ -1182,20 +1212,22 @@ impl DrawState {
             let wall = wall.resolve(self);
 
             let color = match wall.kind {
-                WallKind::Indestructable => style.wall_indestructable_color,
-                WallKind::Destructable => style.wall_destructable_color,
-                WallKind::Half => todo!(),
+                WallKind::Indestructable => style.full_height_color,
+                WallKind::Destructable => style.destructable_color,
+                WallKind::Half => style.half_height_color,
             };
 
-            let doors_on_wall = self
+            let mut doors_on_wall = self
                 .doors
                 .iter()
                 .filter(|(id, door)| id.floor == floor && door.wall == *wall_id)
                 .collect::<Vec<_>>();
+            doors_on_wall.sort_by_key(|(_, door)| {
+                OrderedFloat(door.resolve(self).center.distance(wall.start))
+            });
 
             let wall_dir = (wall.end - wall.start).normalize_or_zero();
             let mut prev_pt = wall.start;
-            // FIXME: This doesn't work because the doors aren't ordered from "start" to "end" of the wall
             for (_, door) in doors_on_wall {
                 let door = door.resolve(self);
 
@@ -1370,19 +1402,10 @@ impl DrawState {
                     .distance
             }
             DrawElementId::Rect(id) => {
-                let rect = &self.rectangles[id];
-                let rect_math = Rect {
-                    start: self.vertices[&rect.start].pos,
-                    end: self.vertices[&rect.end].pos,
-                    skew: rect.skew,
-                };
+                let rect = Rect::get_resolved(self, *id);
 
                 // FIXME: Maybe add actual distance calculation? Although selection should require clicking within the shape
-                if rect_math.contains(mouse_pos) {
-                    0.
-                } else {
-                    1000.
-                }
+                if rect.contains(mouse_pos) { 0. } else { 1000. }
             }
             DrawElementId::CircleByThreePoints(id) => {
                 let circle = &self.circles_by_three_points[id];
@@ -1407,7 +1430,12 @@ impl DrawState {
             DrawElementId::Hatch(id) => {
                 let hatch = Hatch::get_resolved(self, *id);
                 let aabb = hatch.bounding_box();
-                let rect = Rect::from_rotated_center_size(aabb.center(), 0., aabb.half_size() * 2.);
+                let rect = Rect::from_rotated_center_size(
+                    aabb.center(),
+                    0.,
+                    aabb.half_size() * 2.,
+                    ShapeHeight::Full,
+                );
 
                 if rect.contains(mouse_pos) { 0. } else { 1000. }
             }
@@ -1474,13 +1502,34 @@ impl DrawState {
     }
 }
 
+struct GizmoStyle {
+    destructable_color: Color,
+    full_height_color: Color,
+    half_height_color: Color,
+    scale_ref_color: Color,
+}
+
+impl GizmoStyle {
+    fn get() -> Self {
+        const {
+            Self {
+                destructable_color: Color::linear_rgb(0.95, 0.95, 0.2),
+                full_height_color: Color::linear_rgb(0.05, 0.05, 0.1),
+                half_height_color: Color::linear_rgb(0.95, 0.95, 1.),
+                scale_ref_color: Color::linear_rgb(0., 0.4, 1.),
+            }
+        }
+    }
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct RenderStyle {
     #[serde(skip)]
     name: String,
-    wall_indestructable_color: Color,
-    wall_destructable_color: Color,
-    polygon_color: Color,
+    background_color: Color,
+    destructable_color: Color,
+    full_height_color: Color,
+    half_height_color: Color,
 }
 
 impl RenderStyle {
@@ -1703,6 +1752,7 @@ fn update_draw_tool_state_preview(
                         start: start_pos,
                         end: end_pos,
                         skew: skew_angle,
+                        height: tool_state.height,
                     }
                     .render_gizmo(&mut gizmos);
                 }
@@ -1711,7 +1761,8 @@ fn update_draw_tool_state_preview(
                 if let Some(start) = start {
                     let start_pos = draw_state.vertices[&start].pos;
                     let end_pos = hovered_vtx_or_mouse_pos;
-                    Rect::axis_aligned(start_pos, end_pos).render_gizmo(&mut gizmos);
+                    Rect::axis_aligned(start_pos, end_pos, tool_state.height)
+                        .render_gizmo(&mut gizmos);
                 }
             }
             ShapeKind::CircleFromThreePoints { first_two } => {
@@ -1720,13 +1771,11 @@ fn update_draw_tool_state_preview(
                     let b = draw_state.vertices[&first_two[1]].pos;
                     let end = hovered_vtx_or_mouse_pos;
 
-                    if let Some(circle) = Circle::from_three_points([a, b, end]) {
-                        gizmos.circle_2d(
-                            Isometry2d::from_translation(circle.center),
-                            circle.radius,
-                            Color::WHITE,
-                        );
+                    CircleByThreePoints {
+                        points: [a, b, end],
+                        height: tool_state.height,
                     }
+                    .render_gizmo(&mut gizmos);
                 }
             }
         },
@@ -1951,6 +2000,13 @@ fn draw_tool_update(
                 tool_state.kind = ShapeKind::CircleFromThreePoints { first_two: vec![] };
             }
 
+            if keyboard.just_pressed(KeyCode::BracketRight) {
+                tool_state.height = ShapeHeight::Full;
+            }
+            if keyboard.just_pressed(KeyCode::BracketLeft) {
+                tool_state.height = ShapeHeight::Half;
+            }
+
             match &mut tool_state.kind {
                 ShapeKind::RectangleByDiagonal { start, skew_angle } => {
                     let skew_change_speed = if keyboard.pressed(KeyCode::ShiftLeft) {
@@ -1975,6 +2031,7 @@ fn draw_tool_update(
                                     start: start_vtx,
                                     end: vtx,
                                     skew: *skew_angle,
+                                    height: tool_state.height,
                                 };
                                 let id = RectId {
                                     floor: draw_state.curr_floor,
@@ -2001,12 +2058,14 @@ fn draw_tool_update(
                                 let skew = Rect::axis_aligned(
                                     draw_state.vertices[&start_vtx].pos,
                                     draw_state.vertices[&vtx].pos,
+                                    tool_state.height,
                                 )
                                 .skew;
                                 let rect = Rect {
                                     start: start_vtx,
                                     end: vtx,
                                     skew,
+                                    height: tool_state.height,
                                 };
                                 let id = RectId {
                                     floor: draw_state.curr_floor,
@@ -2046,6 +2105,7 @@ fn draw_tool_update(
                                     id,
                                     CircleByThreePoints {
                                         points: first_two.clone().try_into().unwrap(),
+                                        height: tool_state.height,
                                     },
                                 );
                                 draw_state.selection.clear();
@@ -2090,7 +2150,9 @@ fn draw_tool_update(
             }
         }
         DrawToolState::Hatch(_tool_state) => {
-            if let Some(vtx) = hovered_element.0.as_kind::<Vertex>() {
+            if let Some(vtx) = hovered_element.0.as_kind::<Vertex>()
+                && just_clicked
+            {
                 let id = HatchId {
                     floor: draw_state.curr_floor,
                     id: Uuid::new_v4(),
@@ -2174,10 +2236,29 @@ fn update_selection(
     }
 }
 
-fn handle_delete_selection(mut draw_state: ResMut<DrawState>, keyboard: Res<ButtonInput<KeyCode>>) {
+fn handle_delete_selection(
+    mut draw_state: ResMut<DrawState>,
+    mut tool_state: ResMut<DrawToolState>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
     if keyboard.just_pressed(KeyCode::Delete) {
         for id in draw_state.selection.clone() {
             draw_state.remove_element(id);
+        }
+        match &mut *tool_state {
+            DrawToolState::PlaceVertex(tool_state) => tool_state.prev_point = None,
+            DrawToolState::Wall(tool_state) => tool_state.start = None,
+            DrawToolState::Shape(tool_state) => match &mut tool_state.kind {
+                ShapeKind::RectangleByDiagonal {
+                    start,
+                    skew_angle: _,
+                } => *start = None,
+                ShapeKind::RectangleAxisAligned { start } => *start = None,
+                ShapeKind::CircleFromThreePoints { first_two } => *first_two = vec![],
+            },
+            DrawToolState::Door(_tool_state) => (),
+            DrawToolState::Hatch(_tool_state) => (),
+            DrawToolState::ScaleReference(tool_state) => tool_state.start = None,
         }
     }
 }

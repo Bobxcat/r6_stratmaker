@@ -998,6 +998,7 @@ struct DrawState {
     #[serde(default)]
     scale_reference: Option<(ScaleReferenceId, ScaleReference)>,
 
+    /// NOTE: This aabb is in world coordinates, not accounting for the y-flip of SVG coordinates!
     #[serde(skip)]
     #[serde(default = "default_draw_state_viewbox")]
     viewbox: Aabb2d,
@@ -1112,12 +1113,15 @@ impl DrawState {
 
         let mut document = svg::Document::new();
 
+        let vbmin = vec2(self.viewbox.min.x, -self.viewbox.max.y);
+        let vbmax = vec2(self.viewbox.max.x, -self.viewbox.min.y);
+
         document.append(
             svg::node::element::Rectangle::new()
-                .set("x", self.viewbox.min.x)
-                .set("y", self.viewbox.min.y)
-                .set("width", self.viewbox.max.x - self.viewbox.min.x)
-                .set("height", self.viewbox.max.y - self.viewbox.min.y)
+                .set("x", vbmin.x)
+                .set("y", vbmin.y)
+                .set("width", vbmax.x - vbmin.x)
+                .set("height", vbmax.y - vbmin.y)
                 .set("fill", style.background_color.to_srgba().to_hex()),
         );
 
@@ -1292,12 +1296,7 @@ impl DrawState {
 
         document = document.set(
             "viewBox",
-            (
-                self.viewbox.min.x,
-                self.viewbox.min.y,
-                self.viewbox.max.x - self.viewbox.min.x,
-                self.viewbox.max.y - self.viewbox.min.y,
-            ),
+            (vbmin.x, vbmin.y, vbmax.x - vbmin.x, vbmax.y - vbmin.y),
         );
 
         document

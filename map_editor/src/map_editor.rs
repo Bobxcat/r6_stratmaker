@@ -1115,7 +1115,6 @@ impl DrawState {
                 .set("width", self.viewbox.max.x - self.viewbox.min.x)
                 .set("height", self.viewbox.max.y - self.viewbox.min.y)
                 .set("fill", style.background_color.to_srgba().to_hex()),
-            // .set("fill", "#614cb6"),
         );
 
         // Rectangles
@@ -1137,7 +1136,8 @@ impl DrawState {
                 svg::node::element::Path::new()
                     .set("transform", transform)
                     .set("fill", color.to_srgba().to_hex())
-                    .set("stroke", "none")
+                    .set("stroke", color.to_srgba().to_hex())
+                    .set("stroke-width", 0.75)
                     .set("d", data),
             );
         }

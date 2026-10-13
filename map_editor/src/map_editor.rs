@@ -72,55 +72,18 @@ fn load_selected_project(
     params: Res<MapEditorParameters>,
     assets: Res<AssetServer>,
 ) {
-    let project_dir = PathBuf::from("projects").join(&params.project_name);
-    let draw_state_data_file = project_dir.join(PROJECT_FILE_NAME);
+    let draw_state = DrawState::load_from_project_name(&params.project_name);
 
-    let floors_txt_contents = std::fs::read_to_string(project_dir.join("floors.txt")).unwrap();
-    let floor_names = floors_txt_contents
-        .split("\n")
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    let viewbox = match std::fs::read_to_string(project_dir.join("viewbox.txt")).map(|txt| {
-        txt.split(",")
-            .map(|elem| elem.trim().to_string())
-            .filter(|elem| !elem.is_empty())
-            .filter_map(|elem| elem.parse::<f32>().ok())
-            .collect::<Vec<_>>()
-    }) {
-        Ok(viewbox_file_parts) if viewbox_file_parts.len() >= 4 => Aabb2d {
-            min: vec2(viewbox_file_parts[0], viewbox_file_parts[1]),
-            max: vec2(viewbox_file_parts[2], viewbox_file_parts[3]),
-        },
-        _ => default_draw_state_viewbox(),
+    let mut background_img = BackgroundImage {
+        curr_floor_idx: usize::MAX,
+        img_cache: HashMap::new(),
     };
 
-    let mut draw_state: DrawState = if let Some(loaded) =
-        std::fs::read_to_string(draw_state_data_file)
-            .ok()
-            .and_then(|s| ron::from_str(&s).ok())
-    {
-        loaded
-    } else {
-        DrawState::default()
-    };
-
-    draw_state.floor_names = floor_names;
-    draw_state.viewbox = viewbox;
-
-    {
-        let mut background_img = BackgroundImage {
-            curr_floor_idx: usize::MAX,
-            img_cache: HashMap::new(),
-        };
-
-        for floor_name in &draw_state.floor_names {
-            background_img.get_img(&assets, floor_name, &params.project_name);
-        }
-
-        commands.spawn((DespawnOnExit(AppState::MapEditor), background_img));
+    for floor_name in &draw_state.floor_names {
+        background_img.get_img(&assets, floor_name, &params.project_name);
     }
+
+    commands.spawn((DespawnOnExit(AppState::MapEditor), background_img));
 
     commands.spawn((
         DespawnOnExit(AppState::MapEditor),
@@ -1084,6 +1047,47 @@ impl DrawState {
         }
     }
 
+    fn load_from_project_name(project_name: &str) -> Self {
+        let project_dir = PathBuf::from("projects").join(project_name);
+        let draw_state_data_file = project_dir.join(PROJECT_FILE_NAME);
+
+        let floors_txt_contents = std::fs::read_to_string(project_dir.join("floors.txt")).unwrap();
+        let floor_names = floors_txt_contents
+            .split("\n")
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        let viewbox = match std::fs::read_to_string(project_dir.join("viewbox.txt")).map(|txt| {
+            txt.split(",")
+                .map(|elem| elem.trim().to_string())
+                .filter(|elem| !elem.is_empty())
+                .filter_map(|elem| elem.parse::<f32>().ok())
+                .collect::<Vec<_>>()
+        }) {
+            Ok(viewbox_file_parts) if viewbox_file_parts.len() >= 4 => Aabb2d {
+                min: vec2(viewbox_file_parts[0], viewbox_file_parts[1]),
+                max: vec2(viewbox_file_parts[2], viewbox_file_parts[3]),
+            },
+            _ => default_draw_state_viewbox(),
+        };
+
+        let mut draw_state: DrawState = if let Some(loaded) =
+            std::fs::read_to_string(draw_state_data_file)
+                .ok()
+                .and_then(|s| ron::from_str(&s).ok())
+        {
+            loaded
+        } else {
+            DrawState::default()
+        };
+
+        draw_state.floor_names = floor_names;
+        draw_state.viewbox = viewbox;
+
+        draw_state
+    }
+
     fn render_floor_to_svg(&self, floor: usize, style: &RenderStyle) -> svg::Document {
         fn create_path_data(
             points: impl IntoIterator<Item = Vec2>,
@@ -1299,9 +1303,15 @@ impl DrawState {
         document
     }
 
-    fn save_and_render(&self, save_dir: impl AsRef<std::path::Path>) {
+    fn save_and_render(
+        &self,
+        save_dir: impl AsRef<std::path::Path>,
+        render_dir: impl AsRef<std::path::Path>,
+    ) {
         let save_dir = save_dir.as_ref();
+        let render_dir = render_dir.as_ref();
         std::fs::create_dir_all(save_dir).unwrap();
+        std::fs::create_dir_all(render_dir).unwrap();
 
         std::fs::write(
             save_dir.join(PROJECT_FILE_NAME),
@@ -1312,7 +1322,7 @@ impl DrawState {
         for floor in 0..self.floor_names.len() {
             let floor_name = &self.floor_names[floor];
             for style in RenderStyle::load_all() {
-                let path = save_dir.join(format!("{floor_name}_{}.svg", style.name));
+                let path = render_dir.join(format!("{floor_name}_{}.svg", style.name));
 
                 let document = self.render_floor_to_svg(floor, &style);
 
@@ -2269,7 +2279,8 @@ fn handle_saving(
     params: Res<MapEditorParameters>,
 ) {
     if keyboard.just_pressed(KeyCode::KeyS) && keyboard.pressed(KeyCode::ControlLeft) {
-        draw_state.save_and_render(format!("projects/{}", params.project_name));
+        let dir = format!("projects/{}", params.project_name);
+        draw_state.save_and_render(&dir, &dir)
     }
 }
 

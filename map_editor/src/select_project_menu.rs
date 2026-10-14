@@ -1,9 +1,12 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, time::Instant};
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 
-use crate::{AppState, map_editor::MapEditorParameters};
+use crate::{
+    AppState,
+    map_editor::{DrawState, MapEditorParameters},
+};
 
 pub struct SelectProjectMenuPlugin;
 
@@ -79,6 +82,24 @@ fn load_project_list(mut commands: Commands) -> Result {
     Ok(())
 }
 
+fn render_all_projects() -> Result {
+    println!("Render started!");
+    let start = Instant::now();
+
+    let export_dir = PathBuf::from("renders");
+    for proj in std::fs::read_dir("projects")? {
+        let proj = proj?;
+        let proj_name = proj.file_name().to_str().unwrap().to_string();
+
+        let draw = DrawState::load_from_project_name(&proj_name);
+        draw.render(export_dir.join(&proj_name));
+        println!("--Render finished for: {proj_name}");
+    }
+
+    println!("Render finished in: {:?}", start.elapsed());
+    Ok(())
+}
+
 fn ui_system(
     mut commands: Commands,
     mut contexts: EguiContexts,
@@ -96,16 +117,24 @@ fn ui_system(
 
     egui::CentralPanel::default().show(&mut viewport_ui, |ui| {
         ui.label("Select Project");
-        ui.vertical(|ui| {
-            for proj in &project_list.projects {
-                if ui.button(&proj.dir_name).clicked() {
-                    next_app_state.set(AppState::MapEditor);
-                    commands.insert_resource(MapEditorParameters {
-                        project_name: proj.dir_name.clone(),
-                    });
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                for proj in &project_list.projects {
+                    if ui.button(&proj.dir_name).clicked() {
+                        next_app_state.set(AppState::MapEditor);
+                        commands.insert_resource(MapEditorParameters {
+                            project_name: proj.dir_name.clone(),
+                        });
+                    }
                 }
-            }
-        });
+            });
+
+            ui.vertical(|ui| {
+                if ui.button("RENDER ALL PROJECTS").clicked() {
+                    render_all_projects().unwrap();
+                }
+            });
+        })
     });
 
     Ok(())

@@ -982,7 +982,7 @@ enum PrevDrawAction {
 
 /// It's expected that, at any time, any `DrawElementId` within the DrawState is valid
 #[derive(Resource, Serialize, Deserialize)]
-struct DrawState {
+pub struct DrawState {
     #[serde(default)]
     vertices: HashMap<VertexId, Vertex>,
     #[serde(default)]
@@ -1048,7 +1048,7 @@ impl DrawState {
         }
     }
 
-    fn load_from_project_name(project_name: &str) -> Self {
+    pub fn load_from_project_name(project_name: &str) -> Self {
         let project_dir = PathBuf::from("projects").join(project_name);
         let draw_state_data_file = project_dir.join(PROJECT_FILE_NAME);
 
@@ -1302,21 +1302,19 @@ impl DrawState {
         document
     }
 
-    fn save_and_render(
-        &self,
-        save_dir: impl AsRef<std::path::Path>,
-        render_dir: impl AsRef<std::path::Path>,
-    ) {
+    pub fn save(&self, save_dir: impl AsRef<std::path::Path>) {
         let save_dir = save_dir.as_ref();
-        let render_dir = render_dir.as_ref();
         std::fs::create_dir_all(save_dir).unwrap();
-        std::fs::create_dir_all(render_dir).unwrap();
-
         std::fs::write(
             save_dir.join(PROJECT_FILE_NAME),
             ron::to_string(self).unwrap(),
         )
         .unwrap();
+    }
+
+    pub fn render(&self, render_dir: impl AsRef<std::path::Path>) {
+        let render_dir = render_dir.as_ref();
+        std::fs::create_dir_all(render_dir).unwrap();
 
         for floor in 0..self.floor_names.len() {
             let floor_name = &self.floor_names[floor];
@@ -1328,6 +1326,15 @@ impl DrawState {
                 svg::save(path, &document).unwrap();
             }
         }
+    }
+
+    pub fn save_and_render(
+        &self,
+        save_dir: impl AsRef<std::path::Path>,
+        render_dir: impl AsRef<std::path::Path>,
+    ) {
+        self.save(save_dir);
+        self.render(render_dir);
     }
 
     fn remove_element(&mut self, generic_id: DrawElementId) {

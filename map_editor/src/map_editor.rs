@@ -2285,8 +2285,10 @@ fn handle_saving(
     params: Res<MapEditorParameters>,
 ) {
     if keyboard.just_pressed(KeyCode::KeyS) && keyboard.pressed(KeyCode::ControlLeft) {
-        let dir = format!("projects/{}", params.project_name);
-        draw_state.save_and_render(&dir, &dir)
+        draw_state.save_and_render(
+            format!("projects/{}", params.project_name),
+            format!("renders/{}", params.project_name),
+        )
     }
 }
 

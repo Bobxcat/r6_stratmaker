@@ -157,8 +157,6 @@ export interface GetMapMetadata {
 
 export interface GetMapMetadataResponse {
   floors: string[];
-  boundsMin: Point | undefined;
-  boundsMax: Point | undefined;
 }
 
 /** GetStratInfo */
@@ -2882,19 +2880,13 @@ export const GetMapMetadata: MessageFns<GetMapMetadata> = {
 };
 
 function createBaseGetMapMetadataResponse(): GetMapMetadataResponse {
-  return { floors: [], boundsMin: undefined, boundsMax: undefined };
+  return { floors: [] };
 }
 
 export const GetMapMetadataResponse: MessageFns<GetMapMetadataResponse> = {
   encode(message: GetMapMetadataResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     for (const v of message.floors) {
       writer.uint32(10).string(v!);
-    }
-    if (message.boundsMin !== undefined) {
-      Point.encode(message.boundsMin, writer.uint32(18).fork()).join();
-    }
-    if (message.boundsMax !== undefined) {
-      Point.encode(message.boundsMax, writer.uint32(26).fork()).join();
     }
     return writer;
   },
@@ -2920,22 +2912,6 @@ export const GetMapMetadataResponse: MessageFns<GetMapMetadataResponse> = {
             message.floors.push(reader.string());
             continue;
           }
-          case 2: {
-            if (tag !== 18) {
-              break;
-            }
-
-            message.boundsMin = Point.decode(reader, reader.uint32());
-            continue;
-          }
-          case 3: {
-            if (tag !== 26) {
-              break;
-            }
-
-            message.boundsMax = Point.decode(reader, reader.uint32());
-            continue;
-          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -2951,8 +2927,6 @@ export const GetMapMetadataResponse: MessageFns<GetMapMetadataResponse> = {
   fromJSON(object: any): GetMapMetadataResponse {
     return {
       floors: globalThis.Array.isArray(object?.floors) ? object.floors.map((e: any) => globalThis.String(e)) : [],
-      boundsMin: isSet(object.boundsMin) ? Point.fromJSON(object.boundsMin) : undefined,
-      boundsMax: isSet(object.boundsMax) ? Point.fromJSON(object.boundsMax) : undefined,
     };
   },
 
@@ -2960,12 +2934,6 @@ export const GetMapMetadataResponse: MessageFns<GetMapMetadataResponse> = {
     const obj: any = {};
     if (message.floors?.length) {
       obj.floors = message.floors;
-    }
-    if (message.boundsMin !== undefined) {
-      obj.boundsMin = Point.toJSON(message.boundsMin);
-    }
-    if (message.boundsMax !== undefined) {
-      obj.boundsMax = Point.toJSON(message.boundsMax);
     }
     return obj;
   },
@@ -2976,12 +2944,6 @@ export const GetMapMetadataResponse: MessageFns<GetMapMetadataResponse> = {
   fromPartial<I extends Exact<DeepPartial<GetMapMetadataResponse>, I>>(object: I): GetMapMetadataResponse {
     const message = createBaseGetMapMetadataResponse();
     message.floors = object.floors?.map((e) => e) || [];
-    message.boundsMin = (object.boundsMin !== undefined && object.boundsMin !== null)
-      ? Point.fromPartial(object.boundsMin)
-      : undefined;
-    message.boundsMax = (object.boundsMax !== undefined && object.boundsMax !== null)
-      ? Point.fromPartial(object.boundsMax)
-      : undefined;
     return message;
   },
 };

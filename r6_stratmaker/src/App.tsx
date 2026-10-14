@@ -328,7 +328,7 @@ class DrawPath implements DrawElement {
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
     ctx.strokeStyle = this.color.toCss();
-    ctx.lineWidth = 3 * canvasScale;
+    ctx.lineWidth = 0.8 * canvasScale;
 
     this.points.forEach((pt, idx) => {
       if (idx == 0) {
@@ -388,7 +388,7 @@ class Arrow implements DrawElement {
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
     ctx.strokeStyle = this.color.toCss();
-    ctx.lineWidth = 3 * canvasScale;
+    ctx.lineWidth = 0.8 * canvasScale;
 
     ctx.moveTo(this.start.x, this.start.y);
     ctx.lineTo(this.end.x, this.end.y);
@@ -464,9 +464,37 @@ class IconPlacement implements DrawElement {
   pos: Vec2;
   size: number;
   info: IconInfo;
-  constructor(pos: Vec2, size: number, info: IconInfo) {
+  constructor(pos: Vec2, info: IconInfo) {
+    let iconSize = undefined;
+    switch (info.kind) {
+      case IconKind.TeamOperator: {
+        iconSize = 10;
+        break;
+      }
+      case IconKind.TeamAbility: {
+        iconSize = 6;
+        break;
+      }
+      case IconKind.TeamUtility: {
+        iconSize = 6;
+        break;
+      }
+      case IconKind.FreeOperator: {
+        iconSize = 10;
+        break;
+      }
+      case IconKind.FreeAbility: {
+        iconSize = 6;
+        break;
+      }
+      case IconKind.FreeUtility: {
+        iconSize = 6;
+        break;
+      }
+    }
+
     this.pos = pos;
-    this.size = size;
+    this.size = iconSize;
     this.info = info;
   }
 
@@ -490,34 +518,7 @@ class IconPlacement implements DrawElement {
       throw new Error(e);
     };
 
-    let iconSize;
-    switch (parsedIconInfo.kind) {
-      case IconKind.TeamOperator: {
-        iconSize = 50;
-        break;
-      }
-      case IconKind.TeamAbility: {
-        iconSize = 30;
-        break;
-      }
-      case IconKind.TeamUtility: {
-        iconSize = 30;
-        break;
-      }
-      case IconKind.FreeOperator: {
-        iconSize = 50;
-        break;
-      }
-      case IconKind.FreeAbility: {
-        iconSize = 30;
-        break;
-      }
-      case IconKind.FreeUtility: {
-        iconSize = 30;
-        break;
-      }
-    }
-    return new IconPlacement(Vec2.fromProto(icon.pos!), iconSize, parsedIconInfo)
+    return new IconPlacement(Vec2.fromProto(icon.pos!), parsedIconInfo)
   }
 
   toProto(): protos.Icon {
@@ -564,7 +565,7 @@ class IconPlacement implements DrawElement {
     return this;
   }
   clone(): DrawElement {
-    return new IconPlacement(this.pos, this.size, Object.assign({}, this.info));
+    return new IconPlacement(this.pos, Object.assign({}, this.info));
   }
   isHovered(mousePos: Vec2): boolean {
     return this.boundingBox().containsPoint(mousePos);
@@ -846,7 +847,6 @@ class StratEditingState {
   mapFloors: string[] = [];
   mapImgWidth: number = 1600;
   mapImgHeight: number = 900;
-  mapImgBounds: Aabb = new Aabb();
   prevCanvasScales: DeepMap<string, number> = new DeepMap();
   selectedFloor: number = 0;
 
@@ -1255,6 +1255,8 @@ const canvasIds = {
   inputGathering: "input-gathering-canvas",
 };
 
+let getMapDimensionsUseEffectCurrMap = "";
+
 function App() {
   const [stratEditingStateDisplay, setStratEditingStateDisplay] = useState<StratEditingState>(new StratEditingState());
   const [stratEditingCanvasWidth, setStratEditingCanvasWidth] = useState<number>(1600);
@@ -1306,11 +1308,29 @@ function App() {
     }
   }, [currPage])
 
+  useEffect(() => {
+    async function getMapDimensions(map: string) {
+      let img = new Image();
+      img.onload = () => {
+        stratEditingState.mapImgHeight = img.height;
+        stratEditingState.mapImgWidth = img.width;
+        updateStratEditingStateDisplay();
+      };
+      img.src = getFloorImgPath(map, "floor_1");
+    }
+
+    let newMap = stratEditingState.map;
+    if (getMapDimensionsUseEffectCurrMap != newMap) {
+      getMapDimensionsUseEffectCurrMap = newMap;
+      getMapDimensions(newMap);
+    }
+  }, [stratEditingStateDisplay]);
+
   //** Returns whether or not the size of the canvas has changed */
   function recalculateStratEditingCanvasSize(): boolean {
     let width = window.innerWidth / 2;
-    let height = (stratEditingState.mapImgBounds.height() / stratEditingState.mapImgBounds.width()) * width;
-    canvasScale = width / stratEditingState.mapImgBounds.width();
+    let height = (stratEditingState.mapImgHeight / stratEditingState.mapImgWidth) * width;
+    canvasScale = width / stratEditingState.mapImgWidth;
     if (Math.abs(width - stratEditingCanvasWidth) > 0.01) {
       setStratEditingCanvasWidth(width);
       setStratEditingCanvasHeight(height);
@@ -1321,7 +1341,8 @@ function App() {
   }
 
   function getFloorImgPath(map: string, floor: string): string {
-    return `/maps/${map}/${floor}.jpg`
+    let style = "default";
+    return `/maps/${map}/${floor}_${style}.svg`
   }
 
   function updateStratEditingStateDisplay() {
@@ -1394,10 +1415,6 @@ function App() {
       if (stratEditingState.getPhasesRef().length == 0) {
         stratEditingState.pushEmptyPhaseRaw("Phase 0");
       }
-      stratEditingState.mapImgBounds = Aabb.fromPoints([
-        Vec2.fromProto(msg.getMapMetadataResponse.boundsMin!),
-        Vec2.fromProto(msg.getMapMetadataResponse.boundsMax!)
-      ]);
       updateStratEditingStateDisplay();
     } else if (msg.getMapListResponse) {
       mapList = msg.getMapListResponse.maps;
@@ -1951,35 +1968,8 @@ function App() {
           case DrawTool.PlaceIcon: {
             const toolState = stratEditingState.toolStates.placeIcon;
 
-            let iconSize;
-            switch (toolState.selectedIcon.kind) {
-              case IconKind.TeamOperator: {
-                iconSize = 50;
-                break;
-              }
-              case IconKind.TeamAbility: {
-                iconSize = 30;
-                break;
-              }
-              case IconKind.TeamUtility: {
-                iconSize = 30;
-                break;
-              }
-              case IconKind.FreeOperator: {
-                iconSize = 50;
-                break;
-              }
-              case IconKind.FreeAbility: {
-                iconSize = 30;
-                break;
-              }
-              case IconKind.FreeUtility: {
-                iconSize = 30;
-                break;
-              }
-            }
 
-            const icon = new IconPlacement(inputCanvasState.mousePos.clone(), iconSize, toolState.selectedIcon);
+            const icon = new IconPlacement(inputCanvasState.mousePos.clone(), toolState.selectedIcon);
 
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
               drawElementToCanvas(canvasIds.freeDraw, icon, stratEditingState.selectedFloor);
@@ -2542,7 +2532,7 @@ function App() {
 
           {/* Draw Area */}
           <div id="draw-area" style={{ margin: 8, display: "grid", gridTemplateColumns: "1", gridTemplateRows: "1" }}>
-            <div id="map-img-container" style={{
+            {/*<div id="map-img-container" style={{
               overflow: "hidden",
               gridColumn: 1, gridRow: 1, zIndex: 0,
               backgroundImage: `url(${getFloorImgPath(stratEditingStateDisplay.map, stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.selectedFloor])}`,
@@ -2551,7 +2541,15 @@ function App() {
               backgroundPositionX: -stratEditingStateDisplay.mapImgBounds.minPt.x * (stratEditingCanvasWidth / stratEditingStateDisplay.mapImgBounds.width()),
               backgroundPositionY: -stratEditingStateDisplay.mapImgBounds.minPt.y * (stratEditingCanvasHeight / stratEditingStateDisplay.mapImgBounds.height()),
             }}>
+            </div>*/}
+            <div id="map-img-container" style={{
+              overflow: "hidden",
+              gridColumn: 1, gridRow: 1, zIndex: 0,
+              backgroundImage: `url(${getFloorImgPath(stratEditingStateDisplay.map, stratEditingStateDisplay.mapFloors[stratEditingStateDisplay.selectedFloor])}`,
+              backgroundSize: `${stratEditingCanvasWidth}, ${stratEditingCanvasHeight}`
+            }}>
             </div>
+
             <canvas id={canvasIds.freeDraw}
               style={{ gridColumn: 1, gridRow: 1, zIndex: 1 }}
               width={stratEditingCanvasWidth}

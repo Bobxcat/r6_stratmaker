@@ -46,8 +46,6 @@ macro_rules! context_println {
 pub struct MapMetadata {
     pub name: &'static str,
     pub floors: &'static [&'static str],
-    pub bounding_box_min: [u32; 2],
-    pub bounding_box_max: [u32; 2],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,164 +128,110 @@ impl MapId {
             MapId::Bank => &MapMetadata {
                 name: "bank",
                 floors: &["basement", "floor_1", "floor_2", "roof"],
-                bounding_box_min: [440, 126],
-                bounding_box_max: [1251, 737],
             },
             MapId::Border => &MapMetadata {
                 name: "border",
                 floors: &["floor_1", "floor_2", "roof"],
-                bounding_box_min: [430, 100],
-                bounding_box_max: [1170, 760],
             },
             MapId::CalypsoCasino => &MapMetadata {
                 name: "calypso_casino",
                 floors: &["basement", "floor_1", "floor_2", "roof"],
-                bounding_box_min: [1780, 460],
-                bounding_box_max: [3000, 1600],
             },
             MapId::Chalet => &MapMetadata {
                 name: "chalet",
                 floors: &["basement", "floor_1", "floor_2", "roof"],
-                bounding_box_min: [450, 0],
-                bounding_box_max: [1230, 900],
             },
             MapId::CloseQuarter => &MapMetadata {
                 name: "close_quarter",
                 floors: &["floor_1", "floor_2"],
-                bounding_box_min: [380, 0],
-                bounding_box_max: [1250, 900],
             },
             MapId::Clubhouse => &MapMetadata {
                 name: "clubhouse",
                 floors: &["basement", "floor_1", "floor_2", "roof"],
-                bounding_box_min: [200, 0],
-                bounding_box_max: [1390, 900],
             },
             MapId::Coastline => &MapMetadata {
                 name: "coastline",
                 floors: &["floor_1", "floor_2", "roof"],
-                bounding_box_min: [390, 130],
-                bounding_box_max: [1100, 750],
             },
             MapId::Consulate => &MapMetadata {
                 name: "consulate",
                 floors: &["basement", "floor_1", "floor_2", "roof"],
-                bounding_box_min: [760, 410],
-                bounding_box_max: [1170, 722],
             },
             MapId::EmeraldPlains => &MapMetadata {
                 name: "emerald_plains",
                 floors: &["floor_1", "floor_2", "roof"],
-                bounding_box_min: [300, 0],
-                bounding_box_max: [1290, 840],
             },
             MapId::Favela => &MapMetadata {
                 name: "favela",
                 floors: &["basement", "floor_1", "floor_2", "floor_3", "roof"],
-                bounding_box_min: [375, 0],
-                bounding_box_max: [1180, 800],
             },
             MapId::Fortress => &MapMetadata {
                 name: "fortress",
                 floors: &["floor_1", "floor_2", "roof"],
-                bounding_box_min: [817, 367],
-                bounding_box_max: [1066, 616],
             },
             MapId::HerefordBase => &MapMetadata {
                 name: "hereford_base",
                 floors: &["basement", "floor_1", "floor_2", "floor_3", "roof"],
-                bounding_box_min: [890, 520],
-                bounding_box_max: [1150, 780],
             },
             MapId::House => &MapMetadata {
                 name: "house",
                 floors: &["basement", "floor_1", "floor_2", "roof"],
-                bounding_box_min: [530, 130],
-                bounding_box_max: [1200, 780],
             },
             MapId::Kafe => &MapMetadata {
                 name: "kafe",
                 floors: &["floor_1", "floor_2", "floor_3", "roof"],
-                bounding_box_min: [890, 400],
-                bounding_box_max: [1200, 600],
             },
             MapId::Kanal => &MapMetadata {
                 name: "kanal",
                 floors: &["basement_2", "basement_1", "floor_1", "floor_2", "roof"],
-                bounding_box_min: [800, 360],
-                bounding_box_max: [1225, 610],
             },
             MapId::Lair => &MapMetadata {
                 name: "lair",
                 floors: &["basement", "floor_1", "floor_2", "roof"],
-                bounding_box_min: [760, 370],
-                bounding_box_max: [1120, 615],
             },
             MapId::NighthavenLabs => &MapMetadata {
                 name: "nighthaven_labs",
                 floors: &["basement", "floor_1", "floor_2", "roof"],
-                bounding_box_min: [700, 200],
-                bounding_box_max: [1150, 660],
             },
             MapId::Oregon => &MapMetadata {
                 name: "oregon",
                 floors: &["basement", "floor_1", "floor_2", "floor_3", "roof"],
-                bounding_box_min: [305, 160],
-                bounding_box_max: [1090, 750],
             },
             MapId::Outback => &MapMetadata {
                 name: "outback",
                 floors: &["floor_1", "floor_2", "roof"],
-                bounding_box_min: [475, 170],
-                bounding_box_max: [1160, 760],
             },
             MapId::PresidentialPlane => &MapMetadata {
                 name: "presidential_plane",
                 floors: &["floor_1", "floor_2", "floor_3", "roof"],
-                bounding_box_min: [675, 390],
-                bounding_box_max: [1275, 675],
             },
             MapId::Skyscraper => &MapMetadata {
                 name: "skyscraper",
                 floors: &["floor_1", "floor_2", "roof"],
-                bounding_box_min: [540, 260],
-                bounding_box_max: [1293, 800],
             },
             MapId::StadiumAlpha => &MapMetadata {
                 name: "stadium_alpha",
                 floors: &["basement", "floor_1", "floor_2", "roof", "gantry"],
-                bounding_box_min: [1170, 525],
-                bounding_box_max: [1860, 1200],
             },
             MapId::StadiumBravo => &MapMetadata {
                 name: "stadium_bravo",
                 floors: &["basement", "floor_1", "floor_2", "roof"],
-                bounding_box_min: [1190, 520],
-                bounding_box_max: [1930, 1115],
             },
             MapId::ThemePark => &MapMetadata {
                 name: "theme_park",
                 floors: &["floor_1", "floor_2", "roof"],
-                bounding_box_min: [480, 220],
-                bounding_box_max: [1075, 640],
             },
             MapId::Tower => &MapMetadata {
                 name: "tower",
                 floors: &["basement", "floor_1", "floor_2", "roof"],
-                bounding_box_min: [500, 75],
-                bounding_box_max: [1260, 860],
             },
             MapId::Villa => &MapMetadata {
                 name: "villa",
                 floors: &["basement", "floor_1", "floor_2", "roof"],
-                bounding_box_min: [880, 170],
-                bounding_box_max: [1250, 575],
             },
             MapId::Yacht => &MapMetadata {
                 name: "yacht",
                 floors: &["floor_1", "floor_2", "floor_3", "floor_4", "roof"],
-                bounding_box_min: [540, 380],
-                bounding_box_max: [1230, 600],
             },
         }
     }
@@ -525,28 +469,13 @@ async fn handle_generic_message(
         }
         C2SInner::GetMapMetadata(msg) => {
             let map_id = MapId::from_map_name(&msg.map).unwrap();
-            let MapMetadata {
-                name: _,
-                floors,
-                bounding_box_min,
-                bounding_box_max,
-            } = *map_id.metadata();
+            let MapMetadata { name: _, floors } = *map_id.metadata();
 
             cl_state
                 .ws
                 .send_proto(S2CInner::GetMapMetadataResponse(
                     primary::GetMapMetadataResponse {
                         floors: floors.iter().map(|&s| String::from(s)).collect(),
-                        boundsMin: MessageField::some(primary::Point {
-                            x: bounding_box_min[0] as f64,
-                            y: bounding_box_min[1] as f64,
-                            special_fields: SpecialFields::new(),
-                        }),
-                        boundsMax: MessageField::some(primary::Point {
-                            x: bounding_box_max[0] as f64,
-                            y: bounding_box_max[1] as f64,
-                            special_fields: SpecialFields::new(),
-                        }),
                         special_fields: SpecialFields::new(),
                     },
                 ))

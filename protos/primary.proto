@@ -123,8 +123,6 @@ message GetMapMetadata {
 
 message GetMapMetadataResponse {
     repeated string floors = 1;
-    Point boundsMin = 2;
-    Point boundsMax = 3;
 }
 
 // GetStratInfo

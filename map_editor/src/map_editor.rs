@@ -295,6 +295,22 @@ impl LineIntersection {
             dist_along_b,
         })
     }
+
+    fn calculate_segment(a_start: Vec2, a_end: Vec2, b_start: Vec2, b_end: Vec2) -> Option<Self> {
+        Self::calculate(a_start, a_end - a_start, b_start, b_end - b_start).and_then(
+            |intersection| {
+                if 0. <= intersection.dist_along_a
+                    && intersection.dist_along_a <= a_end.distance(a_start)
+                    && 0. <= intersection.dist_along_b
+                    && intersection.dist_along_b <= b_end.distance(b_start)
+                {
+                    Some(intersection)
+                } else {
+                    None
+                }
+            },
+        )
+    }
 }
 
 /// Excludes the start and end points!
@@ -352,6 +368,7 @@ new_id_type!(VertexId);
 new_id_type!(WallId);
 new_id_type!(RectId);
 new_id_type!(CircleByThreePointsId);
+new_id_type!(PolygonId);
 new_id_type!(DoorId);
 new_id_type!(HatchId);
 
@@ -402,6 +419,9 @@ enum ShapeKind {
     },
     CircleFromThreePoints {
         first_two: Vec<VertexId>,
+    },
+    Polygon {
+        selected_points: Vec<VertexId>,
     },
 }
 
@@ -752,6 +772,85 @@ impl DrawElementResolved for CircleByThreePoints<Vec2> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct Polygon<V = VertexId> {
+    points: Vec<V>,
+    #[serde(default)]
+    height: ShapeHeight,
+}
+
+impl Polygon<Vec2> {
+    fn contains(&self, pt: Vec2) -> bool {
+        if self.points.len() < 3 {
+            return false;
+        }
+        // Raycast from any point outside the polygon to the test point
+
+        let ray_start = self.bounding_box().min - Vec2::ONE;
+
+        let mut intersections: u32 = 0;
+
+        for i in 1..self.points.len() {
+            if LineIntersection::calculate_segment(
+                ray_start,
+                pt,
+                self.points[i - 1],
+                self.points[i],
+            )
+            .is_some()
+            {
+                intersections += 1;
+            }
+        }
+
+        intersections % 2 == 1
+    }
+}
+
+impl DrawElementKind for Polygon {
+    type Id = PolygonId;
+
+    type Resolved = Polygon<Vec2>;
+
+    fn id_from_any(id: DrawElementId) -> Option<Self::Id> {
+        match id {
+            DrawElementId::Polygon(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    fn get(draw_state: &DrawState, id: Self::Id) -> &Self {
+        &draw_state.polygons[&id]
+    }
+
+    fn resolve(&self, draw_state: &DrawState) -> Self::Resolved {
+        Polygon {
+            points: self
+                .points
+                .iter()
+                .map(|vtx| draw_state.vertices[&vtx].pos)
+                .collect(),
+            height: self.height,
+        }
+    }
+}
+
+impl DrawElementResolved for Polygon<Vec2> {
+    type GizmoCfg = DefaultGizmoConfigGroup;
+
+    fn render_gizmo(&self, gizmos: &mut Gizmos<Self::GizmoCfg>) {
+        gizmos.linestrip_2d(self.points.iter().copied(), self.height.gizmo_color());
+    }
+
+    fn bounding_box(&self) -> Aabb2d {
+        if self.points.len() == 0 {
+            Aabb2d::new(Vec2::ZERO, Vec2::ZERO)
+        } else {
+            Aabb2d::from_point_cloud(Isometry2d::IDENTITY, &self.points)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Door {
     wall: WallId,
     center: Vec2,
@@ -952,6 +1051,7 @@ pub enum DrawElementId {
     Wall(WallId),
     Rect(RectId),
     CircleByThreePoints(CircleByThreePointsId),
+    Polygon(PolygonId),
     Door(DoorId),
     Hatch(HatchId),
     ScaleReference(ScaleReferenceId),
@@ -968,6 +1068,7 @@ impl DrawElementId {
             DrawElementId::Wall(id) => id.floor,
             DrawElementId::Rect(id) => id.floor,
             DrawElementId::CircleByThreePoints(id) => id.floor,
+            DrawElementId::Polygon(id) => id.floor,
             DrawElementId::Door(id) => id.floor,
             DrawElementId::Hatch(id) => id.floor,
             DrawElementId::ScaleReference(id) => id.floor,
@@ -991,6 +1092,8 @@ pub struct DrawState {
     rectangles: HashMap<RectId, Rect>,
     #[serde(default)]
     circles_by_three_points: HashMap<CircleByThreePointsId, CircleByThreePoints>,
+    #[serde(default)]
+    polygons: HashMap<PolygonId, Polygon>,
     #[serde(default)]
     doors: HashMap<DoorId, Door>,
     #[serde(default)]
@@ -1019,6 +1122,7 @@ impl Default for DrawState {
             walls: Default::default(),
             rectangles: Default::default(),
             circles_by_three_points: Default::default(),
+            polygons: Default::default(),
             doors: Default::default(),
             hatches: Default::default(),
             scale_reference: None,
@@ -1172,6 +1276,28 @@ impl DrawState {
                     .set("cy", circle_math.center.y)
                     .set("r", circle_math.radius),
             )
+        }
+
+        for (id, polygon) in &self.polygons {
+            if id.floor != floor {
+                continue;
+            }
+
+            let color = match polygon.height {
+                ShapeHeight::Full => style.full_height_color,
+                ShapeHeight::Half => style.half_height_color,
+            };
+
+            let data = create_path_data(polygon.resolve(self).points);
+
+            document.append(
+                svg::node::element::Path::new()
+                    .set("transform", transform)
+                    .set("fill", color.to_srgba().to_hex())
+                    .set("stroke", color.to_srgba().to_hex())
+                    .set("stroke-width", 0.75)
+                    .set("d", data),
+            );
         }
 
         // Hatches
@@ -1376,6 +1502,9 @@ impl DrawState {
             DrawElementId::CircleByThreePoints(id) => {
                 self.circles_by_three_points.remove(&id);
             }
+            DrawElementId::Polygon(id) => {
+                self.polygons.remove(&id);
+            }
             DrawElementId::Door(id) => {
                 self.doors.remove(&id);
             }
@@ -1433,6 +1562,15 @@ impl DrawState {
                     } else {
                         1000.
                     }
+                } else {
+                    1000.
+                }
+            }
+            DrawElementId::Polygon(id) => {
+                let polygon = Polygon::get_resolved(self, *id);
+
+                if polygon.contains(mouse_pos) {
+                    0.
                 } else {
                     1000.
                 }
@@ -1502,6 +1640,7 @@ impl DrawState {
             DrawElementId::CircleByThreePoints(id) => {
                 CircleByThreePoints::get_resolved(self, *id).bounding_box()
             }
+            DrawElementId::Polygon(id) => Polygon::get_resolved(self, *id).bounding_box(),
             DrawElementId::Door(id) => Door::get_resolved(self, *id).bounding_box(),
             DrawElementId::Hatch(id) => Hatch::get_resolved(self, *id).bounding_box(),
             DrawElementId::ScaleReference(id) => {
@@ -1683,6 +1822,12 @@ fn render_draw_elements(
         }
     }
 
+    for (id, polygon) in &draw_state.polygons {
+        if id.floor == draw_state.curr_floor {
+            polygon.resolve(&draw_state).render_gizmo(&mut gizmos);
+        }
+    }
+
     for (id, door) in &draw_state.doors {
         if id.floor == draw_state.curr_floor {
             door.resolve(&draw_state).render_gizmo(&mut gizmos);
@@ -1789,6 +1934,20 @@ fn update_draw_tool_state_preview(
 
                     CircleByThreePoints {
                         points: [a, b, end],
+                        height: tool_state.height,
+                    }
+                    .render_gizmo(&mut gizmos);
+                }
+            }
+            ShapeKind::Polygon { selected_points } => {
+                if selected_points.len() > 0 {
+                    let mut points = selected_points
+                        .iter()
+                        .map(|vtx| draw_state.vertices[vtx].pos)
+                        .collect::<Vec<_>>();
+                    points.push(hovered_vtx_or_mouse_pos);
+                    Polygon {
+                        points,
                         height: tool_state.height,
                     }
                     .render_gizmo(&mut gizmos);
@@ -2014,6 +2173,10 @@ fn draw_tool_update(
                 };
             } else if keyboard.just_pressed(KeyCode::KeyY) {
                 tool_state.kind = ShapeKind::CircleFromThreePoints { first_two: vec![] };
+            } else if keyboard.just_pressed(KeyCode::KeyU) {
+                tool_state.kind = ShapeKind::Polygon {
+                    selected_points: vec![],
+                };
             }
 
             if keyboard.just_pressed(KeyCode::BracketRight) {
@@ -2127,6 +2290,34 @@ fn draw_tool_update(
                                 draw_state.selection.clear();
                                 first_two.clear();
                             }
+                        }
+                    }
+                }
+                ShapeKind::Polygon { selected_points } => {
+                    if let Some(vtx) = hovered_element.0.as_kind::<Vertex>()
+                        && just_clicked
+                    {
+                        if selected_points
+                            .last()
+                            .is_none_or(|prev_vtx| *prev_vtx != vtx)
+                        {
+                            selected_points.push(vtx);
+                        }
+                        if selected_points.len() > 1 && vtx == selected_points[0] {
+                            let id = PolygonId {
+                                floor: draw_state.curr_floor,
+                                id: Uuid::new_v4(),
+                            };
+                            draw_state.polygons.insert(
+                                id,
+                                Polygon {
+                                    points: selected_points.clone(),
+                                    height: tool_state.height,
+                                },
+                            );
+
+                            draw_state.selection.clear();
+                            selected_points.clear();
                         }
                     }
                 }
@@ -2271,6 +2462,7 @@ fn handle_delete_selection(
                 } => *start = None,
                 ShapeKind::RectangleAxisAligned { start } => *start = None,
                 ShapeKind::CircleFromThreePoints { first_two } => *first_two = vec![],
+                ShapeKind::Polygon { selected_points } => selected_points.clear(),
             },
             DrawToolState::Door(_tool_state) => (),
             DrawToolState::Hatch(_tool_state) => (),
@@ -2318,6 +2510,7 @@ fn change_floor(
                 } => *start = None,
                 ShapeKind::RectangleAxisAligned { start } => *start = None,
                 ShapeKind::CircleFromThreePoints { first_two } => first_two.clear(),
+                ShapeKind::Polygon { selected_points } => selected_points.clear(),
             },
             DrawToolState::Door(_tool_state) => (),
             DrawToolState::Hatch(_tool_state) => (),

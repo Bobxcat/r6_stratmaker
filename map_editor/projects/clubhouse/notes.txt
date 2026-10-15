@@ -1,0 +1,15 @@
+Basement:
+* Pillar plant spot
+
+1f:
+* Strip destructable wall counts and door placement
+* Strip poles
+* Are the doors in the middle of bar actual doors?
+* Which bathroom stalls are open?
+
+2f:
+* Placement of cash single wall and surrounding walls
+* Alignement of red stairs railing with wall
+* Are logi "doors" actual doors?
+* Placement of maestro desk by cctv window
+* Exact placement of the wall portion of the gym stand

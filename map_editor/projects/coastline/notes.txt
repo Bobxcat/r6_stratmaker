@@ -1,3 +1,9 @@
 1f:
 * Width of walls in blue bar
 * Obstacles in every room
+
+2f:
+* Bookshelf in southwest of VIP
+* Bedroom halfwalls
+* Obstacles in the room next to top white and bedroom
+* Obstacles in hookah

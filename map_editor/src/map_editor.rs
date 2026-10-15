@@ -153,7 +153,7 @@ fn update_background_image(
 
 const SINGLE_DOOR_LENGTH_INSIDE: f32 = 1.4;
 const DOUBLE_DOOR_LENGTH_INSIDE: f32 = 2.25;
-const HATCH_SIDE_LENGTH: f32 = 2.5;
+const HATCH_SIDE_LENGTH: f32 = 2.25;
 
 fn non_zero_u8_one() -> NonZeroU8 {
     NonZeroU8::new(1).unwrap()

@@ -1,0 +1,3 @@
+1f:
+* Width of walls in blue bar
+* Obstacles in every room

@@ -1,0 +1,3 @@
+1f:
+* Kitchen obstacles
+* Placement of half wall by double door

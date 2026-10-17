@@ -150,6 +150,14 @@ pub enum IconKind {
     FreeOperator { operator: String },
     FreeAbility { ability: String },
     FreeUtility { util: String },
+
+    Reinforcement,
+    Defuser,
+
+    RunnableRotate,
+    FootHole,
+    HeadHole,
+    VaultHole,
 }
 
 impl Default for IconKind {
@@ -201,6 +209,12 @@ impl ProtoConvert for PlacedIcon {
                         util: free_utility.util,
                     }
                 }
+                protos::primary::icon::IconKind::Reinforcement(_) => IconKind::Reinforcement,
+                protos::primary::icon::IconKind::Defuser(_) => IconKind::Defuser,
+                protos::primary::icon::IconKind::RunnableRotate(_) => IconKind::RunnableRotate,
+                protos::primary::icon::IconKind::FootHole(_) => IconKind::FootHole,
+                protos::primary::icon::IconKind::HeadHole(_) => IconKind::HeadHole,
+                protos::primary::icon::IconKind::VaultHole(_) => IconKind::VaultHole,
             },
         }
     }
@@ -253,6 +267,36 @@ impl ProtoConvert for PlacedIcon {
                         special_fields: SpecialFields::new(),
                     },
                 ),
+                IconKind::Reinforcement => protos::primary::icon::IconKind::Reinforcement(
+                    protos::primary::icon::Reinforcement {
+                        special_fields: SpecialFields::new(),
+                    },
+                ),
+                IconKind::Defuser => {
+                    protos::primary::icon::IconKind::Defuser(protos::primary::icon::Defuser {
+                        special_fields: SpecialFields::new(),
+                    })
+                }
+                IconKind::RunnableRotate => protos::primary::icon::IconKind::RunnableRotate(
+                    protos::primary::icon::RunnableRotate {
+                        special_fields: SpecialFields::new(),
+                    },
+                ),
+                IconKind::FootHole => {
+                    protos::primary::icon::IconKind::FootHole(protos::primary::icon::FootHole {
+                        special_fields: SpecialFields::new(),
+                    })
+                }
+                IconKind::HeadHole => {
+                    protos::primary::icon::IconKind::HeadHole(protos::primary::icon::HeadHole {
+                        special_fields: SpecialFields::new(),
+                    })
+                }
+                IconKind::VaultHole => {
+                    protos::primary::icon::IconKind::VaultHole(protos::primary::icon::VaultHole {
+                        special_fields: SpecialFields::new(),
+                    })
+                }
             }),
             special_fields: SpecialFields::new(),
         }

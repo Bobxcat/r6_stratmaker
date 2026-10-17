@@ -43,6 +43,13 @@ message Icon {
         string util = 1;
     }
 
+    message Reinforcement {} 
+    message Defuser {} 
+    message RunnableRotate {} 
+    message FootHole {} 
+    message HeadHole {} 
+    message VaultHole {} 
+
     Point pos = 1;
     oneof IconKind {
         TeamOperator team_operator = 11;
@@ -51,6 +58,13 @@ message Icon {
         FreeOperator free_operator = 14;
         FreeAbility free_ability = 15;
         FreeUtility free_utility = 16;
+
+        Reinforcement reinforcement = 17;
+        Defuser defuser = 18;
+        RunnableRotate runnable_rotate = 19;
+        FootHole foot_hole = 20;
+        HeadHole head_hole = 21;
+        VaultHole vault_hole = 22;
     }
 }
 message StratFloor {

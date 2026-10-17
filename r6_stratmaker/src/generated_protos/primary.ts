@@ -40,6 +40,12 @@ export interface Icon {
   freeOperator?: Icon_FreeOperator | undefined;
   freeAbility?: Icon_FreeAbility | undefined;
   freeUtility?: Icon_FreeUtility | undefined;
+  reinforcement?: Icon_Reinforcement | undefined;
+  defuser?: Icon_Defuser | undefined;
+  runnableRotate?: Icon_RunnableRotate | undefined;
+  footHole?: Icon_FootHole | undefined;
+  headHole?: Icon_HeadHole | undefined;
+  vaultHole?: Icon_VaultHole | undefined;
 }
 
 export interface Icon_TeamOperator {
@@ -64,6 +70,24 @@ export interface Icon_FreeAbility {
 
 export interface Icon_FreeUtility {
   util: string;
+}
+
+export interface Icon_Reinforcement {
+}
+
+export interface Icon_Defuser {
+}
+
+export interface Icon_RunnableRotate {
+}
+
+export interface Icon_FootHole {
+}
+
+export interface Icon_HeadHole {
+}
+
+export interface Icon_VaultHole {
 }
 
 export interface StratFloor {
@@ -720,6 +744,12 @@ function createBaseIcon(): Icon {
     freeOperator: undefined,
     freeAbility: undefined,
     freeUtility: undefined,
+    reinforcement: undefined,
+    defuser: undefined,
+    runnableRotate: undefined,
+    footHole: undefined,
+    headHole: undefined,
+    vaultHole: undefined,
   };
 }
 
@@ -745,6 +775,24 @@ export const Icon: MessageFns<Icon> = {
     }
     if (message.freeUtility !== undefined) {
       Icon_FreeUtility.encode(message.freeUtility, writer.uint32(130).fork()).join();
+    }
+    if (message.reinforcement !== undefined) {
+      Icon_Reinforcement.encode(message.reinforcement, writer.uint32(138).fork()).join();
+    }
+    if (message.defuser !== undefined) {
+      Icon_Defuser.encode(message.defuser, writer.uint32(146).fork()).join();
+    }
+    if (message.runnableRotate !== undefined) {
+      Icon_RunnableRotate.encode(message.runnableRotate, writer.uint32(154).fork()).join();
+    }
+    if (message.footHole !== undefined) {
+      Icon_FootHole.encode(message.footHole, writer.uint32(162).fork()).join();
+    }
+    if (message.headHole !== undefined) {
+      Icon_HeadHole.encode(message.headHole, writer.uint32(170).fork()).join();
+    }
+    if (message.vaultHole !== undefined) {
+      Icon_VaultHole.encode(message.vaultHole, writer.uint32(178).fork()).join();
     }
     return writer;
   },
@@ -818,6 +866,54 @@ export const Icon: MessageFns<Icon> = {
             message.freeUtility = Icon_FreeUtility.decode(reader, reader.uint32());
             continue;
           }
+          case 17: {
+            if (tag !== 138) {
+              break;
+            }
+
+            message.reinforcement = Icon_Reinforcement.decode(reader, reader.uint32());
+            continue;
+          }
+          case 18: {
+            if (tag !== 146) {
+              break;
+            }
+
+            message.defuser = Icon_Defuser.decode(reader, reader.uint32());
+            continue;
+          }
+          case 19: {
+            if (tag !== 154) {
+              break;
+            }
+
+            message.runnableRotate = Icon_RunnableRotate.decode(reader, reader.uint32());
+            continue;
+          }
+          case 20: {
+            if (tag !== 162) {
+              break;
+            }
+
+            message.footHole = Icon_FootHole.decode(reader, reader.uint32());
+            continue;
+          }
+          case 21: {
+            if (tag !== 170) {
+              break;
+            }
+
+            message.headHole = Icon_HeadHole.decode(reader, reader.uint32());
+            continue;
+          }
+          case 22: {
+            if (tag !== 178) {
+              break;
+            }
+
+            message.vaultHole = Icon_VaultHole.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -863,6 +959,28 @@ export const Icon: MessageFns<Icon> = {
         : isSet(object.free_utility)
         ? Icon_FreeUtility.fromJSON(object.free_utility)
         : undefined,
+      reinforcement: isSet(object.reinforcement) ? Icon_Reinforcement.fromJSON(object.reinforcement) : undefined,
+      defuser: isSet(object.defuser) ? Icon_Defuser.fromJSON(object.defuser) : undefined,
+      runnableRotate: isSet(object.runnableRotate)
+        ? Icon_RunnableRotate.fromJSON(object.runnableRotate)
+        : isSet(object.runnable_rotate)
+        ? Icon_RunnableRotate.fromJSON(object.runnable_rotate)
+        : undefined,
+      footHole: isSet(object.footHole)
+        ? Icon_FootHole.fromJSON(object.footHole)
+        : isSet(object.foot_hole)
+        ? Icon_FootHole.fromJSON(object.foot_hole)
+        : undefined,
+      headHole: isSet(object.headHole)
+        ? Icon_HeadHole.fromJSON(object.headHole)
+        : isSet(object.head_hole)
+        ? Icon_HeadHole.fromJSON(object.head_hole)
+        : undefined,
+      vaultHole: isSet(object.vaultHole)
+        ? Icon_VaultHole.fromJSON(object.vaultHole)
+        : isSet(object.vault_hole)
+        ? Icon_VaultHole.fromJSON(object.vault_hole)
+        : undefined,
     };
   },
 
@@ -888,6 +1006,24 @@ export const Icon: MessageFns<Icon> = {
     }
     if (message.freeUtility !== undefined) {
       obj.freeUtility = Icon_FreeUtility.toJSON(message.freeUtility);
+    }
+    if (message.reinforcement !== undefined) {
+      obj.reinforcement = Icon_Reinforcement.toJSON(message.reinforcement);
+    }
+    if (message.defuser !== undefined) {
+      obj.defuser = Icon_Defuser.toJSON(message.defuser);
+    }
+    if (message.runnableRotate !== undefined) {
+      obj.runnableRotate = Icon_RunnableRotate.toJSON(message.runnableRotate);
+    }
+    if (message.footHole !== undefined) {
+      obj.footHole = Icon_FootHole.toJSON(message.footHole);
+    }
+    if (message.headHole !== undefined) {
+      obj.headHole = Icon_HeadHole.toJSON(message.headHole);
+    }
+    if (message.vaultHole !== undefined) {
+      obj.vaultHole = Icon_VaultHole.toJSON(message.vaultHole);
     }
     return obj;
   },
@@ -915,6 +1051,24 @@ export const Icon: MessageFns<Icon> = {
       : undefined;
     message.freeUtility = (object.freeUtility !== undefined && object.freeUtility !== null)
       ? Icon_FreeUtility.fromPartial(object.freeUtility)
+      : undefined;
+    message.reinforcement = (object.reinforcement !== undefined && object.reinforcement !== null)
+      ? Icon_Reinforcement.fromPartial(object.reinforcement)
+      : undefined;
+    message.defuser = (object.defuser !== undefined && object.defuser !== null)
+      ? Icon_Defuser.fromPartial(object.defuser)
+      : undefined;
+    message.runnableRotate = (object.runnableRotate !== undefined && object.runnableRotate !== null)
+      ? Icon_RunnableRotate.fromPartial(object.runnableRotate)
+      : undefined;
+    message.footHole = (object.footHole !== undefined && object.footHole !== null)
+      ? Icon_FootHole.fromPartial(object.footHole)
+      : undefined;
+    message.headHole = (object.headHole !== undefined && object.headHole !== null)
+      ? Icon_HeadHole.fromPartial(object.headHole)
+      : undefined;
+    message.vaultHole = (object.vaultHole !== undefined && object.vaultHole !== null)
+      ? Icon_VaultHole.fromPartial(object.vaultHole)
       : undefined;
     return message;
   },
@@ -1336,6 +1490,318 @@ export const Icon_FreeUtility: MessageFns<Icon_FreeUtility> = {
   fromPartial<I extends Exact<DeepPartial<Icon_FreeUtility>, I>>(object: I): Icon_FreeUtility {
     const message = createBaseIcon_FreeUtility();
     message.util = object.util ?? "";
+    return message;
+  },
+};
+
+function createBaseIcon_Reinforcement(): Icon_Reinforcement {
+  return {};
+}
+
+export const Icon_Reinforcement: MessageFns<Icon_Reinforcement> = {
+  encode(_: Icon_Reinforcement, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon_Reinforcement {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon_Reinforcement();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(_: any): Icon_Reinforcement {
+    return {};
+  },
+
+  toJSON(_: Icon_Reinforcement): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon_Reinforcement>, I>>(base?: I): Icon_Reinforcement {
+    return Icon_Reinforcement.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon_Reinforcement>, I>>(_: I): Icon_Reinforcement {
+    const message = createBaseIcon_Reinforcement();
+    return message;
+  },
+};
+
+function createBaseIcon_Defuser(): Icon_Defuser {
+  return {};
+}
+
+export const Icon_Defuser: MessageFns<Icon_Defuser> = {
+  encode(_: Icon_Defuser, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon_Defuser {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon_Defuser();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(_: any): Icon_Defuser {
+    return {};
+  },
+
+  toJSON(_: Icon_Defuser): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon_Defuser>, I>>(base?: I): Icon_Defuser {
+    return Icon_Defuser.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon_Defuser>, I>>(_: I): Icon_Defuser {
+    const message = createBaseIcon_Defuser();
+    return message;
+  },
+};
+
+function createBaseIcon_RunnableRotate(): Icon_RunnableRotate {
+  return {};
+}
+
+export const Icon_RunnableRotate: MessageFns<Icon_RunnableRotate> = {
+  encode(_: Icon_RunnableRotate, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon_RunnableRotate {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon_RunnableRotate();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(_: any): Icon_RunnableRotate {
+    return {};
+  },
+
+  toJSON(_: Icon_RunnableRotate): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon_RunnableRotate>, I>>(base?: I): Icon_RunnableRotate {
+    return Icon_RunnableRotate.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon_RunnableRotate>, I>>(_: I): Icon_RunnableRotate {
+    const message = createBaseIcon_RunnableRotate();
+    return message;
+  },
+};
+
+function createBaseIcon_FootHole(): Icon_FootHole {
+  return {};
+}
+
+export const Icon_FootHole: MessageFns<Icon_FootHole> = {
+  encode(_: Icon_FootHole, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon_FootHole {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon_FootHole();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(_: any): Icon_FootHole {
+    return {};
+  },
+
+  toJSON(_: Icon_FootHole): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon_FootHole>, I>>(base?: I): Icon_FootHole {
+    return Icon_FootHole.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon_FootHole>, I>>(_: I): Icon_FootHole {
+    const message = createBaseIcon_FootHole();
+    return message;
+  },
+};
+
+function createBaseIcon_HeadHole(): Icon_HeadHole {
+  return {};
+}
+
+export const Icon_HeadHole: MessageFns<Icon_HeadHole> = {
+  encode(_: Icon_HeadHole, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon_HeadHole {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon_HeadHole();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(_: any): Icon_HeadHole {
+    return {};
+  },
+
+  toJSON(_: Icon_HeadHole): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon_HeadHole>, I>>(base?: I): Icon_HeadHole {
+    return Icon_HeadHole.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon_HeadHole>, I>>(_: I): Icon_HeadHole {
+    const message = createBaseIcon_HeadHole();
+    return message;
+  },
+};
+
+function createBaseIcon_VaultHole(): Icon_VaultHole {
+  return {};
+}
+
+export const Icon_VaultHole: MessageFns<Icon_VaultHole> = {
+  encode(_: Icon_VaultHole, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon_VaultHole {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon_VaultHole();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(_: any): Icon_VaultHole {
+    return {};
+  },
+
+  toJSON(_: Icon_VaultHole): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon_VaultHole>, I>>(base?: I): Icon_VaultHole {
+    return Icon_VaultHole.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon_VaultHole>, I>>(_: I): Icon_VaultHole {
+    const message = createBaseIcon_VaultHole();
     return message;
   },
 };

@@ -443,6 +443,16 @@ class LobbyStratMetadata {
   }
 }
 
+enum ContextFreeIconKind {
+  Reinforcement,
+  Defuser,
+
+  RunnableRotate,
+  FootHole,
+  HeadHole,
+  VaultHole,
+}
+
 enum IconKind {
   TeamOperator,
   TeamAbility,
@@ -450,6 +460,8 @@ enum IconKind {
   FreeOperator,
   FreeAbility,
   FreeUtility,
+
+  ContextFree,
 }
 
 type IconInfo =
@@ -458,15 +470,20 @@ type IconInfo =
   | { kind: IconKind.TeamUtility, teammateIndex: number }
   | { kind: IconKind.FreeOperator, operator: string }
   | { kind: IconKind.FreeAbility, operator: string }
-  | { kind: IconKind.FreeUtility, util: string };
+  | { kind: IconKind.FreeUtility, util: string }
+  | { kind: IconKind.ContextFree, iconKind: ContextFreeIconKind };
 
 class IconPlacement implements DrawElement {
   pos: Vec2;
-  size: number;
   info: IconInfo;
   constructor(pos: Vec2, info: IconInfo) {
+    this.pos = pos;
+    this.info = info;
+  }
+
+  size(): number {
     let iconSize = undefined;
-    switch (info.kind) {
+    switch (this.info.kind) {
       case IconKind.TeamOperator: {
         iconSize = 10;
         break;
@@ -491,11 +508,13 @@ class IconPlacement implements DrawElement {
         iconSize = 6;
         break;
       }
+      case IconKind.ContextFree: {
+        iconSize = 6;
+        break;
+      }
     }
 
-    this.pos = pos;
-    this.size = iconSize;
-    this.info = info;
+    return iconSize;
   }
 
   static fromProto(icon: protos.Icon): IconPlacement {
@@ -512,6 +531,18 @@ class IconPlacement implements DrawElement {
       parsedIconInfo = { kind: IconKind.FreeAbility, operator: icon.freeAbility.ability };
     } else if (icon.freeUtility) {
       parsedIconInfo = { kind: IconKind.FreeUtility, util: icon.freeUtility.util };
+    } else if (icon.reinforcement) {
+      parsedIconInfo = { kind: IconKind.ContextFree, iconKind: ContextFreeIconKind.Reinforcement };
+    } else if (icon.defuser) {
+      parsedIconInfo = { kind: IconKind.ContextFree, iconKind: ContextFreeIconKind.Defuser };
+    } else if (icon.runnableRotate) {
+      parsedIconInfo = { kind: IconKind.ContextFree, iconKind: ContextFreeIconKind.RunnableRotate };
+    } else if (icon.footHole) {
+      parsedIconInfo = { kind: IconKind.ContextFree, iconKind: ContextFreeIconKind.FootHole };
+    } else if (icon.headHole) {
+      parsedIconInfo = { kind: IconKind.ContextFree, iconKind: ContextFreeIconKind.HeadHole };
+    } else if (icon.vaultHole) {
+      parsedIconInfo = { kind: IconKind.ContextFree, iconKind: ContextFreeIconKind.VaultHole };
     } else {
       let e = "UNHANDLED BRANCH: parsedIconInfo";
       println(e);
@@ -548,6 +579,34 @@ class IconPlacement implements DrawElement {
         Object.assign(proto, { freeUtility: { util: this.info.util } })
         break;
       }
+      case IconKind.ContextFree: {
+        switch (this.info.iconKind) {
+          case ContextFreeIconKind.Reinforcement: {
+            Object.assign(proto, { reinforcement: {} })
+            break;
+          }
+          case ContextFreeIconKind.Defuser: {
+            Object.assign(proto, { defuser: {} })
+            break;
+          }
+          case ContextFreeIconKind.RunnableRotate: {
+            Object.assign(proto, { runnableRotate: {} })
+            break;
+          }
+          case ContextFreeIconKind.FootHole: {
+            Object.assign(proto, { footHole: {} })
+            break;
+          }
+          case ContextFreeIconKind.HeadHole: {
+            Object.assign(proto, { headHole: {} })
+            break;
+          }
+          case ContextFreeIconKind.VaultHole: {
+            Object.assign(proto, { vaultHole: {} })
+            break;
+          }
+        }
+      }
     }
     return proto;
   }
@@ -571,8 +630,8 @@ class IconPlacement implements DrawElement {
     return this.boundingBox().containsPoint(mousePos);
   }
   boundingBox(): Aabb {
-    var width = 0;
-    var height = 0;
+    let width = undefined;
+    let height = undefined;
 
     function imgAspectRatio(imgData: CanvasImageSource): number {
       const imgElem: HTMLImageElement = imgData! as HTMLImageElement;
@@ -581,35 +640,40 @@ class IconPlacement implements DrawElement {
 
     switch (this.info.kind) {
       case IconKind.TeamOperator: {
-        width = this.size;
-        height = this.size;
+        width = this.size();
+        height = this.size();
         break;
       }
       case IconKind.TeamAbility: {
-        height = this.size;
+        height = this.size();
         const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
         width = height * imgAspectRatio(operatorsIndexNonReactive.abilityImgData.get(loadout.operator)!);
         break;
       }
       case IconKind.TeamUtility: {
-        height = this.size;
+        height = this.size();
         const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
         width = height * imgAspectRatio(operatorsIndexNonReactive.utilityImgData.get(loadout.util)!);
         break;
       }
       case IconKind.FreeOperator: {
-        width = this.size;
-        height = this.size;
+        width = this.size();
+        height = this.size();
         break;
       }
       case IconKind.FreeAbility: {
-        height = this.size;
+        height = this.size();
         width = height * imgAspectRatio(operatorsIndexNonReactive.abilityImgData.get(this.info.operator)!);
         break;
       }
       case IconKind.FreeUtility: {
-        height = this.size;
+        height = this.size();
         width = height * imgAspectRatio(operatorsIndexNonReactive.utilityImgData.get(this.info.util)!);
+        break;
+      }
+      case IconKind.ContextFree: {
+        width = this.size();
+        height = this.size();
         break;
       }
     }
@@ -617,9 +681,9 @@ class IconPlacement implements DrawElement {
     return Aabb.fromPoints([this.pos, this.pos.add(new Vec2(width, height))]);
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
-    var imgData: CanvasImageSource | undefined;
+    let imgData: CanvasImageSource | undefined;
 
-    var aabb = this.boundingBox();
+    let aabb = this.boundingBox();
 
     switch (this.info.kind) {
       case IconKind.TeamOperator: {
@@ -653,6 +717,25 @@ class IconPlacement implements DrawElement {
       case IconKind.FreeUtility: {
         ctx.fillStyle = `rgb(128, 128, 128)`;
         imgData = operatorsIndexNonReactive.utilityImgData.get(this.info.util);
+        break;
+      }
+      case IconKind.ContextFree: {
+        switch (this.info.iconKind) {
+          case ContextFreeIconKind.Reinforcement:
+          case ContextFreeIconKind.Defuser: {
+            ctx.fillStyle = `rgba(0,0,0,255)`;
+            break;
+          }
+
+          case ContextFreeIconKind.RunnableRotate:
+          case ContextFreeIconKind.FootHole:
+          case ContextFreeIconKind.HeadHole:
+          case ContextFreeIconKind.VaultHole: {
+            ctx.fillStyle = `rgba(0,0,0,0)`;
+            break;
+          }
+        }
+        imgData = contextFreeIconData.getIcon(this.info.iconKind);
         break;
       }
     }
@@ -1153,12 +1236,6 @@ class OperatorsIndex {
       loadOperator(op, false);
     }
 
-    async function imgElemFromPath(path: string): Promise<HTMLImageElement> {
-      const imgElem = document.createElement("img") as HTMLImageElement;
-      imgElem.setAttribute("src", path);
-      return imgElem;
-    }
-
     for (const op of ops.operators) {
       const opName = op[0];
       for (const util of op[1].utils) {
@@ -1171,10 +1248,80 @@ class OperatorsIndex {
       ops.abilityImgData.set(opName, abilityImg);
     }
 
+    println("ALL OPS FINISHED");
+
     return ops;
   }
 }
 let operatorsIndexNonReactive = new OperatorsIndex();
+
+class ContextFreeIconData {
+  reinforcement: CanvasImageSource | undefined;
+  defuser: CanvasImageSource | undefined;
+  runnableRotate: CanvasImageSource | undefined;
+  footHole: CanvasImageSource | undefined;
+  headHole: CanvasImageSource | undefined;
+  vaultHole: CanvasImageSource | undefined;
+
+  async initiateLoad() {
+    this.reinforcement = await imgElemFromPath("reinforcement.svg");
+    this.defuser = await imgElemFromPath("defuser.svg");
+    this.runnableRotate = await imgElemFromPath("rotate_runnable.svg");
+    this.footHole = await imgElemFromPath("foot_hole.svg");
+    this.headHole = await imgElemFromPath("head_hole.svg");
+    this.vaultHole = await imgElemFromPath("vault_hole.svg");
+
+    println("Context free icons loaded!");
+  }
+
+  static getImgPath(icon: ContextFreeIconKind): string {
+    switch (icon) {
+      case ContextFreeIconKind.Reinforcement: {
+        return "reinforcement.svg";
+      }
+      case ContextFreeIconKind.Defuser: {
+        return "defuser.svg";
+      }
+      case ContextFreeIconKind.RunnableRotate: {
+        return "rotate_runnable.svg";
+      }
+      case ContextFreeIconKind.FootHole: {
+        return "foot_hole.svg";
+      }
+      case ContextFreeIconKind.HeadHole: {
+        return "head_hole.svg";
+      }
+      case ContextFreeIconKind.VaultHole: {
+        return "vault_hole.svg";
+      }
+    }
+  }
+
+  getIcon(icon: ContextFreeIconKind): CanvasImageSource | undefined {
+    switch (icon) {
+      case ContextFreeIconKind.Reinforcement: {
+        return this.reinforcement;
+      }
+      case ContextFreeIconKind.Defuser: {
+        return this.defuser;
+      }
+      case ContextFreeIconKind.RunnableRotate: {
+        return this.runnableRotate;
+      }
+      case ContextFreeIconKind.FootHole: {
+        return this.footHole;
+      }
+      case ContextFreeIconKind.HeadHole: {
+        return this.headHole;
+      }
+      case ContextFreeIconKind.VaultHole: {
+        return this.vaultHole;
+      }
+    }
+  }
+}
+
+let contextFreeIconData = new ContextFreeIconData();
 
 interface LobbyListInfo {
   lobbyName: string;
@@ -1182,6 +1329,15 @@ interface LobbyListInfo {
 }
 
 let websocket: WebSocket | null = null;
+
+async function imgElemFromPath(path: string): Promise<HTMLImageElement> {
+  const imgElem = document.createElement("img") as HTMLImageElement;
+  imgElem.setAttribute("src", path);
+  while (!imgElem.complete) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  return imgElem;
+}
 
 function arrayChunk<T>(array: T[], chunkSize: number): T[][] {
   if (chunkSize == 0) {
@@ -1295,6 +1451,14 @@ function App() {
     }
     loadOperatorsIndex();
   }, []);
+
+  // Load unique icons
+  useEffect(() => {
+    async function loadUniqueIcons() {
+      await contextFreeIconData.initiateLoad();
+    }
+    loadUniqueIcons();
+  }, [])
 
   // Load map list
   useEffect(() => {
@@ -2415,6 +2579,7 @@ function App() {
             </div>
           </div>
 
+          {/* Operators */}
           <div className="row" style={{ margin: "0.5vw", borderRadius: "0.5vw", border: "2px solid #0f0f0f" }}>
             {stratEditingStateDisplay.getTeammateLoadoutsRaw().map((loadout, idx) =>
               <div key={idx} className="col" style={{ margin: "0.1vw" }}>
@@ -2514,6 +2679,28 @@ function App() {
         <div className="row" style={{ justifyItems: "left", alignItems: "flex-start" }}>
           {/* Free operator and utility selector */}
           <div className="col" id="tool-selector-bar" style={{ margin: "0.5vw" }}>
+
+            <div style={{ border: "2px solid #0f0f0f", borderRadius: "0.5vw" }}>
+              {
+                tileListComponent([
+                  ContextFreeIconKind.Reinforcement,
+                  ContextFreeIconKind.Defuser,
+                  ContextFreeIconKind.RunnableRotate,
+                  ContextFreeIconKind.FootHole,
+                  ContextFreeIconKind.HeadHole,
+                  ContextFreeIconKind.VaultHole,
+                ], (icon) => {
+                  let src = ContextFreeIconData.getImgPath(icon);
+                  return (<>
+                    <img src={src} width="256" height="256" style={{ margin: 0, width: "2vw", height: "2vw" }} alt="" />
+                  </>)
+                }, (iconClicked) => {
+                  stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;
+                  stratEditingState.toolStates.placeIcon.selectedIcon = { kind: IconKind.ContextFree, iconKind: iconClicked };
+                  updateStratEditingStateDisplay();
+                })
+              }
+            </div>
             <div style={{ border: "2px solid #0f0f0f", borderRadius: "0.5vw" }}>
               {operatorTileListComponent((operator) => {
                 stratEditingState.selectedDrawTool = DrawTool.PlaceIcon;

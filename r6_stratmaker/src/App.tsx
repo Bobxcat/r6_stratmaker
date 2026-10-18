@@ -409,8 +409,8 @@ class Arrow implements DrawElement {
       return a;
     };
 
-    const headPt0 = makeHeadPoint(true, true, 10);
-    const headPt1 = makeHeadPoint(false, true, 10);
+    const headPt0 = makeHeadPoint(true, true, 5);
+    const headPt1 = makeHeadPoint(false, true, 5);
 
     ctx.moveTo(headPt0.x * canvasScale, headPt0.y * canvasScale);
     ctx.lineTo(this.end.x * canvasScale, this.end.y * canvasScale)

@@ -14,10 +14,10 @@ export default defineConfig(() => ({
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    port: 80,
+    port: 1420,
     strictPort: true,
     host: host || false,
-    allowedHosts: ["r.kolbly.name"],
+    allowedHosts: [".kolbly.name"],
     hmr: host
       ? {
         protocol: "ws",

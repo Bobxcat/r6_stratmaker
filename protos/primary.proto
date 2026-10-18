@@ -130,15 +130,6 @@ message GetMapListResponse {
     repeated string maps = 1;
 }
 
-// GetMapMetadata
-message GetMapMetadata {
-    string map = 1;
-}
-
-message GetMapMetadataResponse {
-    repeated string floors = 1;
-}
-
 // GetStratInfo
 message GetStratInfo {
     string strat_id = 1;
@@ -274,7 +265,6 @@ message Client2Server {
         LoginRequest login_request = 2;
         GetStratList get_strat_list = 3;
         CreateEmptyStrat create_empty_strat = 4;
-        GetMapMetadata get_map_metadata = 5;
         GetStratInfo get_strat_info = 6;
         SaveStrat save_strat = 7;
         DeleteStrat delete_strat = 8;
@@ -297,7 +287,6 @@ message Server2Client {
         LoginResponse login_response = 2;
         GetStratListResponse get_strat_list_response = 3;
         CreateEmptyStratResponse create_empty_strat_response = 4;
-        GetMapMetadataResponse get_map_metadata_response = 5;
         GetStratInfoResponse get_strat_info_response = 6;
         SaveStratResponse save_strat_response = 7;
         DeleteStratResponse delete_strat_response = 8;

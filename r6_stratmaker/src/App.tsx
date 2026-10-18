@@ -328,7 +328,7 @@ class DrawPath implements DrawElement {
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
     ctx.strokeStyle = this.color.toCss();
-    ctx.lineWidth = 0.8 * canvasScale;
+    ctx.lineWidth = 0.8 * canvasScale * stratEditingState.mapPixelsPerMeter;
 
     this.points.forEach((pt, idx) => {
       if (idx == 0) {
@@ -388,7 +388,7 @@ class Arrow implements DrawElement {
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
     ctx.strokeStyle = this.color.toCss();
-    ctx.lineWidth = 0.8 * canvasScale;
+    ctx.lineWidth = 0.8 * canvasScale * stratEditingState.mapPixelsPerMeter;
 
     ctx.moveTo(this.start.x, this.start.y);
     ctx.lineTo(this.end.x, this.end.y);
@@ -483,33 +483,34 @@ class IconPlacement implements DrawElement {
 
   size(): number {
     let iconSize = undefined;
+    let scale = 0.8;
     switch (this.info.kind) {
       case IconKind.TeamOperator: {
-        iconSize = 10;
+        iconSize = 1 * scale;
         break;
       }
       case IconKind.TeamAbility: {
-        iconSize = 6;
+        iconSize = 0.6 * scale;
         break;
       }
       case IconKind.TeamUtility: {
-        iconSize = 6;
+        iconSize = 0.6 * scale;
         break;
       }
       case IconKind.FreeOperator: {
-        iconSize = 10;
+        iconSize = 1 * scale;
         break;
       }
       case IconKind.FreeAbility: {
-        iconSize = 6;
+        iconSize = 0.6 * scale;
         break;
       }
       case IconKind.FreeUtility: {
-        iconSize = 6;
+        iconSize = 0.6 * scale;
         break;
       }
       case IconKind.ContextFree: {
-        iconSize = 6;
+        iconSize = 0.6 * scale;
         break;
       }
     }
@@ -678,7 +679,7 @@ class IconPlacement implements DrawElement {
       }
     }
 
-    return Aabb.fromPoints([this.pos, this.pos.add(new Vec2(width, height))]);
+    return Aabb.fromPoints([this.pos, this.pos.add(new Vec2(width, height).scaled(stratEditingState.mapPixelsPerMeter))]);
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     let imgData: CanvasImageSource | undefined;
@@ -928,6 +929,7 @@ class StratEditingState {
   stratName: string = "";
   map: string = "";
   mapFloors: string[] = [];
+  mapPixelsPerMeter: number = 10;
   mapImgWidth: number = 1600;
   mapImgHeight: number = 900;
   prevCanvasScales: DeepMap<string, number> = new DeepMap();
@@ -1411,7 +1413,7 @@ const canvasIds = {
   inputGathering: "input-gathering-canvas",
 };
 
-let getMapDimensionsUseEffectCurrMap = "";
+let onMapChangeUseEffectCurrMap = "";
 
 function App() {
   const [stratEditingStateDisplay, setStratEditingStateDisplay] = useState<StratEditingState>(new StratEditingState());
@@ -1472,7 +1474,18 @@ function App() {
     }
   }, [currPage])
 
+  // On map change
   useEffect(() => {
+    async function getMapMetadata(map: string) {
+      let metadata = await (await fetch(`maps/${map}/metadata.json`)).json();
+      stratEditingState.mapPixelsPerMeter = metadata.pixels_per_meter;
+      stratEditingState.mapFloors = metadata.floors;
+      if (stratEditingState.getPhasesRef().length == 0) {
+        stratEditingState.pushEmptyPhaseRaw("Phase 0");
+      }
+      updateStratEditingStateDisplay();
+    }
+
     async function getMapDimensions(map: string) {
       let img = new Image();
       img.onload = () => {
@@ -1484,9 +1497,12 @@ function App() {
     }
 
     let newMap = stratEditingState.map;
-    if (getMapDimensionsUseEffectCurrMap != newMap) {
-      getMapDimensionsUseEffectCurrMap = newMap;
-      getMapDimensions(newMap);
+    if (onMapChangeUseEffectCurrMap != newMap) {
+      onMapChangeUseEffectCurrMap = newMap;
+      if (newMap != "") {
+        getMapMetadata(newMap);
+        getMapDimensions(newMap);
+      }
     }
   }, [stratEditingStateDisplay]);
 
@@ -1574,12 +1590,6 @@ function App() {
     } else if (msg.createEmptyStratResponse) {
       stratEditingState.stratId = msg.createEmptyStratResponse.stratId;
       setCurrPage(Page.StratEditorPage);
-    } else if (msg.getMapMetadataResponse) {
-      stratEditingState.mapFloors = msg.getMapMetadataResponse.floors;
-      if (stratEditingState.getPhasesRef().length == 0) {
-        stratEditingState.pushEmptyPhaseRaw("Phase 0");
-      }
-      updateStratEditingStateDisplay();
     } else if (msg.getMapListResponse) {
       mapList = msg.getMapListResponse.maps;
     } else if (msg.getStratInfoResponse) {
@@ -1609,8 +1619,6 @@ function App() {
       setCurrPage(Page.StratEditorPage);
       updateStratEditingStateFromProto(msg.lobbySetCurrentStrat.strat!);
       redrawFreeDrawCanvasQueueDeferred();
-
-      await websocket?.sendProto(protos.Client2Server.create({ getMapMetadata: { map: msg.lobbySetCurrentStrat.map } }));
     } else if (msg.lobbyDrawCommand) {
       let cmd = msg.lobbyDrawCommand;
       let phaseFloor = stratEditingState.getPhasesRef()[cmd.phase].floors[cmd.floor];
@@ -1764,7 +1772,6 @@ function App() {
       stratEditingState.mode = StratEditingMode.Singleplayer;
       updateStratEditingStateDisplay();
       await websocket?.sendProto(protos.Client2Server.create({ getStratInfo: { stratId: stratMeta.uuid } }));
-      await websocket?.sendProto(protos.Client2Server.create({ getMapMetadata: { map: stratMeta.map } }));
     }
 
     return (<>
@@ -1839,7 +1846,6 @@ function App() {
       stratEditingState.mode = StratEditingMode.Singleplayer;
       updateStratEditingStateDisplay();
       await websocket?.sendProto(protos.Client2Server.create({ createEmptyStrat: { map } }));
-      await websocket?.sendProto(protos.Client2Server.create({ getMapMetadata: { map } }));
     }
 
     return (<>

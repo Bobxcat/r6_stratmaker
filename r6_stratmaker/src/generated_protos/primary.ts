@@ -174,15 +174,6 @@ export interface GetMapListResponse {
   maps: string[];
 }
 
-/** GetMapMetadata */
-export interface GetMapMetadata {
-  map: string;
-}
-
-export interface GetMapMetadataResponse {
-  floors: string[];
-}
-
 /** GetStratInfo */
 export interface GetStratInfo {
   stratId: string;
@@ -326,7 +317,6 @@ export interface Client2Server {
   loginRequest?: LoginRequest | undefined;
   getStratList?: GetStratList | undefined;
   createEmptyStrat?: CreateEmptyStrat | undefined;
-  getMapMetadata?: GetMapMetadata | undefined;
   getStratInfo?: GetStratInfo | undefined;
   saveStrat?: SaveStrat | undefined;
   deleteStrat?: DeleteStrat | undefined;
@@ -346,7 +336,6 @@ export interface Server2Client {
   loginResponse?: LoginResponse | undefined;
   getStratListResponse?: GetStratListResponse | undefined;
   createEmptyStratResponse?: CreateEmptyStratResponse | undefined;
-  getMapMetadataResponse?: GetMapMetadataResponse | undefined;
   getStratInfoResponse?: GetStratInfoResponse | undefined;
   saveStratResponse?: SaveStratResponse | undefined;
   deleteStratResponse?: DeleteStratResponse | undefined;
@@ -3278,142 +3267,6 @@ export const GetMapListResponse: MessageFns<GetMapListResponse> = {
   },
 };
 
-function createBaseGetMapMetadata(): GetMapMetadata {
-  return { map: "" };
-}
-
-export const GetMapMetadata: MessageFns<GetMapMetadata> = {
-  encode(message: GetMapMetadata, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.map !== "") {
-      writer.uint32(10).string(message.map);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): GetMapMetadata {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
-    if (previousRecursionDepth >= 100) {
-      throw new globalThis.Error("protobuf decode recursion limit exceeded");
-    }
-    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
-    try {
-      const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseGetMapMetadata();
-      while (reader.pos < end) {
-        const tag = reader.uint32();
-        switch (tag >>> 3) {
-          case 1: {
-            if (tag !== 10) {
-              break;
-            }
-
-            message.map = reader.string();
-            continue;
-          }
-        }
-        if ((tag & 7) === 4 || tag === 0) {
-          break;
-        }
-        reader.skip(tag & 7);
-      }
-      return message;
-    } finally {
-      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
-    }
-  },
-
-  fromJSON(object: any): GetMapMetadata {
-    return { map: isSet(object.map) ? globalThis.String(object.map) : "" };
-  },
-
-  toJSON(message: GetMapMetadata): unknown {
-    const obj: any = {};
-    if (message.map !== "") {
-      obj.map = message.map;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<GetMapMetadata>, I>>(base?: I): GetMapMetadata {
-    return GetMapMetadata.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<GetMapMetadata>, I>>(object: I): GetMapMetadata {
-    const message = createBaseGetMapMetadata();
-    message.map = object.map ?? "";
-    return message;
-  },
-};
-
-function createBaseGetMapMetadataResponse(): GetMapMetadataResponse {
-  return { floors: [] };
-}
-
-export const GetMapMetadataResponse: MessageFns<GetMapMetadataResponse> = {
-  encode(message: GetMapMetadataResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    for (const v of message.floors) {
-      writer.uint32(10).string(v!);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): GetMapMetadataResponse {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
-    if (previousRecursionDepth >= 100) {
-      throw new globalThis.Error("protobuf decode recursion limit exceeded");
-    }
-    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
-    try {
-      const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseGetMapMetadataResponse();
-      while (reader.pos < end) {
-        const tag = reader.uint32();
-        switch (tag >>> 3) {
-          case 1: {
-            if (tag !== 10) {
-              break;
-            }
-
-            message.floors.push(reader.string());
-            continue;
-          }
-        }
-        if ((tag & 7) === 4 || tag === 0) {
-          break;
-        }
-        reader.skip(tag & 7);
-      }
-      return message;
-    } finally {
-      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
-    }
-  },
-
-  fromJSON(object: any): GetMapMetadataResponse {
-    return {
-      floors: globalThis.Array.isArray(object?.floors) ? object.floors.map((e: any) => globalThis.String(e)) : [],
-    };
-  },
-
-  toJSON(message: GetMapMetadataResponse): unknown {
-    const obj: any = {};
-    if (message.floors?.length) {
-      obj.floors = message.floors;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<GetMapMetadataResponse>, I>>(base?: I): GetMapMetadataResponse {
-    return GetMapMetadataResponse.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<GetMapMetadataResponse>, I>>(object: I): GetMapMetadataResponse {
-    const message = createBaseGetMapMetadataResponse();
-    message.floors = object.floors?.map((e) => e) || [];
-    return message;
-  },
-};
-
 function createBaseGetStratInfo(): GetStratInfo {
   return { stratId: "" };
 }
@@ -5627,7 +5480,6 @@ function createBaseClient2Server(): Client2Server {
     loginRequest: undefined,
     getStratList: undefined,
     createEmptyStrat: undefined,
-    getMapMetadata: undefined,
     getStratInfo: undefined,
     saveStrat: undefined,
     deleteStrat: undefined,
@@ -5656,9 +5508,6 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.createEmptyStrat !== undefined) {
       CreateEmptyStrat.encode(message.createEmptyStrat, writer.uint32(34).fork()).join();
-    }
-    if (message.getMapMetadata !== undefined) {
-      GetMapMetadata.encode(message.getMapMetadata, writer.uint32(42).fork()).join();
     }
     if (message.getStratInfo !== undefined) {
       GetStratInfo.encode(message.getStratInfo, writer.uint32(50).fork()).join();
@@ -5742,14 +5591,6 @@ export const Client2Server: MessageFns<Client2Server> = {
             }
 
             message.createEmptyStrat = CreateEmptyStrat.decode(reader, reader.uint32());
-            continue;
-          }
-          case 5: {
-            if (tag !== 42) {
-              break;
-            }
-
-            message.getMapMetadata = GetMapMetadata.decode(reader, reader.uint32());
             continue;
           }
           case 6: {
@@ -5878,11 +5719,6 @@ export const Client2Server: MessageFns<Client2Server> = {
         : isSet(object.create_empty_strat)
         ? CreateEmptyStrat.fromJSON(object.create_empty_strat)
         : undefined,
-      getMapMetadata: isSet(object.getMapMetadata)
-        ? GetMapMetadata.fromJSON(object.getMapMetadata)
-        : isSet(object.get_map_metadata)
-        ? GetMapMetadata.fromJSON(object.get_map_metadata)
-        : undefined,
       getStratInfo: isSet(object.getStratInfo)
         ? GetStratInfo.fromJSON(object.getStratInfo)
         : isSet(object.get_strat_info)
@@ -5960,9 +5796,6 @@ export const Client2Server: MessageFns<Client2Server> = {
     if (message.createEmptyStrat !== undefined) {
       obj.createEmptyStrat = CreateEmptyStrat.toJSON(message.createEmptyStrat);
     }
-    if (message.getMapMetadata !== undefined) {
-      obj.getMapMetadata = GetMapMetadata.toJSON(message.getMapMetadata);
-    }
     if (message.getStratInfo !== undefined) {
       obj.getStratInfo = GetStratInfo.toJSON(message.getStratInfo);
     }
@@ -6017,9 +5850,6 @@ export const Client2Server: MessageFns<Client2Server> = {
     message.createEmptyStrat = (object.createEmptyStrat !== undefined && object.createEmptyStrat !== null)
       ? CreateEmptyStrat.fromPartial(object.createEmptyStrat)
       : undefined;
-    message.getMapMetadata = (object.getMapMetadata !== undefined && object.getMapMetadata !== null)
-      ? GetMapMetadata.fromPartial(object.getMapMetadata)
-      : undefined;
     message.getStratInfo = (object.getStratInfo !== undefined && object.getStratInfo !== null)
       ? GetStratInfo.fromPartial(object.getStratInfo)
       : undefined;
@@ -6067,7 +5897,6 @@ function createBaseServer2Client(): Server2Client {
     loginResponse: undefined,
     getStratListResponse: undefined,
     createEmptyStratResponse: undefined,
-    getMapMetadataResponse: undefined,
     getStratInfoResponse: undefined,
     saveStratResponse: undefined,
     deleteStratResponse: undefined,
@@ -6098,9 +5927,6 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.createEmptyStratResponse !== undefined) {
       CreateEmptyStratResponse.encode(message.createEmptyStratResponse, writer.uint32(34).fork()).join();
-    }
-    if (message.getMapMetadataResponse !== undefined) {
-      GetMapMetadataResponse.encode(message.getMapMetadataResponse, writer.uint32(42).fork()).join();
     }
     if (message.getStratInfoResponse !== undefined) {
       GetStratInfoResponse.encode(message.getStratInfoResponse, writer.uint32(50).fork()).join();
@@ -6190,14 +6016,6 @@ export const Server2Client: MessageFns<Server2Client> = {
             }
 
             message.createEmptyStratResponse = CreateEmptyStratResponse.decode(reader, reader.uint32());
-            continue;
-          }
-          case 5: {
-            if (tag !== 42) {
-              break;
-            }
-
-            message.getMapMetadataResponse = GetMapMetadataResponse.decode(reader, reader.uint32());
             continue;
           }
           case 6: {
@@ -6346,11 +6164,6 @@ export const Server2Client: MessageFns<Server2Client> = {
         : isSet(object.create_empty_strat_response)
         ? CreateEmptyStratResponse.fromJSON(object.create_empty_strat_response)
         : undefined,
-      getMapMetadataResponse: isSet(object.getMapMetadataResponse)
-        ? GetMapMetadataResponse.fromJSON(object.getMapMetadataResponse)
-        : isSet(object.get_map_metadata_response)
-        ? GetMapMetadataResponse.fromJSON(object.get_map_metadata_response)
-        : undefined,
       getStratInfoResponse: isSet(object.getStratInfoResponse)
         ? GetStratInfoResponse.fromJSON(object.getStratInfoResponse)
         : isSet(object.get_strat_info_response)
@@ -6438,9 +6251,6 @@ export const Server2Client: MessageFns<Server2Client> = {
     if (message.createEmptyStratResponse !== undefined) {
       obj.createEmptyStratResponse = CreateEmptyStratResponse.toJSON(message.createEmptyStratResponse);
     }
-    if (message.getMapMetadataResponse !== undefined) {
-      obj.getMapMetadataResponse = GetMapMetadataResponse.toJSON(message.getMapMetadataResponse);
-    }
     if (message.getStratInfoResponse !== undefined) {
       obj.getStratInfoResponse = GetStratInfoResponse.toJSON(message.getStratInfoResponse);
     }
@@ -6503,10 +6313,6 @@ export const Server2Client: MessageFns<Server2Client> = {
     message.createEmptyStratResponse =
       (object.createEmptyStratResponse !== undefined && object.createEmptyStratResponse !== null)
         ? CreateEmptyStratResponse.fromPartial(object.createEmptyStratResponse)
-        : undefined;
-    message.getMapMetadataResponse =
-      (object.getMapMetadataResponse !== undefined && object.getMapMetadataResponse !== null)
-        ? GetMapMetadataResponse.fromPartial(object.getMapMetadataResponse)
         : undefined;
     message.getStratInfoResponse = (object.getStratInfoResponse !== undefined && object.getStratInfoResponse !== null)
       ? GetStratInfoResponse.fromPartial(object.getStratInfoResponse)

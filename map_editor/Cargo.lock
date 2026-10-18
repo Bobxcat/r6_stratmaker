@@ -3655,6 +3655,7 @@ dependencies = [
  "ordered-float",
  "ron",
  "serde",
+ "serde_json",
  "slotmap",
  "svg",
  "toml",

@@ -91,8 +91,10 @@ fn render_all_projects() -> Result {
         let proj = proj?;
         let proj_name = proj.file_name().to_str().unwrap().to_string();
 
+        let render_dir = export_dir.join(&proj_name);
+
         let draw = DrawState::load_from_project_name(&proj_name);
-        draw.render(export_dir.join(&proj_name));
+        draw.render(&render_dir);
         println!("--Render finished for: {proj_name}");
     }
 

@@ -467,20 +467,6 @@ async fn handle_generic_message(
                 ))
                 .await?;
         }
-        C2SInner::GetMapMetadata(msg) => {
-            let map_id = MapId::from_map_name(&msg.map).unwrap();
-            let MapMetadata { name: _, floors } = *map_id.metadata();
-
-            cl_state
-                .ws
-                .send_proto(S2CInner::GetMapMetadataResponse(
-                    primary::GetMapMetadataResponse {
-                        floors: floors.iter().map(|&s| String::from(s)).collect(),
-                        special_fields: SpecialFields::new(),
-                    },
-                ))
-                .await?;
-        }
         C2SInner::GetStratInfo(msg) => {
             context_println!("Get the info: strat={}", msg.strat_id);
             let strat_id = StratId(Uuid::try_parse(&msg.strat_id)?);
@@ -935,7 +921,6 @@ fn lobby_loop(
                             | C2SInner::LoginRequest(..)
                             | C2SInner::GetStratList(..)
                             | C2SInner::CreateEmptyStrat(..)
-                            | C2SInner::GetMapMetadata(..)
                             | C2SInner::GetStratInfo(..)
                             | C2SInner::DeleteStrat(..)
                             | C2SInner::SaveStrat(..)
@@ -1022,7 +1007,6 @@ async fn client_loop(
                     | C2SInner::LoginRequest(..)
                     | C2SInner::GetStratList(..)
                     | C2SInner::CreateEmptyStrat(..)
-                    | C2SInner::GetMapMetadata(..)
                     | C2SInner::GetStratInfo(..)
                     | C2SInner::SaveStrat(..)
                     | C2SInner::DeleteStrat(..)

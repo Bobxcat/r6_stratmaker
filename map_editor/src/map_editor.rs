@@ -1442,6 +1442,22 @@ impl DrawState {
         let render_dir = render_dir.as_ref();
         std::fs::create_dir_all(render_dir).unwrap();
 
+        #[derive(Serialize, Deserialize)]
+        struct SavedMetadata {
+            pixels_per_meter: f32,
+            floors: Vec<String>,
+        }
+
+        let metadata = SavedMetadata {
+            pixels_per_meter: self.pixels_per_meter(),
+            floors: self.floor_names.clone(),
+        };
+        std::fs::write(
+            render_dir.join("metadata.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+
         for floor in 0..self.floor_names.len() {
             let floor_name = &self.floor_names[floor];
             for style in RenderStyle::load_all() {

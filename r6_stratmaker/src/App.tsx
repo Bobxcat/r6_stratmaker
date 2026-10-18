@@ -328,7 +328,7 @@ class DrawPath implements DrawElement {
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
     ctx.strokeStyle = this.color.toCss();
-    ctx.lineWidth = 0.8 * canvasScale * stratEditingState.mapPixelsPerMeter;
+    ctx.lineWidth = 0.05 * canvasScale * stratEditingState.mapPixelsPerMeter;
 
     this.points.forEach((pt, idx) => {
       if (idx == 0) {
@@ -388,7 +388,7 @@ class Arrow implements DrawElement {
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
     ctx.strokeStyle = this.color.toCss();
-    ctx.lineWidth = 0.8 * canvasScale * stratEditingState.mapPixelsPerMeter;
+    ctx.lineWidth = 0.05 * canvasScale * stratEditingState.mapPixelsPerMeter;
 
     ctx.moveTo(this.start.x, this.start.y);
     ctx.lineTo(this.end.x, this.end.y);
@@ -518,6 +518,61 @@ class IconPlacement implements DrawElement {
     return iconSize;
   }
 
+  boundingBoxWithSizeScale(scale: number): Aabb {
+    let width = undefined;
+    let height = undefined;
+
+    function imgAspectRatio(imgData: CanvasImageSource): number {
+      const imgElem: HTMLImageElement = imgData! as HTMLImageElement;
+      return imgElem.width / imgElem.height;
+    }
+
+    switch (this.info.kind) {
+      case IconKind.TeamOperator: {
+        width = this.size();
+        height = this.size();
+        break;
+      }
+      case IconKind.TeamAbility: {
+        height = this.size();
+        const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
+        width = height * imgAspectRatio(operatorsIndexNonReactive.abilityImgData.get(loadout.operator)!);
+        break;
+      }
+      case IconKind.TeamUtility: {
+        height = this.size();
+        const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
+        width = height * imgAspectRatio(operatorsIndexNonReactive.utilityImgData.get(loadout.util)!);
+        break;
+      }
+      case IconKind.FreeOperator: {
+        width = this.size();
+        height = this.size();
+        break;
+      }
+      case IconKind.FreeAbility: {
+        height = this.size();
+        width = height * imgAspectRatio(operatorsIndexNonReactive.abilityImgData.get(this.info.operator)!);
+        break;
+      }
+      case IconKind.FreeUtility: {
+        height = this.size();
+        width = height * imgAspectRatio(operatorsIndexNonReactive.utilityImgData.get(this.info.util)!);
+        break;
+      }
+      case IconKind.ContextFree: {
+        width = this.size();
+        height = this.size();
+        break;
+      }
+    }
+
+    const halfHeight = new Vec2(width, height).scaled(stratEditingState.mapPixelsPerMeter).scaled(0.5).scaled(scale);
+
+    return Aabb.fromPoints([this.pos.sub(halfHeight), this.pos.add(halfHeight)]);
+
+  }
+
   static fromProto(icon: protos.Icon): IconPlacement {
     let parsedIconInfo: IconInfo;
     if (icon.teamOperator) {
@@ -631,60 +686,12 @@ class IconPlacement implements DrawElement {
     return this.boundingBox().containsPoint(mousePos);
   }
   boundingBox(): Aabb {
-    let width = undefined;
-    let height = undefined;
-
-    function imgAspectRatio(imgData: CanvasImageSource): number {
-      const imgElem: HTMLImageElement = imgData! as HTMLImageElement;
-      return imgElem.width / imgElem.height;
-    }
-
-    switch (this.info.kind) {
-      case IconKind.TeamOperator: {
-        width = this.size();
-        height = this.size();
-        break;
-      }
-      case IconKind.TeamAbility: {
-        height = this.size();
-        const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
-        width = height * imgAspectRatio(operatorsIndexNonReactive.abilityImgData.get(loadout.operator)!);
-        break;
-      }
-      case IconKind.TeamUtility: {
-        height = this.size();
-        const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
-        width = height * imgAspectRatio(operatorsIndexNonReactive.utilityImgData.get(loadout.util)!);
-        break;
-      }
-      case IconKind.FreeOperator: {
-        width = this.size();
-        height = this.size();
-        break;
-      }
-      case IconKind.FreeAbility: {
-        height = this.size();
-        width = height * imgAspectRatio(operatorsIndexNonReactive.abilityImgData.get(this.info.operator)!);
-        break;
-      }
-      case IconKind.FreeUtility: {
-        height = this.size();
-        width = height * imgAspectRatio(operatorsIndexNonReactive.utilityImgData.get(this.info.util)!);
-        break;
-      }
-      case IconKind.ContextFree: {
-        width = this.size();
-        height = this.size();
-        break;
-      }
-    }
-
-    return Aabb.fromPoints([this.pos, this.pos.add(new Vec2(width, height).scaled(stratEditingState.mapPixelsPerMeter))]);
+    return this.boundingBoxWithSizeScale(1);
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     let imgData: CanvasImageSource | undefined;
 
-    let aabb = this.boundingBox();
+    let aabb = this.boundingBoxWithSizeScale(canvasScale);
 
     switch (this.info.kind) {
       case IconKind.TeamOperator: {
@@ -740,10 +747,10 @@ class IconPlacement implements DrawElement {
         break;
       }
     }
-    ctx.fillRect(aabb.minPt.x, aabb.minPt.y, aabb.width() * canvasScale, aabb.height() * canvasScale);
+    ctx.fillRect(aabb.minPt.x, aabb.minPt.y, aabb.width(), aabb.height());
 
     if (imgData) {
-      ctx.drawImage(imgData, aabb.minPt.x, aabb.minPt.y, aabb.width() * canvasScale, aabb.height() * canvasScale);
+      ctx.drawImage(imgData, aabb.minPt.x, aabb.minPt.y, aabb.width(), aabb.height());
     }
   }
   mapPoints(map: (pt: Vec2) => Vec2): void {
@@ -1885,9 +1892,9 @@ function App() {
         return;
       }
 
-      const length = 5 * canvasScale;
-      const lineWidth = 1.5 * canvasScale;
-      const spacing = 3 * canvasScale;
+      const length = 0.5 * canvasScale * stratEditingState.mapPixelsPerMeter;
+      const lineWidth = 0.15 * canvasScale * stratEditingState.mapPixelsPerMeter;
+      const spacing = 0.3 * canvasScale * stratEditingState.mapPixelsPerMeter;
 
       function drawSingleCaret(ctx: CanvasRenderingContext2D, isDown: boolean, pos: Vec2) {
         // Since -y is "up", we rotate in the positive direction to point downwards

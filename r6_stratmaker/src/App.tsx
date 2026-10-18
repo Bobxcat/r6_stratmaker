@@ -31,8 +31,14 @@ interface DrawElement {
 
   clone(): DrawElement;
 
+  /**
+   * * `mousePos` - The mouse position in world-space, not canvas space
+   * */
   isHovered(mousePos: Vec2): boolean;
+  /** Returns the bounding box of this object in canvas space */
   boundingBox(): Aabb;
+  /** Draw this element (in world space) to the canvas.
+   * When implementing, make sure to convert all relevant coordinates into canvas space! */
   drawToCtx(ctx: CanvasRenderingContext2D): void;
   mapPoints(map: (pt: Vec2) => Vec2): void;
 }
@@ -103,9 +109,9 @@ enum DrawTool {
 }
 
 class InputCanvasState {
-  /** The previous mouse position in *logical* pixels */
+  /** The previous mouse position in world space */
   prevMousePos: Vec2 = new Vec2(0, 0);
-  /** The current mouse position in *logical* pixels */
+  /** The current mouse position in world space */
   mousePos: Vec2 = new Vec2(0, 0);
 
   prevMouseClicked: boolean = false;
@@ -323,14 +329,14 @@ class DrawPath implements DrawElement {
     return false;
   }
   boundingBox(): Aabb {
-    return Aabb.fromPoints(this.points);
+    return Aabb.fromPoints(this.points).scaled(canvasScale);
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
     ctx.strokeStyle = this.color.toCss();
     ctx.lineWidth = 0.05 * canvasScale * stratEditingState.mapPixelsPerMeter;
 
-    this.points.forEach((pt, idx) => {
+    this.points.map(pt => pt.scaled(canvasScale)).forEach((pt, idx) => {
       if (idx == 0) {
         ctx.moveTo(pt.x, pt.y);
       } else {
@@ -383,15 +389,15 @@ class Arrow implements DrawElement {
     return mousePos.distanceToLine(this.start, this.end, false, false).distance < 5;
   }
   boundingBox(): Aabb {
-    return Aabb.fromPoints([this.start, this.end]);
+    return Aabb.fromPoints([this.start, this.end]).scaled(canvasScale);
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
     ctx.strokeStyle = this.color.toCss();
     ctx.lineWidth = 0.05 * canvasScale * stratEditingState.mapPixelsPerMeter;
 
-    ctx.moveTo(this.start.x, this.start.y);
-    ctx.lineTo(this.end.x, this.end.y);
+    ctx.moveTo(this.start.x * canvasScale, this.start.y * canvasScale);
+    ctx.lineTo(this.end.x * canvasScale, this.end.y * canvasScale);
 
     const makeHeadPoint = (side: boolean, isFixedLength: boolean, fixedLength: number): Vec2 => {
       var rot = side ? 0.1 : -0.1;
@@ -406,9 +412,9 @@ class Arrow implements DrawElement {
     const headPt0 = makeHeadPoint(true, true, 10);
     const headPt1 = makeHeadPoint(false, true, 10);
 
-    ctx.moveTo(headPt0.x, headPt0.y);
-    ctx.lineTo(this.end.x, this.end.y)
-    ctx.lineTo(headPt1.x, headPt1.y);
+    ctx.moveTo(headPt0.x * canvasScale, headPt0.y * canvasScale);
+    ctx.lineTo(this.end.x * canvasScale, this.end.y * canvasScale)
+    ctx.lineTo(headPt1.x * canvasScale, headPt1.y * canvasScale);
 
     ctx.stroke();
     ctx.closePath();
@@ -516,61 +522,6 @@ class IconPlacement implements DrawElement {
     }
 
     return iconSize;
-  }
-
-  boundingBoxWithSizeScale(scale: number): Aabb {
-    let width = undefined;
-    let height = undefined;
-
-    function imgAspectRatio(imgData: CanvasImageSource): number {
-      const imgElem: HTMLImageElement = imgData! as HTMLImageElement;
-      return imgElem.width / imgElem.height;
-    }
-
-    switch (this.info.kind) {
-      case IconKind.TeamOperator: {
-        width = this.size();
-        height = this.size();
-        break;
-      }
-      case IconKind.TeamAbility: {
-        height = this.size();
-        const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
-        width = height * imgAspectRatio(operatorsIndexNonReactive.abilityImgData.get(loadout.operator)!);
-        break;
-      }
-      case IconKind.TeamUtility: {
-        height = this.size();
-        const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
-        width = height * imgAspectRatio(operatorsIndexNonReactive.utilityImgData.get(loadout.util)!);
-        break;
-      }
-      case IconKind.FreeOperator: {
-        width = this.size();
-        height = this.size();
-        break;
-      }
-      case IconKind.FreeAbility: {
-        height = this.size();
-        width = height * imgAspectRatio(operatorsIndexNonReactive.abilityImgData.get(this.info.operator)!);
-        break;
-      }
-      case IconKind.FreeUtility: {
-        height = this.size();
-        width = height * imgAspectRatio(operatorsIndexNonReactive.utilityImgData.get(this.info.util)!);
-        break;
-      }
-      case IconKind.ContextFree: {
-        width = this.size();
-        height = this.size();
-        break;
-      }
-    }
-
-    const halfHeight = new Vec2(width, height).scaled(stratEditingState.mapPixelsPerMeter).scaled(0.5).scaled(scale);
-
-    return Aabb.fromPoints([this.pos.sub(halfHeight), this.pos.add(halfHeight)]);
-
   }
 
   static fromProto(icon: protos.Icon): IconPlacement {
@@ -683,15 +634,66 @@ class IconPlacement implements DrawElement {
     return new IconPlacement(this.pos, Object.assign({}, this.info));
   }
   isHovered(mousePos: Vec2): boolean {
-    return this.boundingBox().containsPoint(mousePos);
+    return this.boundingBox().containsPoint(mousePos.scaled(canvasScale));
   }
   boundingBox(): Aabb {
-    return this.boundingBoxWithSizeScale(1);
+    let width = undefined;
+    let height = undefined;
+
+    function imgAspectRatio(imgData: CanvasImageSource): number {
+      const imgElem: HTMLImageElement = imgData! as HTMLImageElement;
+      return imgElem.width / imgElem.height;
+    }
+
+    switch (this.info.kind) {
+      case IconKind.TeamOperator: {
+        width = this.size();
+        height = this.size();
+        break;
+      }
+      case IconKind.TeamAbility: {
+        height = this.size();
+        const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
+        width = height * imgAspectRatio(operatorsIndexNonReactive.abilityImgData.get(loadout.operator)!);
+        break;
+      }
+      case IconKind.TeamUtility: {
+        height = this.size();
+        const loadout = stratEditingState.getTeammateLoadoutClone(this.info.teammateIndex)!;
+        width = height * imgAspectRatio(operatorsIndexNonReactive.utilityImgData.get(loadout.util)!);
+        break;
+      }
+      case IconKind.FreeOperator: {
+        width = this.size();
+        height = this.size();
+        break;
+      }
+      case IconKind.FreeAbility: {
+        height = this.size();
+        width = height * imgAspectRatio(operatorsIndexNonReactive.abilityImgData.get(this.info.operator)!);
+        break;
+      }
+      case IconKind.FreeUtility: {
+        height = this.size();
+        width = height * imgAspectRatio(operatorsIndexNonReactive.utilityImgData.get(this.info.util)!);
+        break;
+      }
+      case IconKind.ContextFree: {
+        width = this.size();
+        height = this.size();
+        break;
+      }
+    }
+
+    const halfHeight = new Vec2(width, height).scaled(stratEditingState.mapPixelsPerMeter).scaled(canvasScale).scaled(0.5);
+
+    return Aabb.fromPoints([this.pos.scaled(canvasScale).sub(halfHeight), this.pos.scaled(canvasScale).add(halfHeight)]);
+
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     let imgData: CanvasImageSource | undefined;
 
-    let aabb = this.boundingBoxWithSizeScale(canvasScale);
+    let aabb = this.boundingBox();
 
     switch (this.info.kind) {
       case IconKind.TeamOperator: {
@@ -1176,6 +1178,7 @@ class StratEditingState {
 
 const stratEditingState = new StratEditingState();
 let redrawFreeDrawCanvasQueued: boolean = false;
+/** The ratio of canvas units per world units */
 let canvasScale: number = 1;
 
 const inputCanvasState = InputCanvasState.Instance;
@@ -1892,9 +1895,9 @@ function App() {
         return;
       }
 
-      const length = 0.5 * canvasScale * stratEditingState.mapPixelsPerMeter;
-      const lineWidth = 0.15 * canvasScale * stratEditingState.mapPixelsPerMeter;
-      const spacing = 0.3 * canvasScale * stratEditingState.mapPixelsPerMeter;
+      const length = 0.15 * canvasScale * stratEditingState.mapPixelsPerMeter;
+      const lineWidth = 0.05 * canvasScale * stratEditingState.mapPixelsPerMeter;
+      const spacing = 0.075 * canvasScale * stratEditingState.mapPixelsPerMeter;
 
       function drawSingleCaret(ctx: CanvasRenderingContext2D, isDown: boolean, pos: Vec2) {
         // Since -y is "up", we rotate in the positive direction to point downwards
@@ -1946,12 +1949,11 @@ function App() {
         ctx.globalAlpha = 0.3;
       }
       let elemClone = elem.clone();
-      elemClone.mapPoints((pt) => pt.scaled(canvasScale));
       elemClone.drawToCtx(ctx);
       ctx.globalAlpha = 1.0;
 
       const aabb = elemClone.boundingBox();
-      const caretPt = new Vec2(aabb.minPt.x, (aabb.minPt.y + aabb.maxPt.y) / 2);
+      const caretPt = new Vec2(aabb.minPt.x - 0.1 * canvasScale, (aabb.minPt.y + aabb.maxPt.y) / 2);
       drawCaretToCanvas(canvasId, floor - stratEditingState.selectedFloor, caretPt);
     }
 
@@ -2243,7 +2245,7 @@ function App() {
 
             if (toolState.selected && toolState.selected.getRaw(phaseRawRef)) {
               // Draw border around selection
-              const boundingBox: Aabb = toolState.selected.getRaw(phaseRawRef)!.boundingBox().scaled(canvasScale);
+              const boundingBox: Aabb = toolState.selected.getRaw(phaseRawRef)!.boundingBox();
 
               placementPreviewCtx.beginPath();
 

@@ -1393,7 +1393,8 @@ impl DrawState {
             let cross_axis = Vec2::from_angle(FRAC_PI_2)
                 .rotate(wall_dir)
                 .normalize_or_zero()
-                * 5.;
+                * 0.5
+                * self.pixels_per_meter();
 
             for tick_center in evenly_spaced_points_along_line(
                 wall.start,

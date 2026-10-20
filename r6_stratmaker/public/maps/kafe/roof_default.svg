@@ -1,3 +1,13 @@
 <svg viewBox="95 -40 295 195" xmlns="http://www.w3.org/2000/svg">
 <rect fill="#614CB6" height="195" width="295" x="95" y="-40"/>
+<path d="M215.70161,4.945257 L227.83348,17.077127 L215.70161,17.077127 L227.83348,4.945257 L215.70161,4.945257 L215.70161,17.077127 L227.83348,17.077127 L227.83348,4.945257 z" fill="none" stroke="#FFFFFF" stroke-linejoin="round" stroke-width="0.8087914" transform="scale(1, -1)"/>
+<path d="M181.03967,-24.951181 L193.17154,-12.819311 L181.03967,-12.819311 L193.17154,-24.951181 L181.03967,-24.951181 L181.03967,-12.819311 L193.17154,-12.819311 L193.17154,-24.951181 z" fill="none" stroke="#FFFFFF" stroke-linejoin="round" stroke-width="0.8087914" transform="scale(1, -1)"/>
+<path d="M288.02945,-12.53461 L266.945,-12.53461 z" fill="none" stroke="#FFBCBC" stroke-width="1.6175828" transform="scale(1, -1)"/>
+<path d="M266.945,-22.66599 L288.02945,-22.66599 z" fill="none" stroke="#FFBCBC" stroke-width="1.6175828" transform="scale(1, -1)"/>
+<path d="M352.0016,-132.15714 L352.0016,30.594234 z" fill="none" stroke="#FFBCBC" stroke-width="1.6175828" transform="scale(1, -1)"/>
+<path d="M352.0016,30.594234 L164.84688,30.594234 z" fill="none" stroke="#FFBCBC" stroke-width="1.6175828" transform="scale(1, -1)"/>
+<path d="M266.945,-12.53461 L266.945,-22.66599 z" fill="none" stroke="#FFBCBC" stroke-width="1.6175828" transform="scale(1, -1)"/>
+<path d="M164.84688,30.594234 L164.84688,-132.15714 z" fill="none" stroke="#FFBCBC" stroke-width="1.6175828" transform="scale(1, -1)"/>
+<path d="M164.84688,-132.15714 L352.0016,-132.15714 z" fill="none" stroke="#FFBCBC" stroke-width="1.6175828" transform="scale(1, -1)"/>
+<path d="M288.02945,-22.66599 L288.02945,-12.53461 z" fill="none" stroke="#FFBCBC" stroke-width="1.6175828" transform="scale(1, -1)"/>
 </svg>

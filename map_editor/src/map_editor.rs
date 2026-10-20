@@ -1446,11 +1446,15 @@ impl DrawState {
         #[derive(Serialize, Deserialize)]
         struct SavedMetadata {
             pixels_per_meter: f32,
+            viewbox_width: f32,
+            viewbox_height: f32,
             floors: Vec<String>,
         }
 
         let metadata = SavedMetadata {
             pixels_per_meter: self.pixels_per_meter(),
+            viewbox_width: self.viewbox.half_size().x * 2.,
+            viewbox_height: self.viewbox.half_size().y * 2.,
             floors: self.floor_names.clone(),
         };
         std::fs::write(

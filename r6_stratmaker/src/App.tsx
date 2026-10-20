@@ -329,14 +329,14 @@ class DrawPath implements DrawElement {
     return false;
   }
   boundingBox(): Aabb {
-    return Aabb.fromPoints(this.points).scaled(canvasScale);
+    return Aabb.fromPoints(this.points).scaled(canvasPxPerSVGPixel);
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
     ctx.strokeStyle = this.color.toCss();
-    ctx.lineWidth = 0.05 * canvasScale * stratEditingState.mapPixelsPerMeter;
+    ctx.lineWidth = 0.15 * canvasPxPerSVGPixel * stratEditingState.mapSVGPixelsPerMeter;
 
-    this.points.map(pt => pt.scaled(canvasScale)).forEach((pt, idx) => {
+    this.points.map(pt => pt.scaled(canvasPxPerSVGPixel)).forEach((pt, idx) => {
       if (idx == 0) {
         ctx.moveTo(pt.x, pt.y);
       } else {
@@ -389,15 +389,15 @@ class Arrow implements DrawElement {
     return mousePos.distanceToLine(this.start, this.end, false, false).distance < 5;
   }
   boundingBox(): Aabb {
-    return Aabb.fromPoints([this.start, this.end]).scaled(canvasScale);
+    return Aabb.fromPoints([this.start, this.end]).scaled(canvasPxPerSVGPixel);
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     ctx.beginPath();
     ctx.strokeStyle = this.color.toCss();
-    ctx.lineWidth = 0.05 * canvasScale * stratEditingState.mapPixelsPerMeter;
+    ctx.lineWidth = 0.15 * canvasPxPerSVGPixel * stratEditingState.mapSVGPixelsPerMeter;
 
-    ctx.moveTo(this.start.x * canvasScale, this.start.y * canvasScale);
-    ctx.lineTo(this.end.x * canvasScale, this.end.y * canvasScale);
+    ctx.moveTo(this.start.x * canvasPxPerSVGPixel, this.start.y * canvasPxPerSVGPixel);
+    ctx.lineTo(this.end.x * canvasPxPerSVGPixel, this.end.y * canvasPxPerSVGPixel);
 
     const makeHeadPoint = (side: boolean, isFixedLength: boolean, fixedLength: number): Vec2 => {
       var rot = side ? 0.1 : -0.1;
@@ -412,9 +412,9 @@ class Arrow implements DrawElement {
     const headPt0 = makeHeadPoint(true, true, 5);
     const headPt1 = makeHeadPoint(false, true, 5);
 
-    ctx.moveTo(headPt0.x * canvasScale, headPt0.y * canvasScale);
-    ctx.lineTo(this.end.x * canvasScale, this.end.y * canvasScale)
-    ctx.lineTo(headPt1.x * canvasScale, headPt1.y * canvasScale);
+    ctx.moveTo(headPt0.x * canvasPxPerSVGPixel, headPt0.y * canvasPxPerSVGPixel);
+    ctx.lineTo(this.end.x * canvasPxPerSVGPixel, this.end.y * canvasPxPerSVGPixel)
+    ctx.lineTo(headPt1.x * canvasPxPerSVGPixel, headPt1.y * canvasPxPerSVGPixel);
 
     ctx.stroke();
     ctx.closePath();
@@ -489,39 +489,39 @@ class IconPlacement implements DrawElement {
 
   size(): number {
     let iconSize = undefined;
-    let scale = 0.8;
+    let scale = 2;
     switch (this.info.kind) {
       case IconKind.TeamOperator: {
-        iconSize = 1 * scale;
+        iconSize = 1;
         break;
       }
       case IconKind.TeamAbility: {
-        iconSize = 0.6 * scale;
+        iconSize = 0.6;
         break;
       }
       case IconKind.TeamUtility: {
-        iconSize = 0.6 * scale;
+        iconSize = 0.6;
         break;
       }
       case IconKind.FreeOperator: {
-        iconSize = 1 * scale;
+        iconSize = 1;
         break;
       }
       case IconKind.FreeAbility: {
-        iconSize = 0.6 * scale;
+        iconSize = 0.6;
         break;
       }
       case IconKind.FreeUtility: {
-        iconSize = 0.6 * scale;
+        iconSize = 0.6;
         break;
       }
       case IconKind.ContextFree: {
-        iconSize = 0.6 * scale;
+        iconSize = 0.6;
         break;
       }
     }
 
-    return iconSize;
+    return iconSize * scale;
   }
 
   static fromProto(icon: protos.Icon): IconPlacement {
@@ -634,9 +634,10 @@ class IconPlacement implements DrawElement {
     return new IconPlacement(this.pos, Object.assign({}, this.info));
   }
   isHovered(mousePos: Vec2): boolean {
-    return this.boundingBox().containsPoint(mousePos.scaled(canvasScale));
+    return this.boundingBox().containsPoint(mousePos.scaled(canvasPxPerSVGPixel));
   }
   boundingBox(): Aabb {
+    // Width and height in meters of this icon
     let width = undefined;
     let height = undefined;
 
@@ -685,9 +686,9 @@ class IconPlacement implements DrawElement {
       }
     }
 
-    const halfHeight = new Vec2(width, height).scaled(stratEditingState.mapPixelsPerMeter).scaled(canvasScale).scaled(0.5);
+    const halfSize = new Vec2(width, height).scaled(stratEditingState.mapSVGPixelsPerMeter).scaled(canvasPxPerSVGPixel).scaled(0.5);
 
-    return Aabb.fromPoints([this.pos.scaled(canvasScale).sub(halfHeight), this.pos.scaled(canvasScale).add(halfHeight)]);
+    return Aabb.fromPoints([this.pos.scaled(canvasPxPerSVGPixel).sub(halfSize), this.pos.scaled(canvasPxPerSVGPixel).add(halfSize)]);
 
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
@@ -938,9 +939,9 @@ class StratEditingState {
   stratName: string = "";
   map: string = "";
   mapFloors: string[] = [];
-  mapPixelsPerMeter: number = 10;
-  mapImgWidth: number = 1600;
-  mapImgHeight: number = 900;
+  mapSVGPixelsPerMeter: number = 10;
+  mapSVGViewboxWidth: number = 1600;
+  mapSVGViewboxHeight: number = 900;
   prevCanvasScales: DeepMap<string, number> = new DeepMap();
   selectedFloor: number = 0;
 
@@ -1139,7 +1140,6 @@ class StratEditingState {
           }
         }
       }
-      //
     }
   }
 
@@ -1179,7 +1179,7 @@ class StratEditingState {
 const stratEditingState = new StratEditingState();
 let redrawFreeDrawCanvasQueued: boolean = false;
 /** The ratio of canvas units per world units */
-let canvasScale: number = 1;
+let canvasPxPerSVGPixel: number = 1;
 
 const inputCanvasState = InputCanvasState.Instance;
 
@@ -1488,22 +1488,15 @@ function App() {
   useEffect(() => {
     async function getMapMetadata(map: string) {
       let metadata = await (await fetch(`maps/${map}/metadata.json`)).json();
-      stratEditingState.mapPixelsPerMeter = metadata.pixels_per_meter;
+      stratEditingState.mapSVGPixelsPerMeter = metadata.pixels_per_meter;
       stratEditingState.mapFloors = metadata.floors;
+      stratEditingState.mapSVGViewboxWidth = metadata.viewbox_width;
+      stratEditingState.mapSVGViewboxHeight = metadata.viewbox_height;
+
       if (stratEditingState.getPhasesRef().length == 0) {
         stratEditingState.pushEmptyPhaseRaw("Phase 0");
       }
       updateStratEditingStateDisplay();
-    }
-
-    async function getMapDimensions(map: string) {
-      let img = new Image();
-      img.onload = () => {
-        stratEditingState.mapImgHeight = img.height;
-        stratEditingState.mapImgWidth = img.width;
-        updateStratEditingStateDisplay();
-      };
-      img.src = getFloorImgPath(map, "floor_1");
     }
 
     let newMap = stratEditingState.map;
@@ -1511,19 +1504,18 @@ function App() {
       onMapChangeUseEffectCurrMap = newMap;
       if (newMap != "") {
         getMapMetadata(newMap);
-        getMapDimensions(newMap);
       }
     }
   }, [stratEditingStateDisplay]);
 
   //** Returns whether or not the size of the canvas has changed */
   function recalculateStratEditingCanvasSize(): boolean {
-    let width = window.innerWidth / 2;
-    let height = (stratEditingState.mapImgHeight / stratEditingState.mapImgWidth) * width;
-    canvasScale = width / stratEditingState.mapImgWidth;
-    if (Math.abs(width - stratEditingCanvasWidth) > 0.01) {
-      setStratEditingCanvasWidth(width);
-      setStratEditingCanvasHeight(height);
+    let canvasWidth = window.innerWidth / 2;
+    let canvasHeight = (stratEditingState.mapSVGViewboxHeight / stratEditingState.mapSVGViewboxWidth) * canvasWidth;
+    canvasPxPerSVGPixel = canvasWidth / stratEditingState.mapSVGViewboxWidth;
+    if (Math.abs(canvasWidth - stratEditingCanvasWidth) > 0.01) {
+      setStratEditingCanvasWidth(canvasWidth);
+      setStratEditingCanvasHeight(canvasHeight);
       return true;
     } else {
       return false;
@@ -1895,9 +1887,9 @@ function App() {
         return;
       }
 
-      const length = 0.15 * canvasScale * stratEditingState.mapPixelsPerMeter;
-      const lineWidth = 0.05 * canvasScale * stratEditingState.mapPixelsPerMeter;
-      const spacing = 0.075 * canvasScale * stratEditingState.mapPixelsPerMeter;
+      const length = 0.4 * canvasPxPerSVGPixel * stratEditingState.mapSVGPixelsPerMeter;
+      const lineWidth = 0.15 * canvasPxPerSVGPixel * stratEditingState.mapSVGPixelsPerMeter;
+      const spacing = 0.2 * canvasPxPerSVGPixel * stratEditingState.mapSVGPixelsPerMeter;
 
       function drawSingleCaret(ctx: CanvasRenderingContext2D, isDown: boolean, pos: Vec2) {
         // Since -y is "up", we rotate in the positive direction to point downwards
@@ -1953,7 +1945,7 @@ function App() {
       ctx.globalAlpha = 1.0;
 
       const aabb = elemClone.boundingBox();
-      const caretPt = new Vec2(aabb.minPt.x - 0.1 * canvasScale, (aabb.minPt.y + aabb.maxPt.y) / 2);
+      const caretPt = new Vec2(aabb.minPt.x - 0.25 * canvasPxPerSVGPixel, (aabb.minPt.y + aabb.maxPt.y) / 2);
       drawCaretToCanvas(canvasId, floor - stratEditingState.selectedFloor, caretPt);
     }
 
@@ -2003,7 +1995,7 @@ function App() {
     function logicalMousePosForCanvas(canvasId: string, clientX: number, clientY: number): Vec2 {
       const canvas = document.getElementById(canvasId)! as HTMLCanvasElement;
       const rect = canvas.getBoundingClientRect();
-      const scale = 1 / canvasScale;
+      const scale = 1 / canvasPxPerSVGPixel;
       return new Vec2(((clientX - rect.left) * scale), ((clientY - rect.top) * scale));
     }
 
@@ -2018,7 +2010,7 @@ function App() {
         stratEditingState.prevCanvasScales.set(canvasId, 1);
         prevScale = 1;
       }
-      const newScale = canvasScale;
+      const newScale = canvasPxPerSVGPixel;
       if (Math.abs(newScale - prevScale) > 0.001) {
         ctx.scale(newScale / prevScale, newScale / prevScale);
         stratEditingState.prevCanvasScales.set(canvasId, newScale);
@@ -2320,6 +2312,8 @@ function App() {
         requestAnimationFrame(onUpdate);
       }
       requestAnimationFrame(onUpdate);
+      // Otherwise, the onUpdate doesn't fire sometimes upon re-entering the strat editing page
+      setInterval(() => requestAnimationFrame(onUpdate), 100)
 
       function triggerUndo() {
         const previousDrawActionsList = stratEditingState.getPreviousDrawActionsRef(stratEditingState.selectedPhase);

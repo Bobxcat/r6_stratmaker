@@ -4,23 +4,12 @@
 
 import { useEffect, useState } from "react";
 import { isTauri, invoke } from "@tauri-apps/api/core";
-import { DeepMap } from "deep-equality-data-structures";
+import { DeepMap, DeepSet } from "deep-equality-data-structures";
 import { WS as WebSocket } from "./websocket.ts";
 import "./App.css";
 import * as protos from "./generated_protos/primary.ts"
-import * as uuid from 'uuid';
 import * as js_toml from 'js-toml';
-
-class Uuid {
-  readonly data: string;
-  constructor(data?: string) {
-    if (data) {
-      this.data = data;
-    } else {
-      this.data = uuid.v4();
-    }
-  }
-}
+import { UuidMap, Uuid } from "./uuidmap.ts";
 
 interface DrawElement {
   asEnum(): AnyDrawElementData;
@@ -83,7 +72,7 @@ class AnyDrawElementId {
   equals(other: AnyDrawElementId): boolean {
     return (this.kind === other.kind)
       && (this.floor === other.floor)
-      && (this.id === other.id);
+      && (this.id.data === other.id.data);
   }
 
   clone(): AnyDrawElementId {
@@ -275,6 +264,10 @@ class Aabb {
 
   height(): number {
     return this.maxPt.y - this.minPt.y;
+  }
+
+  size(): Vec2 {
+    return new Vec2(this.width(), this.height());
   }
 
   containsPoint(pt: Vec2): boolean {
@@ -689,7 +682,6 @@ class IconPlacement implements DrawElement {
     const halfSize = new Vec2(width, height).scaled(stratEditingState.mapSVGPixelsPerMeter).scaled(canvasPxPerSVGPixel).scaled(0.5);
 
     return Aabb.fromPoints([this.pos.scaled(canvasPxPerSVGPixel).sub(halfSize), this.pos.scaled(canvasPxPerSVGPixel).add(halfSize)]);
-
   }
   drawToCtx(ctx: CanvasRenderingContext2D): void {
     let imgData: CanvasImageSource | undefined;
@@ -756,15 +748,21 @@ class IconPlacement implements DrawElement {
       ctx.drawImage(imgData, aabb.minPt.x, aabb.minPt.y, aabb.width(), aabb.height());
     }
   }
+  drawToCtxAtTopLeft(ctx: CanvasRenderingContext2D, topLeft: Vec2): void {
+    let oldPos = this.pos;
+    this.pos = topLeft.add(this.boundingBox().size().scaled(0.5));
+    this.drawToCtx(ctx);
+    this.pos = oldPos;
+  }
   mapPoints(map: (pt: Vec2) => Vec2): void {
     this.pos = map(this.pos)
   }
 }
 
 class StratEditingPhaseFloor {
-  drawPaths: DeepMap<Uuid, DrawPath> = new DeepMap();
-  arrows: DeepMap<Uuid, Arrow> = new DeepMap();
-  icons: DeepMap<Uuid, IconPlacement> = new DeepMap();
+  drawPaths: UuidMap<DrawPath> = new UuidMap();
+  arrows: UuidMap<Arrow> = new UuidMap();
+  icons: UuidMap<IconPlacement> = new UuidMap();
 
   allDrawElements(): Uuid[] {
     return Array.from(this.drawPaths.keys())
@@ -864,6 +862,9 @@ class ArrowToolState {
   arrowStartPoint: Vec2 = new Vec2(0, 0);
 }
 
+let placeIconToolStateOffscreenCanvas = document.createElement("canvas");
+let placeIconToolStateOffscreenCanvasPlacedPos = new Vec2(0, 0);
+let placeIconToolStateOffscreenCanvasCurrIcon: IconInfo = { kind: IconKind.FreeOperator, operator: "" };
 class PlaceIconToolState {
   selectedIcon: IconInfo = { kind: IconKind.FreeOperator, operator: "" };
 }
@@ -943,6 +944,7 @@ class StratEditingState {
   mapSVGViewboxWidth: number = 1600;
   mapSVGViewboxHeight: number = 900;
   prevCanvasScales: DeepMap<string, number> = new DeepMap();
+  canvasScalesChanged: boolean = false;
   selectedFloor: number = 0;
 
   private phases: StratEditingPhase[] = [];
@@ -1180,6 +1182,7 @@ const stratEditingState = new StratEditingState();
 let redrawFreeDrawCanvasQueued: boolean = false;
 /** The ratio of canvas units per world units */
 let canvasPxPerSVGPixel: number = 1;
+let prevCanvasWidth: number = 1;
 
 const inputCanvasState = InputCanvasState.Instance;
 
@@ -1375,22 +1378,12 @@ function lerp(start: number, end: number, t: number): number {
   return start * (1 - t) + end * t;
 }
 
-function mapMap<K1, V1, K2, V2>(map: DeepMap<K1, V1>, cb: (k: K1, v: V1) => [K2, V2]): DeepMap<K2, V2> {
-  let outMap: DeepMap<K2, V2> = new DeepMap();
+function mapMapToObject<V1, V2>(map: UuidMap<V1>, cb: (id: Uuid, v: V1) => [string, V2]): Record<string, V2> {
+  let record: Record<string, V2> = {};
 
   for (const entry of map) {
     const out = cb(entry[0], entry[1]);
-    outMap.set(out[0], out[1]);
-  }
-
-  return outMap;
-}
-
-function mapMapToObject<K1, V1, V2>(map: DeepMap<K1, V1>, cb: (k: K1, v: V1) => [string, V2]): Record<string, V2> {
-  let record: Record<string, V2> = {};
-
-  for (const entry of mapMap(map, cb)) {
-    record[entry[0]] = entry[1];
+    record[out[0]] = out[1];
   }
 
   return record;
@@ -1404,24 +1397,15 @@ function println(msg: string) {
   }
 }
 
-// FIXME: For some reason, a client in a lobby that initiates loading a strat will fail to
-// redraw the canvas when `redrawFreeDrawCanvas` is called immediately, while the others will succeed.
-// For this reason, we need to trigger a second redraw with a slight delay
-function redrawFreeDrawCanvasQueueDeferred() {
-  redrawFreeDrawCanvasQueued = true;
-  setTimeout(() => {
-    redrawFreeDrawCanvasQueued = true;
-  }, 50);
-  setTimeout(() => {
-    redrawFreeDrawCanvasQueued = true;
-  }, 100);
-}
-
 const canvasIds = {
   placementPreview: "placement-preview-canvas",
   freeDraw: "free-draw-canvas",
   inputGathering: "input-gathering-canvas",
+
+  placeIconToolStateOffscreenCanvas: "place-icon-offscreen-canvas",
 };
+
+placeIconToolStateOffscreenCanvas.id = canvasIds.placeIconToolStateOffscreenCanvas;
 
 let onMapChangeUseEffectCurrMap = "";
 
@@ -1513,7 +1497,8 @@ function App() {
     let canvasWidth = window.innerWidth / 2;
     let canvasHeight = (stratEditingState.mapSVGViewboxHeight / stratEditingState.mapSVGViewboxWidth) * canvasWidth;
     canvasPxPerSVGPixel = canvasWidth / stratEditingState.mapSVGViewboxWidth;
-    if (Math.abs(canvasWidth - stratEditingCanvasWidth) > 0.01) {
+    if (Math.abs(prevCanvasWidth - canvasWidth) > 0.1) {
+      prevCanvasWidth = canvasWidth;
       setStratEditingCanvasWidth(canvasWidth);
       setStratEditingCanvasHeight(canvasHeight);
       return true;
@@ -1521,6 +1506,11 @@ function App() {
       return false;
     }
   }
+
+  // Redraw the canvas upon resizing
+  useEffect(() => {
+    redrawFreeDrawCanvasQueued = true;
+  }, [stratEditingCanvasWidth, stratEditingCanvasHeight])
 
   function getFloorImgPath(map: string, floor: string): string {
     let style = "default";
@@ -1620,7 +1610,7 @@ function App() {
       stratEditingState.mode = StratEditingMode.Lobby;
       setCurrPage(Page.StratEditorPage);
       updateStratEditingStateFromProto(msg.lobbySetCurrentStrat.strat!);
-      redrawFreeDrawCanvasQueueDeferred();
+      redrawFreeDrawCanvasQueued = true;;
     } else if (msg.lobbyDrawCommand) {
       let cmd = msg.lobbyDrawCommand;
       let phaseFloor = stratEditingState.getPhasesRef()[cmd.phase].floors[cmd.floor];
@@ -1817,7 +1807,7 @@ function App() {
 
   function inLobbySelectStratPageComponent() {
     async function loadStrat(strat: LobbyStratMetadata) {
-      redrawFreeDrawCanvasQueueDeferred();
+      redrawFreeDrawCanvasQueued = true;;
       await websocket?.sendProto(protos.Client2Server.create({ lobbyLoadStrat: { stratId: strat.strat.uuid } }));
     }
 
@@ -2014,16 +2004,17 @@ function App() {
       if (Math.abs(newScale - prevScale) > 0.001) {
         ctx.scale(newScale / prevScale, newScale / prevScale);
         stratEditingState.prevCanvasScales.set(canvasId, newScale);
+        return;
+      } else {
+        return;
       }
     }
 
     function inputGatheringCanvas() {
       function onUpdate() {
-        if (recalculateStratEditingCanvasSize()) {
-          for (const [_, canvasId] of Object.entries(canvasIds)) {
-            updateCanvasScale(canvasId);
-          }
-          redrawFreeDrawCanvas(canvasIds.freeDraw);
+        stratEditingState.canvasScalesChanged = recalculateStratEditingCanvasSize();
+        for (const [_, canvasId] of Object.entries(canvasIds)) {
+          updateCanvasScale(canvasId);
         }
 
         if (document.getElementById(canvasIds.freeDraw) && redrawFreeDrawCanvasQueued) {
@@ -2139,7 +2130,6 @@ function App() {
           case DrawTool.PlaceIcon: {
             const toolState = stratEditingState.toolStates.placeIcon;
 
-
             const icon = new IconPlacement(inputCanvasState.mousePos.clone(), toolState.selectedIcon);
 
             if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
@@ -2152,7 +2142,58 @@ function App() {
                 id,
               });
             } else {
-              drawElementToCanvas(canvasIds.placementPreview, icon, stratEditingState.selectedFloor);
+              function iconInfoEq(a: IconInfo, b: IconInfo): boolean {
+                if (a.kind != b.kind) {
+                  return false;
+                }
+                switch (a.kind) {
+                  case IconKind.TeamOperator: {
+                    if (b.kind == IconKind.TeamOperator) return a.teammateIndex == b.teammateIndex;
+                    return false;
+                  }
+                  case IconKind.TeamAbility: {
+                    if (b.kind == IconKind.TeamAbility) return a.teammateIndex == b.teammateIndex;
+                    return false;
+                  }
+                  case IconKind.TeamUtility: {
+                    if (b.kind == IconKind.TeamUtility) return a.teammateIndex == b.teammateIndex;
+                    return false;
+                  }
+                  case IconKind.FreeOperator: {
+                    if (b.kind == IconKind.FreeOperator) return a.operator == b.operator;
+                    return false;
+                  }
+                  case IconKind.FreeAbility: {
+                    if (b.kind == IconKind.FreeAbility) return a.operator == b.operator;
+                    return false;
+                  }
+                  case IconKind.FreeUtility: {
+                    if (b.kind == IconKind.FreeUtility) return a.util == b.util;
+                    return false;
+                  }
+                  case IconKind.ContextFree: {
+                    if (b.kind == IconKind.ContextFree) return a.iconKind == b.iconKind;
+                    return false;
+                  }
+                }
+              }
+              const iconChanged = !iconInfoEq(placeIconToolStateOffscreenCanvasCurrIcon, toolState.selectedIcon);
+              placeIconToolStateOffscreenCanvasCurrIcon = toolState.selectedIcon;
+              if (iconChanged || stratEditingState.canvasScalesChanged) {
+                let canvas = placeIconToolStateOffscreenCanvas;
+                let ctx = canvas.getContext("2d")!;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                icon.drawToCtxAtTopLeft(ctx, new Vec2(0, 0));
+                placeIconToolStateOffscreenCanvasPlacedPos = icon.boundingBox().size().scaled(0.5);
+              }
+
+              let canvas = document.getElementById(canvasIds.placementPreview) as HTMLCanvasElement;
+              let ctx = canvas.getContext("2d")!;
+              ctx.drawImage(
+                placeIconToolStateOffscreenCanvas,
+                canvasPxPerSVGPixel * (inputCanvasState.mousePos.x - placeIconToolStateOffscreenCanvasPlacedPos.x),
+                canvasPxPerSVGPixel * (inputCanvasState.mousePos.y - placeIconToolStateOffscreenCanvasPlacedPos.y),
+              );
             }
             break;
           }
@@ -2268,6 +2309,7 @@ function App() {
                   });
                   // Notify server of dragging
                   stratEditingState.setDrawElement(phase, toolState.selected.floor, toolState.selected.id, toolState.selected.getRaw(phaseRawRef)!);
+                  redrawFreeDrawCanvas(canvasIds.freeDraw);
                 }
 
                 toolState.currDragTotalDelta = new Vec2(0, 0);
@@ -2280,9 +2322,6 @@ function App() {
                 const drawElem = toolState.selected.getRaw(phaseRawRef)!;
                 drawElem.mapPoints((pt) => pt.add(posDelta));
                 toolState.currDragTotalDelta = toolState.currDragTotalDelta.add(posDelta);
-
-                // Somehow this isn't *that* bad for performance??
-                redrawFreeDrawCanvas(canvasIds.freeDraw);
               }
 
               // Delete the selection
@@ -2417,17 +2456,12 @@ function App() {
       return (<>
         <canvas id={canvasIds.inputGathering}
           style={{ gridColumn: 1, gridRow: 1, zIndex: 100, touchAction: "none" }}
-          // style={{ gridColumn: 1, gridRow: 1, zIndex: 100 }}
           width={stratEditingCanvasWidth}
           height={stratEditingCanvasHeight}
           onMouseEnter={(_e) => inputCanvasState.mouseClicked = false}
           onMouseLeave={(_e) => inputCanvasState.mouseClicked = false}
           onMouseDown={(_e) => inputCanvasState.mouseClicked = true}
           onMouseUp={(_e) => inputCanvasState.mouseClicked = false}
-          // onMouseEnter={(e) => { inputCanvasState.mouseClicked = false; e.preventDefault(); }}
-          // onMouseLeave={(e) => { inputCanvasState.mouseClicked = false; e.preventDefault(); }}
-          // onMouseDown={(e) => { inputCanvasState.mouseClicked = true; e.preventDefault(); }}
-          // onMouseUp={(e) => { inputCanvasState.mouseClicked = false; e.preventDefault(); }}
           onMouseMove={(e) => {
             e.preventDefault();
             inputCanvasState.mousePos = logicalMousePosForCanvas(canvasIds.inputGathering, e.clientX, e.clientY);

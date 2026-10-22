@@ -388,6 +388,7 @@ class Arrow implements DrawElement {
     ctx.beginPath();
     ctx.strokeStyle = this.color.toCss();
     ctx.lineWidth = 0.15 * canvasPxPerSVGPixel * stratEditingState.mapSVGPixelsPerMeter;
+    const headLength = 0.5 * stratEditingState.mapSVGPixelsPerMeter;
 
     ctx.moveTo(this.start.x * canvasPxPerSVGPixel, this.start.y * canvasPxPerSVGPixel);
     ctx.lineTo(this.end.x * canvasPxPerSVGPixel, this.end.y * canvasPxPerSVGPixel);
@@ -402,8 +403,8 @@ class Arrow implements DrawElement {
       return a;
     };
 
-    const headPt0 = makeHeadPoint(true, true, 5);
-    const headPt1 = makeHeadPoint(false, true, 5);
+    const headPt0 = makeHeadPoint(true, true, headLength);
+    const headPt1 = makeHeadPoint(false, true, headLength);
 
     ctx.moveTo(headPt0.x * canvasPxPerSVGPixel, headPt0.y * canvasPxPerSVGPixel);
     ctx.lineTo(this.end.x * canvasPxPerSVGPixel, this.end.y * canvasPxPerSVGPixel)

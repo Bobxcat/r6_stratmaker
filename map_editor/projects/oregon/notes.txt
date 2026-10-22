@@ -1,0 +1,25 @@
+B:
+* Exact placement of single facing blue stairs
+* Placement of ebox door
+
+1f:
+* Kitchen obstacles
+* Small tower obstacles
+* Stage obstacles
+* Garage obstacles
+* Garage scale (especially the wall)
+* All the destructable walls are different widths??
+
+2f:
+* Armory obstacles
+* Bunks window placement
+* Is white door aligned with bunks door?
+* Bunks/bedroom obstacles
+* Obstacles in all rooms
+* Small tower obstacles
+* Alignment of big tower window with top main window
+
+Big Tower:
+* Railing placement
+* Obstacle placement
+* Windows

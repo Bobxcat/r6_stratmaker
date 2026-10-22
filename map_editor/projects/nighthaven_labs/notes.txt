@@ -12,3 +12,6 @@ B:
 2f:
 * Placement of door between bombs
 * Wall into rafters
+* Top aqua planter walkability
+* Server rack in west site
+* Wood covered area outside connector

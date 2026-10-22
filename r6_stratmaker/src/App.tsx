@@ -472,6 +472,43 @@ type IconInfo =
   | { kind: IconKind.FreeUtility, util: string }
   | { kind: IconKind.ContextFree, iconKind: ContextFreeIconKind };
 
+
+function iconInfoEq(a: IconInfo, b: IconInfo): boolean {
+  if (a.kind != b.kind) {
+    return false;
+  }
+  switch (a.kind) {
+    case IconKind.TeamOperator: {
+      if (b.kind == IconKind.TeamOperator) return a.teammateIndex == b.teammateIndex;
+      return false;
+    }
+    case IconKind.TeamAbility: {
+      if (b.kind == IconKind.TeamAbility) return a.teammateIndex == b.teammateIndex;
+      return false;
+    }
+    case IconKind.TeamUtility: {
+      if (b.kind == IconKind.TeamUtility) return a.teammateIndex == b.teammateIndex;
+      return false;
+    }
+    case IconKind.FreeOperator: {
+      if (b.kind == IconKind.FreeOperator) return a.operator == b.operator;
+      return false;
+    }
+    case IconKind.FreeAbility: {
+      if (b.kind == IconKind.FreeAbility) return a.operator == b.operator;
+      return false;
+    }
+    case IconKind.FreeUtility: {
+      if (b.kind == IconKind.FreeUtility) return a.util == b.util;
+      return false;
+    }
+    case IconKind.ContextFree: {
+      if (b.kind == IconKind.ContextFree) return a.iconKind == b.iconKind;
+      return false;
+    }
+  }
+}
+
 class IconPlacement implements DrawElement {
   pos: Vec2;
   info: IconInfo;
@@ -931,6 +968,7 @@ class StratEditingState {
   private teamLoadouts: StratEditingLoadout[] = newArrayOfSize(5, (idx) => {
     return new StratEditingLoadout("ace", StratEditingLoadout.defaultPalette[idx], "");
   });
+  teamLoadoutsChanged: boolean[] = newArrayOfSize(5, () => false);
 
   prevSelectedDrawTool: DrawTool = DrawTool.FreeDraw;
   selectedDrawTool: DrawTool = DrawTool.FreeDraw;
@@ -968,6 +1006,7 @@ class StratEditingState {
       return;
     }
     this.teamLoadouts[idx] = loadout;
+    this.teamLoadoutsChanged[idx] = true;
     if (this.mode == StratEditingMode.Lobby) {
       websocket?.sendProto(protos.Client2Server.create({
         lobbySetTeammateLoadout: {
@@ -994,6 +1033,7 @@ class StratEditingState {
   /** Use with care! Not networked */
   setTeammateLoadoutsRaw(newLoadouts: StratEditingLoadout[]) {
     this.teamLoadouts = newLoadouts;
+    this.teamLoadoutsChanged = newArrayOfSize(5, () => true);
   }
 
   /** Use with care! Not networked */
@@ -2151,44 +2191,28 @@ function App() {
                 id,
               });
             } else {
-              function iconInfoEq(a: IconInfo, b: IconInfo): boolean {
-                if (a.kind != b.kind) {
-                  return false;
-                }
-                switch (a.kind) {
-                  case IconKind.TeamOperator: {
-                    if (b.kind == IconKind.TeamOperator) return a.teammateIndex == b.teammateIndex;
-                    return false;
-                  }
-                  case IconKind.TeamAbility: {
-                    if (b.kind == IconKind.TeamAbility) return a.teammateIndex == b.teammateIndex;
-                    return false;
-                  }
-                  case IconKind.TeamUtility: {
-                    if (b.kind == IconKind.TeamUtility) return a.teammateIndex == b.teammateIndex;
-                    return false;
-                  }
-                  case IconKind.FreeOperator: {
-                    if (b.kind == IconKind.FreeOperator) return a.operator == b.operator;
-                    return false;
-                  }
-                  case IconKind.FreeAbility: {
-                    if (b.kind == IconKind.FreeAbility) return a.operator == b.operator;
-                    return false;
-                  }
-                  case IconKind.FreeUtility: {
-                    if (b.kind == IconKind.FreeUtility) return a.util == b.util;
-                    return false;
-                  }
-                  case IconKind.ContextFree: {
-                    if (b.kind == IconKind.ContextFree) return a.iconKind == b.iconKind;
-                    return false;
-                  }
-                }
-              }
+              // Update cached icon
               const iconChanged = !iconInfoEq(placeIconToolStateOffscreenCanvasCurrIcon, toolState.selectedIcon);
               placeIconToolStateOffscreenCanvasCurrIcon = toolState.selectedIcon;
-              if (iconChanged || stratEditingState.canvasScalesChanged) {
+              let loadoutChanged = false;
+              switch (toolState.selectedIcon.kind) {
+                case IconKind.TeamOperator:
+                case IconKind.TeamAbility:
+                case IconKind.TeamUtility: {
+                  loadoutChanged = stratEditingState.teamLoadoutsChanged[toolState.selectedIcon.teammateIndex];
+                  break;
+                }
+                case IconKind.FreeOperator:
+                case IconKind.FreeAbility:
+                case IconKind.FreeUtility:
+                case IconKind.ContextFree: {
+                  loadoutChanged = false;
+                  break;
+                }
+              }
+
+
+              if (iconChanged || stratEditingState.canvasScalesChanged || loadoutChanged) {
                 let canvas = placeIconToolStateOffscreenCanvas;
                 let ctx = canvas.getContext("2d")!;
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -2196,6 +2220,7 @@ function App() {
                 placeIconToolStateOffscreenCanvasPlacedPos = icon.boundingBox().size().scaled(0.5);
               }
 
+              // Draw cached icon
               let canvas = document.getElementById(canvasIds.placementPreview) as HTMLCanvasElement;
               let ctx = canvas.getContext("2d")!;
               ctx.drawImage(
@@ -2356,6 +2381,8 @@ function App() {
         inputCanvasState.prevMousePos = inputCanvasState.mousePos;
 
         stratEditingState.prevSelectedDrawTool = stratEditingState.selectedDrawTool;
+
+        stratEditingState.teamLoadoutsChanged = newArrayOfSize(5, () => false);
 
         requestAnimationFrame(onUpdate);
       }

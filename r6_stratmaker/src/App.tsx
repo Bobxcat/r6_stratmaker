@@ -1494,8 +1494,17 @@ function App() {
 
   //** Returns whether or not the size of the canvas has changed */
   function recalculateStratEditingCanvasSize(): boolean {
-    let canvasWidth = window.innerWidth / 2;
-    let canvasHeight = (stratEditingState.mapSVGViewboxHeight / stratEditingState.mapSVGViewboxWidth) * canvasWidth;
+    const aspectRatio = stratEditingState.mapSVGViewboxWidth / stratEditingState.mapSVGViewboxHeight;
+    let canvasWidth = window.innerWidth * 0.6;
+    let canvasHeight = canvasWidth / aspectRatio;
+
+    const maxHeight = window.innerHeight * 0.7;
+
+    if (canvasHeight > maxHeight) {
+      canvasHeight = maxHeight;
+      canvasWidth = canvasHeight * aspectRatio;
+    }
+
     canvasPxPerSVGPixel = canvasWidth / stratEditingState.mapSVGViewboxWidth;
     if (Math.abs(prevCanvasWidth - canvasWidth) > 0.1) {
       prevCanvasWidth = canvasWidth;

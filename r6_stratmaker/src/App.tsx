@@ -1610,7 +1610,7 @@ function App() {
       stratEditingState.mode = StratEditingMode.Lobby;
       setCurrPage(Page.StratEditorPage);
       updateStratEditingStateFromProto(msg.lobbySetCurrentStrat.strat!);
-      redrawFreeDrawCanvasQueued = true;;
+      redrawFreeDrawCanvasQueued = true;
     } else if (msg.lobbyDrawCommand) {
       let cmd = msg.lobbyDrawCommand;
       let phaseFloor = stratEditingState.getPhasesRef()[cmd.phase].floors[cmd.floor];
@@ -2351,8 +2351,6 @@ function App() {
         requestAnimationFrame(onUpdate);
       }
       requestAnimationFrame(onUpdate);
-      // Otherwise, the onUpdate doesn't fire sometimes upon re-entering the strat editing page
-      setInterval(() => requestAnimationFrame(onUpdate), 100)
 
       function triggerUndo() {
         const previousDrawActionsList = stratEditingState.getPreviousDrawActionsRef(stratEditingState.selectedPhase);

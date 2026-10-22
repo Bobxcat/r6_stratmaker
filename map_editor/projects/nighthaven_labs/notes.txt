@@ -1,0 +1,14 @@
+B:
+* Railing placement in tank
+* Crate vault plant spot
+
+1f:
+* Shape of ground in lobby
+* Desks in the room outside Kitchen (rest area/dining room)
+* Kitchen wall alignments
+* Kitchen closet/stairs wall placement
+* Hatch vs rail placement on cargo stairs
+
+2f:
+* Placement of door between bombs
+* Wall into rafters

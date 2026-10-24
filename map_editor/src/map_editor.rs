@@ -373,7 +373,7 @@ new_id_type!(DoorId);
 new_id_type!(HatchId);
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
-struct ScaleReferenceId {
+pub struct ScaleReferenceId {
     floor: usize,
 }
 
@@ -1549,6 +1549,7 @@ impl DrawState {
                     .keys()
                     .map(|id| DrawElementId::CircleByThreePoints(*id)),
             )
+            .chain(self.polygons.keys().map(|id| DrawElementId::Polygon(*id)))
             .chain(self.doors.keys().map(|id| DrawElementId::Door(*id)))
             .chain(self.hatches.keys().map(|id| DrawElementId::Hatch(*id)))
             .chain(
@@ -2434,11 +2435,7 @@ fn draw_tool_update(
     }
 }
 
-fn handle_undo(
-    mut tool_state: ResMut<DrawToolState>,
-    mut draw_state: ResMut<DrawState>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-) {
+fn handle_undo(mut draw_state: ResMut<DrawState>, keyboard: Res<ButtonInput<KeyCode>>) {
     if keyboard.pressed(KeyCode::ControlLeft) && keyboard.just_pressed(KeyCode::KeyZ) {
         let Some(prev_action) = draw_state.prev_actions.pop() else {
             return;

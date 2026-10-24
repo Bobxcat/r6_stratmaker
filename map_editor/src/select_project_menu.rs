@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf, time::Instant};
+use std::{path::PathBuf, time::Instant};
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
@@ -22,7 +22,6 @@ impl Plugin for SelectProjectMenuPlugin {
 
 struct Project {
     dir_name: String,
-    full_path: PathBuf,
 }
 
 #[derive(Resource)]
@@ -72,7 +71,6 @@ fn load_project_list(mut commands: Commands) -> Result {
         let f = f?;
         projects.projects.push(Project {
             dir_name: f.file_name().to_str().unwrap().into(),
-            full_path: f.path(),
         });
     }
 

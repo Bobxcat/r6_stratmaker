@@ -2,7 +2,7 @@
 // Credit to RoseishDesigns on Etsy (https://www.etsy.com/listing/4387393681/derpy-snake-water-bottle-sticker-shnek) for the Solid Snake icon
 // Credit to Ubisoft for map blueprints
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { isTauri, invoke } from "@tauri-apps/api/core";
 import { DeepMap, DeepSet } from "deep-equality-data-structures";
 import { WS as WebSocket } from "./websocket.ts";
@@ -1451,6 +1451,8 @@ placeIconToolStateOffscreenCanvas.id = canvasIds.placeIconToolStateOffscreenCanv
 let onMapChangeUseEffectCurrMap = "";
 
 function App() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
   const [stratEditingStateDisplay, setStratEditingStateDisplay] = useState<StratEditingState>(new StratEditingState());
   const [stratEditingCanvasWidth, setStratEditingCanvasWidth] = useState<number>(1600);
   const [stratEditingCanvasHeight, setStratEditingCanvasHeight] = useState<number>(900);
@@ -2061,7 +2063,35 @@ function App() {
     }
 
     function inputGatheringCanvas() {
+      function onUpdateRegisterNonPassiveListeners() {
+        const cv = document.getElementById(canvasIds.inputGathering);
+        if (cv) {
+          // We use non-anonymous functions so that they have the same identity every time they're passed to `addEventListener`
+          // AFAIK this is not defined behavior, but should work
+          function onTouchStart(e: TouchEvent) {
+            e.preventDefault();
+            inputCanvasState.mouseClicked = true;
+            inputCanvasState.mousePos = touchEventLogicalPos(e) ?? inputCanvasState.mousePos;
+          }
+          function onTouchEnd(e: TouchEvent) {
+            e.preventDefault();
+            inputCanvasState.mouseClicked = false;
+            inputCanvasState.mousePos = touchEventLogicalPos(e) ?? inputCanvasState.mousePos;
+          }
+          function onTouchMove(e: TouchEvent) {
+            e.preventDefault();
+            inputCanvasState.mousePos = touchEventLogicalPos(e) ?? inputCanvasState.mousePos;
+          }
+
+          cv.addEventListener("touchstart", onTouchStart, { passive: false });
+          cv.addEventListener("touchend", onTouchEnd, { passive: false });
+          cv.addEventListener("touchmove", onTouchMove, { passive: false });
+        }
+      }
       function onUpdate() {
+        // Register non-passive listeners
+        onUpdateRegisterNonPassiveListeners();
+
         stratEditingState.canvasScalesChanged = recalculateStratEditingCanvasSize();
         for (const [_, canvasId] of Object.entries(canvasIds)) {
           updateCanvasScale(canvasId);
@@ -2368,12 +2398,12 @@ function App() {
                   id: toolState.selected.id,
                 });
                 stratEditingState.deleteDrawElement(phase, toolState.selected.floor, toolState.selected.id);
-                toolState.isDeleteQueued = false;
                 toolState.selected = undefined;
                 redrawFreeDrawCanvas(canvasIds.freeDraw);
               }
             }
 
+            toolState.isDeleteQueued = false;
             break;
           }
         }
@@ -2488,6 +2518,20 @@ function App() {
         }
       };
 
+      function touchEventLogicalPos(e: any): Vec2 | undefined {
+        // https://gist.github.com/phedkvist/f8081fbcc84a3e70099a88ac82af38d0
+        // If exactly 1 finger is touched
+        if (e.touches && e.touches.length == 1) {
+          let touch = e.touches[0];
+
+          let touchX = touch.clientX;
+          let touchY = touch.clientY;
+          return logicalMousePosForCanvas(canvasIds.inputGathering, touchX, touchY);
+        } else {
+          return undefined;
+        }
+      }
+
       return (<>
         <canvas id={canvasIds.inputGathering}
           style={{ gridColumn: 1, gridRow: 1, zIndex: 100, touchAction: "none" }}
@@ -2500,7 +2544,13 @@ function App() {
           onMouseMove={(e) => {
             e.preventDefault();
             inputCanvasState.mousePos = logicalMousePosForCanvas(canvasIds.inputGathering, e.clientX, e.clientY);
-          }}></canvas>
+          }}
+        // onTouchStart={(e) => {
+        //   e.preventDefault();
+        //   inputCanvasState.mouseClicked = true;
+        //   inputCanvasState.mousePos = touchEventLogicalPos(e) ?? inputCanvasState.mousePos;
+        // }}
+        ></canvas>
       </>)
     }
 

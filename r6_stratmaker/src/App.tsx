@@ -2,9 +2,9 @@
 // Credit to RoseishDesigns on Etsy (https://www.etsy.com/listing/4387393681/derpy-snake-water-bottle-sticker-shnek) for the Solid Snake icon
 // Credit to Ubisoft for map blueprints
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { isTauri, invoke } from "@tauri-apps/api/core";
-import { DeepMap, DeepSet } from "deep-equality-data-structures";
+import { DeepMap } from "deep-equality-data-structures";
 import { WS as WebSocket } from "./websocket.ts";
 import "./App.css";
 import * as protos from "./generated_protos/primary.ts"
@@ -1451,8 +1451,6 @@ placeIconToolStateOffscreenCanvas.id = canvasIds.placeIconToolStateOffscreenCanv
 let onMapChangeUseEffectCurrMap = "";
 
 function App() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
   const [stratEditingStateDisplay, setStratEditingStateDisplay] = useState<StratEditingState>(new StratEditingState());
   const [stratEditingCanvasWidth, setStratEditingCanvasWidth] = useState<number>(1600);
   const [stratEditingCanvasHeight, setStratEditingCanvasHeight] = useState<number>(900);
@@ -2545,11 +2543,6 @@ function App() {
             e.preventDefault();
             inputCanvasState.mousePos = logicalMousePosForCanvas(canvasIds.inputGathering, e.clientX, e.clientY);
           }}
-        // onTouchStart={(e) => {
-        //   e.preventDefault();
-        //   inputCanvasState.mouseClicked = true;
-        //   inputCanvasState.mousePos = touchEventLogicalPos(e) ?? inputCanvasState.mousePos;
-        // }}
         ></canvas>
       </>)
     }

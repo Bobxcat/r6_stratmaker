@@ -1,0 +1,14 @@
+* Scale too large?
+* Check all the windows and doors
+
+B:
+* Closet under stairs
+* Gym and laundry obstacles
+
+1f:
+* Destructable wall by 90 stairs
+* Music room obstacles
+
+2f:
+* Red stairs area & obstacles
+* All rooms obstacles

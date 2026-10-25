@@ -1377,6 +1377,8 @@ class ContextFreeIconData {
   }
 }
 
+let inputCanvasPassiveListenersRegistered = false;
+
 let contextFreeIconData = new ContextFreeIconData();
 
 interface LobbyListInfo {
@@ -1474,6 +1476,15 @@ function App() {
 
   const [selectOperatorForTeammateActiveIdx, setSelectOperatorForTeammateActiveIdx] = useState<number | undefined>(undefined);
   const [selectUtilityForTeammateActiveIdx, setSelectUtilityForTeammateActiveIdx] = useState<number | undefined>(undefined);
+
+  // On page change
+  useEffect(() => {
+    function onPageChange() {
+      inputCanvasPassiveListenersRegistered = false;
+    }
+
+    onPageChange();
+  }, [currPage]);
 
   // Load operators
   useEffect(() => {
@@ -2063,7 +2074,8 @@ function App() {
     function inputGatheringCanvas() {
       function onUpdateRegisterNonPassiveListeners() {
         const cv = document.getElementById(canvasIds.inputGathering);
-        if (cv) {
+        if (cv && !inputCanvasPassiveListenersRegistered) {
+          inputCanvasPassiveListenersRegistered = true;
           // We use non-anonymous functions so that they have the same identity every time they're passed to `addEventListener`
           // AFAIK this is not defined behavior, but should work
           function onTouchStart(e: TouchEvent) {

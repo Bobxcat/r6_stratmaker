@@ -1818,7 +1818,6 @@ function App() {
       websocket?.sendProto(protos.Client2Server.create({ loginRequest: { username } }))
     }
 
-
     return (<Fragment key="loginPage">
       <p>Login</p>
       <form
@@ -1888,7 +1887,7 @@ function App() {
 
   function inLobbySelectStratPageComponent() {
     async function loadStrat(strat: LobbyStratMetadata) {
-      redrawFreeDrawCanvasQueued = true;;
+      redrawFreeDrawCanvasQueued = true;
       await websocket?.sendProto(protos.Client2Server.create({ lobbyLoadStrat: { stratId: strat.strat.uuid } }));
     }
 

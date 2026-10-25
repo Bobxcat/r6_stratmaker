@@ -2,7 +2,7 @@
 // Credit to RoseishDesigns on Etsy (https://www.etsy.com/listing/4387393681/derpy-snake-water-bottle-sticker-shnek) for the Solid Snake icon
 // Credit to Ubisoft for map blueprints
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { isTauri, invoke } from "@tauri-apps/api/core";
 import { DeepMap } from "deep-equality-data-structures";
 import { WS as WebSocket } from "./websocket.ts";
@@ -1440,6 +1440,25 @@ function println(msg: string) {
   }
 }
 
+function getCookie(key: string): string {
+  println(document.cookie);
+  let split = document.cookie.split(`${key}=`, 2);
+  if (split.length == 2) {
+    let val = split[1].split(";", 2)[0];
+    return val;
+  } else {
+    return "";
+  }
+}
+
+function setCookie(key: string, value: string, expireDays: number) {
+  const expireMs = expireDays * 24 * 60 * 60 * 1000;
+  const d = new Date();
+  d.setTime(d.getTime() + expireMs);
+  let expires = "expires=" + d.toUTCString();
+  document.cookie = key + "=" + value + ";" + expires + ";path=/";
+}
+
 const canvasIds = {
   placementPreview: "placement-preview-canvas",
   freeDraw: "free-draw-canvas",
@@ -1774,7 +1793,7 @@ function App() {
       setConnectionState(ConnectionState.Connected);
     }
 
-    return (<>
+    return (<Fragment key="connectToServerPage">
       <p>{connectionState}</p>
       <form
         className="row"
@@ -1790,16 +1809,17 @@ function App() {
         />
         <button type="submit">Connect</button>
       </form>
-    </ >
-    );
+    </Fragment>);
   }
 
   function loginPageComponent() {
     function commenceLogin(username: string) {
+      setCookie("username", username, 7);
       websocket?.sendProto(protos.Client2Server.create({ loginRequest: { username } }))
     }
 
-    return (<>
+
+    return (<Fragment key="loginPage">
       <p>Login</p>
       <form
         className="row"
@@ -1811,11 +1831,11 @@ function App() {
         <input
           id="select-username"
           placeholder="username"
-          defaultValue="foo"
+          defaultValue={getCookie("username")}
         />
         <button type="submit">Login</button>
       </form>
-    </>)
+    </Fragment>);
   }
 
   function stratListPageComponent() {

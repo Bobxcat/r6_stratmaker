@@ -1,0 +1,11 @@
+* Obstacles
+
+B:
+* Site walls
+* East stairs railing
+* West stairs harry potter
+
+1f:
+* Center-north stairs harry potter
+* East stairs railing
+* East entrance walls and doors

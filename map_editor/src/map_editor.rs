@@ -1496,6 +1496,7 @@ impl DrawState {
                     .retain(|_, rect| rect.start != id && rect.end != id);
                 self.circles_by_three_points
                     .retain(|_, c| !c.points.contains(&id));
+                self.polygons.retain(|_, c| !c.points.contains(&id));
 
                 for id in self.doors.keys().cloned().collect::<Vec<_>>() {
                     if !self.walls.contains_key(&self.doors[&id].wall) {

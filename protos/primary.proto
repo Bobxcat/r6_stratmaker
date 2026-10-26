@@ -49,6 +49,7 @@ message Icon {
     message FootHole {} 
     message HeadHole {} 
     message VaultHole {} 
+    message Barricade {} 
 
     Point pos = 1;
     oneof IconKind {
@@ -65,6 +66,7 @@ message Icon {
         FootHole foot_hole = 20;
         HeadHole head_hole = 21;
         VaultHole vault_hole = 22;
+        Barricade barricade = 23;
     }
 }
 message StratFloor {

@@ -446,6 +446,7 @@ class LobbyStratMetadata {
 enum ContextFreeIconKind {
   Reinforcement,
   Defuser,
+  Barricade,
 
   RunnableRotate,
   FootHole,
@@ -581,6 +582,8 @@ class IconPlacement implements DrawElement {
       parsedIconInfo = { kind: IconKind.ContextFree, iconKind: ContextFreeIconKind.HeadHole };
     } else if (icon.vaultHole) {
       parsedIconInfo = { kind: IconKind.ContextFree, iconKind: ContextFreeIconKind.VaultHole };
+    } else if (icon.barricade) {
+      parsedIconInfo = { kind: IconKind.ContextFree, iconKind: ContextFreeIconKind.Barricade };
     } else {
       let e = "UNHANDLED BRANCH: parsedIconInfo";
       println(e);
@@ -641,6 +644,10 @@ class IconPlacement implements DrawElement {
           }
           case ContextFreeIconKind.VaultHole: {
             Object.assign(proto, { vaultHole: {} })
+            break;
+          }
+          case ContextFreeIconKind.Barricade: {
+            Object.assign(proto, { barricade: {} })
             break;
           }
         }
@@ -763,7 +770,8 @@ class IconPlacement implements DrawElement {
       case IconKind.ContextFree: {
         switch (this.info.iconKind) {
           case ContextFreeIconKind.Reinforcement:
-          case ContextFreeIconKind.Defuser: {
+          case ContextFreeIconKind.Defuser:
+          case ContextFreeIconKind.Barricade: {
             ctx.fillStyle = `rgba(0,0,0,255)`;
             break;
           }
@@ -1318,6 +1326,7 @@ class ContextFreeIconData {
   footHole: CanvasImageSource | undefined;
   headHole: CanvasImageSource | undefined;
   vaultHole: CanvasImageSource | undefined;
+  barricade: CanvasImageSource | undefined;
 
   async initiateLoad() {
     this.reinforcement = await imgElemFromPath("reinforcement.svg");
@@ -1326,6 +1335,7 @@ class ContextFreeIconData {
     this.footHole = await imgElemFromPath("foot_hole.svg");
     this.headHole = await imgElemFromPath("head_hole.svg");
     this.vaultHole = await imgElemFromPath("vault_hole.svg");
+    this.barricade = await imgElemFromPath("barricade.svg");
 
     println("Context free icons loaded!");
   }
@@ -1350,6 +1360,9 @@ class ContextFreeIconData {
       case ContextFreeIconKind.VaultHole: {
         return "vault_hole.svg";
       }
+      case ContextFreeIconKind.Barricade: {
+        return "barricade.svg";
+      }
     }
   }
 
@@ -1372,6 +1385,9 @@ class ContextFreeIconData {
       }
       case ContextFreeIconKind.VaultHole: {
         return this.vaultHole;
+      }
+      case ContextFreeIconKind.Barricade: {
+        return this.barricade;
       }
     }
   }
@@ -2841,6 +2857,7 @@ function App() {
                   ContextFreeIconKind.FootHole,
                   ContextFreeIconKind.HeadHole,
                   ContextFreeIconKind.VaultHole,
+                  ContextFreeIconKind.Barricade,
                 ], (icon) => {
                   let src = ContextFreeIconData.getImgPath(icon);
                   return (<>

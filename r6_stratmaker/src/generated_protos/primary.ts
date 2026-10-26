@@ -46,6 +46,7 @@ export interface Icon {
   footHole?: Icon_FootHole | undefined;
   headHole?: Icon_HeadHole | undefined;
   vaultHole?: Icon_VaultHole | undefined;
+  barricade?: Icon_Barricade | undefined;
 }
 
 export interface Icon_TeamOperator {
@@ -88,6 +89,9 @@ export interface Icon_HeadHole {
 }
 
 export interface Icon_VaultHole {
+}
+
+export interface Icon_Barricade {
 }
 
 export interface StratFloor {
@@ -739,6 +743,7 @@ function createBaseIcon(): Icon {
     footHole: undefined,
     headHole: undefined,
     vaultHole: undefined,
+    barricade: undefined,
   };
 }
 
@@ -782,6 +787,9 @@ export const Icon: MessageFns<Icon> = {
     }
     if (message.vaultHole !== undefined) {
       Icon_VaultHole.encode(message.vaultHole, writer.uint32(178).fork()).join();
+    }
+    if (message.barricade !== undefined) {
+      Icon_Barricade.encode(message.barricade, writer.uint32(186).fork()).join();
     }
     return writer;
   },
@@ -903,6 +911,14 @@ export const Icon: MessageFns<Icon> = {
             message.vaultHole = Icon_VaultHole.decode(reader, reader.uint32());
             continue;
           }
+          case 23: {
+            if (tag !== 186) {
+              break;
+            }
+
+            message.barricade = Icon_Barricade.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -970,6 +986,7 @@ export const Icon: MessageFns<Icon> = {
         : isSet(object.vault_hole)
         ? Icon_VaultHole.fromJSON(object.vault_hole)
         : undefined,
+      barricade: isSet(object.barricade) ? Icon_Barricade.fromJSON(object.barricade) : undefined,
     };
   },
 
@@ -1013,6 +1030,9 @@ export const Icon: MessageFns<Icon> = {
     }
     if (message.vaultHole !== undefined) {
       obj.vaultHole = Icon_VaultHole.toJSON(message.vaultHole);
+    }
+    if (message.barricade !== undefined) {
+      obj.barricade = Icon_Barricade.toJSON(message.barricade);
     }
     return obj;
   },
@@ -1058,6 +1078,9 @@ export const Icon: MessageFns<Icon> = {
       : undefined;
     message.vaultHole = (object.vaultHole !== undefined && object.vaultHole !== null)
       ? Icon_VaultHole.fromPartial(object.vaultHole)
+      : undefined;
+    message.barricade = (object.barricade !== undefined && object.barricade !== null)
+      ? Icon_Barricade.fromPartial(object.barricade)
       : undefined;
     return message;
   },
@@ -1791,6 +1814,58 @@ export const Icon_VaultHole: MessageFns<Icon_VaultHole> = {
   },
   fromPartial<I extends Exact<DeepPartial<Icon_VaultHole>, I>>(_: I): Icon_VaultHole {
     const message = createBaseIcon_VaultHole();
+    return message;
+  },
+};
+
+function createBaseIcon_Barricade(): Icon_Barricade {
+  return {};
+}
+
+export const Icon_Barricade: MessageFns<Icon_Barricade> = {
+  encode(_: Icon_Barricade, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Icon_Barricade {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseIcon_Barricade();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(_: any): Icon_Barricade {
+    return {};
+  },
+
+  toJSON(_: Icon_Barricade): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Icon_Barricade>, I>>(base?: I): Icon_Barricade {
+    return Icon_Barricade.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Icon_Barricade>, I>>(_: I): Icon_Barricade {
+    const message = createBaseIcon_Barricade();
     return message;
   },
 };

@@ -153,6 +153,7 @@ pub enum IconKind {
 
     Reinforcement,
     Defuser,
+    Barricade,
 
     RunnableRotate,
     FootHole,
@@ -215,6 +216,7 @@ impl ProtoConvert for PlacedIcon {
                 protos::primary::icon::IconKind::FootHole(_) => IconKind::FootHole,
                 protos::primary::icon::IconKind::HeadHole(_) => IconKind::HeadHole,
                 protos::primary::icon::IconKind::VaultHole(_) => IconKind::VaultHole,
+                protos::primary::icon::IconKind::Barricade(_) => IconKind::Barricade,
             },
         }
     }
@@ -294,6 +296,11 @@ impl ProtoConvert for PlacedIcon {
                 }
                 IconKind::VaultHole => {
                     protos::primary::icon::IconKind::VaultHole(protos::primary::icon::VaultHole {
+                        special_fields: SpecialFields::new(),
+                    })
+                }
+                IconKind::Barricade => {
+                    protos::primary::icon::IconKind::Barricade(protos::primary::icon::Barricade {
                         special_fields: SpecialFields::new(),
                     })
                 }

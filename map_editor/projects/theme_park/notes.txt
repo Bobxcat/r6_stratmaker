@@ -1,0 +1,9 @@
+1f:
+* Lab walls
+* Obstacles
+
+2f:
+* Obstacles
+
+Roof:
+* Obstacles

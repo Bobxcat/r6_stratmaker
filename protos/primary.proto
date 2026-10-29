@@ -263,6 +263,11 @@ message LobbySetTeammateLoadout {
     Teammate newLoadout = 2;
 }
 
+// LobbySetPhaseOrder
+message LobbySetPhaseOrder {
+    repeated string order = 1;
+}
+
 message Client2Server {
     oneof C2SInner {
         Hello hello = 1;
@@ -282,6 +287,7 @@ message Client2Server {
         LobbyCreatePhase lobby_create_phase = 108;
         LobbySetPhaseName lobby_set_phase_name = 109;
         LobbySetTeammateLoadout lobby_set_teammate_loadout = 110;
+        LobbySetPhaseOrder lobby_set_phase_order = 111;
     }
 }
 
@@ -306,5 +312,6 @@ message Server2Client {
         LobbyCreatePhase lobby_create_phase = 108;
         LobbySetPhaseName lobby_set_phase_name = 109;
         LobbySetTeammateLoadout lobby_set_teammate_loadout = 110;
+        LobbySetPhaseOrder lobby_set_phase_order = 111;
     }
 }

@@ -578,7 +578,8 @@ async fn handle_generic_message(
         | C2SInner::LobbyDrawCommand(_)
         | C2SInner::LobbyCreatePhase(_)
         | C2SInner::LobbySetPhaseName(_)
-        | C2SInner::LobbySetTeammateLoadout(_) => return Ok(Some(msg_received)),
+        | C2SInner::LobbySetTeammateLoadout(_)
+        | C2SInner::LobbySetPhaseOrder(_) => return Ok(Some(msg_received)),
     }
 
     Ok(None)
@@ -896,6 +897,20 @@ fn lobby_loop(
                                     }
                                 }
                             }
+                            C2SInner::LobbySetPhaseOrder(msg) => {
+                                if let Some(state) = curr_strat_state.as_mut() {
+                                    state.phase_order = msg.order.clone();
+                                    for to_send_client in 0..clients.len() {
+                                        if to_send_client == cl_idx {
+                                            continue;
+                                        }
+                                        let _ = clients[to_send_client]
+                                            .ws
+                                            .send_proto(S2CInner::LobbySetPhaseOrder(msg.clone()))
+                                            .await;
+                                    }
+                                }
+                            }
 
                             C2SInner::Hello(..)
                             | C2SInner::LoginRequest(..)
@@ -996,7 +1011,8 @@ async fn client_loop(
                     | C2SInner::LobbyCreatePhase(..)
                     | C2SInner::LobbySetPhaseName(..)
                     | C2SInner::LobbySetTeammateLoadout(..)
-                    | C2SInner::GetMapList(..) => {
+                    | C2SInner::GetMapList(..)
+                    | C2SInner::LobbySetPhaseOrder(..) => {
                         context_println!("WARN: {msg:?} Should be handled generically");
                     }
                 }

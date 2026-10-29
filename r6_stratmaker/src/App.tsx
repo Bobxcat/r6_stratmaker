@@ -10,6 +10,7 @@ import "./App.css";
 import * as protos from "./generated_protos/primary.ts"
 import * as js_toml from 'js-toml';
 import { UuidMap, Uuid } from "./uuidmap.ts";
+import { DragDropContext, Draggable, Droppable, DropResult } from "@hello-pangea/dnd";
 
 interface DrawElement {
   asEnum(): AnyDrawElementData;
@@ -995,8 +996,8 @@ class StratEditingState {
   selectedFloor: number = 0;
 
   private phases: UuidMap<StratEditingPhase> = new UuidMap();
+  private phaseOrder: Uuid[] = [];
   selectedPhase: Uuid = new Uuid("");
-  phaseOrder: Uuid[] = [];
 
   reset() {
     Object.assign(this, new StratEditingState());
@@ -1052,18 +1053,21 @@ class StratEditingState {
   }
 
   /** NETWORKED */
-  pushEmptyPhase() {
+  pushEmptyPhase(id: Uuid) {
     const phaseName = `Phase ${this.phaseOrder.length}`;
-    this.pushEmptyPhaseRaw(phaseName);
+    this.pushEmptyPhaseRaw(id, phaseName);
     if (this.mode == StratEditingMode.Lobby) {
       websocket?.sendProto(protos.Client2Server.create({ lobbyCreatePhase: { phaseName } }));
     }
+    this.setPhaseOrder(this.phaseOrder);
   }
 
-  /** Use with care! Not networked */
-  pushEmptyPhaseRaw(name: string) {
+  /** Use with care! Not networked
+   * 
+   * Updates phase order
+  */
+  pushEmptyPhaseRaw(id: Uuid, name: string) {
     let phase = new StratEditingPhase(name, this.mapFloors.map((_floorName) => new StratEditingPhaseFloor()));
-    let id = new Uuid();
     this.phases.set(id, phase);
     this.phaseOrder.push(id);
   }
@@ -1223,6 +1227,28 @@ class StratEditingState {
   /** Use with care! Not networked */
   setPhasesRaw(phases: UuidMap<StratEditingPhase>) {
     this.phases = phases;
+  }
+
+  /** NETWORKED */
+  setPhaseOrder(phaseOrder: Uuid[]) {
+    if (this.mode == StratEditingMode.Lobby) {
+      websocket?.sendProto(protos.Client2Server.create({
+        lobbySetPhaseOrder: {
+          order: phaseOrder.map((id) => id.data)
+        }
+      }));
+    }
+    this.setPhaseOrderRaw(phaseOrder);
+  }
+
+  /** Use with care! Not networked */
+  getPhaseOrderRef(): Uuid[] {
+    return this.phaseOrder;
+  }
+
+  /** Use with care! Not networked */
+  setPhaseOrderRaw(phaseOrder: Uuid[]) {
+    this.phaseOrder = phaseOrder;
   }
 
   currentPhaseFloorIsValid(): boolean {
@@ -1579,7 +1605,7 @@ function App() {
       stratEditingState.mapSVGViewboxHeight = metadata.viewbox_height;
 
       if (stratEditingState.getPhasesRef().size() == 0) {
-        stratEditingState.pushEmptyPhaseRaw("Phase 0");
+        stratEditingState.pushEmptyPhaseRaw(new Uuid(), "Phase 0");
       }
       updateStratEditingStateDisplay();
     }
@@ -1659,10 +1685,10 @@ function App() {
     stratEditingState.setPhasesRaw(mapObjectToMap(state.phases, (protoPhase) => {
       return phaseFromProto(protoPhase);
     }));
-    stratEditingState.phaseOrder = state.phaseOrder.map((v) => new Uuid(v));
+    stratEditingState.setPhaseOrderRaw(state.phaseOrder.map((v) => new Uuid(v)));
 
     // Select the floor with the most stuff on it, out of all the floors on the first phase
-    stratEditingState.selectedPhase = stratEditingState.phaseOrder[0];
+    stratEditingState.selectedPhase = stratEditingState.getPhaseOrderRef()[0];
     stratEditingState.selectedFloor = 0;
     const phase0 = stratEditingState.getPhasesRef().get(stratEditingState.selectedPhase);
     if (phase0) {
@@ -1745,13 +1771,16 @@ function App() {
       redrawFreeDrawCanvasQueued = true;
       updateStratEditingStateDisplay();
     } else if (msg.lobbyCreatePhase) {
-      stratEditingState.pushEmptyPhaseRaw(msg.lobbyCreatePhase.phaseName);
+      stratEditingState.pushEmptyPhaseRaw(new Uuid(msg.lobbyCreatePhase.phaseId), msg.lobbyCreatePhase.phaseName);
       updateStratEditingStateDisplay();
     } else if (msg.lobbySetPhaseName) {
       stratEditingState.getPhasesRef().get(new Uuid(msg.lobbySetPhaseName.phaseId))!.phaseName = msg.lobbySetPhaseName.phaseName;
       updateStratEditingStateDisplay();
     } else if (msg.lobbySetTeammateLoadout) {
       stratEditingState.getTeammateLoadoutsRaw()[msg.lobbySetTeammateLoadout.idx] = StratEditingLoadout.fromProto(msg.lobbySetTeammateLoadout.newLoadout!);
+      updateStratEditingStateDisplay();
+    } else if (msg.lobbySetPhaseOrder) {
+      stratEditingState.setPhaseOrderRaw(msg.lobbySetPhaseOrder.order.map(d => new Uuid(d)));
       updateStratEditingStateDisplay();
     } else if (msg.saveStratResponse) {
       // Yay!
@@ -2636,7 +2665,7 @@ function App() {
         return { operator: loadout.operator, color: loadout.color.toProto(), util: loadout.util }
       });
 
-      const phaseOrder: string[] = stratEditingState.phaseOrder.map((id) => id.data);
+      const phaseOrder: string[] = stratEditingState.getPhaseOrderRef().map((id) => id.data);
 
       const state: protos.StratState = { stratName: stratEditingState.stratName, phases, phaseOrder, teammates };
 
@@ -2648,6 +2677,85 @@ function App() {
         saveProgress();
       }
     };
+
+    function PhasesList() {
+      function onDragEnd(result: DropResult<string>) {
+        if (!result.destination) {
+          return;
+        }
+
+        if (result.destination.index == result.source.index) {
+          return;
+        }
+
+        function reorder<T>(list: T[], startIndex: number, endIndex: number): T[] {
+          const result = Array.from(list);
+          const [removed] = result.splice(startIndex, 1);
+          result.splice(endIndex, 0, removed);
+
+          return result;
+        };
+
+        stratEditingState.setPhaseOrder(reorder(stratEditingState.getPhaseOrderRef(), result.source.index, result.destination.index));
+        updateStratEditingStateDisplay();
+      }
+
+      function ListElem(phase: Uuid, phaseIdx: number) {
+        return (
+          <Draggable draggableId={phase.data} index={phaseIdx}>
+            {provided => (
+              <div ref={provided.innerRef}
+                className="row"
+                {...provided.draggableProps}
+              >
+                {/* Drag Handle */}
+                <div {...provided.dragHandleProps} style={{ alignContent: "center", fontSize: "1.2vw" }}>☰</div>
+
+                {/* Button */}
+                <button onClick={(e) => {
+                  e.preventDefault();
+                  stratEditingState.selectedPhase = stratEditingState.getPhaseOrderRef()[phaseIdx];
+
+                  stratEditingState.toolStates.arrow = new ArrowToolState();
+                  stratEditingState.toolStates.freeDraw = new FreeDrawToolState();
+                  // Don't clear icon placement state
+                  stratEditingState.toolStates.selectAndEdit = new SelectAndEditToolState();
+                  redrawFreeDrawCanvas(canvasIds.freeDraw);
+                  updateStratEditingStateDisplay();
+                }}
+                >{stratEditingState.getPhasesRef().get(phase)?.phaseName}</button>
+              </div>
+            )}
+          </Draggable>
+        );
+      }
+
+      function ListInner() {
+        return (<>
+          {stratEditingStateDisplay.getPhaseOrderRef().map((phase, i) =>
+            ListElem(phase, i)
+          )}
+          <button onClick={(e) => {
+            e.preventDefault();
+            stratEditingState.pushEmptyPhase(new Uuid());
+            updateStratEditingStateDisplay();
+          }}>Create new phase</button>
+        </>);
+      }
+
+      return (<>
+        <DragDropContext onDragEnd={onDragEnd}>
+          <Droppable droppableId="droppableList" direction="horizontal">
+            {(provided) => (
+              <div className="row" ref={provided.innerRef} {...provided.droppableProps}>
+                <ListInner />
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
+      </>)
+    }
 
     return (
       <>
@@ -2731,26 +2839,7 @@ function App() {
               updateStratEditingStateDisplay();
             }} />
         </div>
-        <div className="row" style={{ margin: "0.25vw" }}>
-          {stratEditingStateDisplay.phaseOrder.map((phase, i) =>
-            <button key={i} onClick={(e) => {
-              e.preventDefault();
-              stratEditingState.selectedPhase = stratEditingState.phaseOrder[i];
-
-              stratEditingState.toolStates.arrow = new ArrowToolState();
-              stratEditingState.toolStates.freeDraw = new FreeDrawToolState();
-              // Don't clear icon placement state
-              stratEditingState.toolStates.selectAndEdit = new SelectAndEditToolState();
-              redrawFreeDrawCanvas(canvasIds.freeDraw);
-              updateStratEditingStateDisplay();
-            }}>{stratEditingState.getPhasesRef().get(phase)?.phaseName}</button>
-          )}
-          <button onClick={(e) => {
-            e.preventDefault();
-            stratEditingState.pushEmptyPhase();
-            updateStratEditingStateDisplay();
-          }}>Create new phase</button>
-        </div>
+        {PhasesList()}
 
         {/* Team operator bar */}
         <div className="row">
@@ -2992,7 +3081,7 @@ function App() {
   return (
     <main className="container">
       {currPageSelectorComponent(currPage)}
-    </main >
+    </main>
   );
 }
 

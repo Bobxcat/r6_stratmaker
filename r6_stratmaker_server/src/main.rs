@@ -17,29 +17,32 @@ use tokio_websockets::{ServerBuilder, WebSocketStream};
 use uuid::Uuid;
 
 use crate::{
-    database::{
-        Arrow, DatabaseHandle, DrawPath, PhaseFloor, PlacedIcon, ProtoConvert, StratEntry, StratId,
-        StratPhase, StratsKeyspace, Teammate, Username, UsersKeyspace,
-    },
+    database::DatabaseHandle,
+    database_versions::curr::*,
+    proto_convert::ProtoConvert,
     protos::primary::{
         self, Client2Server, Server2Client, client2server::C2SInner, server2client::S2CInner,
     },
 };
 
 mod database;
+mod database_versions;
+mod proto_convert;
 mod protos;
 
 const PING_PERIOD: Duration = Duration::from_secs(3);
 
+#[macro_export]
+macro_rules! context_str {
+    () => {
+        format!("[{}/{}:{}]", file!(), line!(), column!())
+    };
+}
+
 macro_rules! context_println {
     ($($arg:tt)*) => {
-        let time_str = format!(
-            "[{}]",
-            chrono::offset::Utc::now().format("%Y-%m-%d %H:%M:%S%.3f")
-        );
-        let context_str = format!("[{}/{}:{}]", file!(), line!(), column!());
-        let final_str = format!("{time_str} {context_str:<25} {}", format!($($arg)*));
-        println!("{final_str}");
+        let context_str = context_str!();
+        spdlog::info!("{context_str:<25} {}", format!($($arg)*));
     };
 }
 
@@ -360,19 +363,6 @@ struct ClientState {
     ws: WebSocketStream<TcpStream>,
 }
 
-fn db_strat_state_to_proto(strat: StratEntry) -> primary::StratState {
-    primary::StratState {
-        strat_name: strat.strat_name,
-        phases: strat.phases.into_iter().map(StratPhase::to_proto).collect(),
-        teammates: strat
-            .teammates
-            .into_iter()
-            .map(Teammate::to_proto)
-            .collect(),
-        special_fields: SpecialFields::new(),
-    }
-}
-
 /// ### Returns:
 /// * `Ok(Some(msg))` - The received message isn't of a generic type, and wasn't handled
 /// * `Ok(None)` - The received message was handled successfully
@@ -451,7 +441,8 @@ async fn handle_generic_message(
                     &StratEntry {
                         strat_name: "unnamed".into(),
                         map: msg.map.clone(),
-                        phases: vec![],
+                        phases: HashMap::new(),
+                        phase_order: vec![],
                         teammates: vec![Teammate::default(); 5],
                     },
                 )
@@ -475,7 +466,7 @@ async fn handle_generic_message(
                 return Ok(None);
             };
 
-            let strat_state = db_strat_state_to_proto(strat);
+            let strat_state = strat.to_proto();
 
             cl_state
                 .ws
@@ -507,20 +498,7 @@ async fn handle_generic_message(
                     return Ok(None);
                 };
 
-                strat = StratEntry {
-                    strat_name: state.strat_name,
-                    map: strat.map,
-                    teammates: state
-                        .teammates
-                        .into_iter()
-                        .map(Teammate::from_proto)
-                        .collect(),
-                    phases: state
-                        .phases
-                        .into_iter()
-                        .map(StratPhase::from_proto)
-                        .collect(),
-                };
+                strat = StratEntry::from_proto(state, strat.map);
                 database.insert::<StratsKeyspace>(&strat_id, &strat).await?;
             }
         }
@@ -674,9 +652,7 @@ fn lobby_loop(
                             .ws
                             .send_proto(S2CInner::LobbySetCurrentStrat(
                                 primary::LobbySetCurrentStrat {
-                                    strat: MessageField::some(db_strat_state_to_proto(
-                                        curr_strat_state.clone(),
-                                    )),
+                                    strat: MessageField::some(curr_strat_state.clone().to_proto()),
                                     map: curr_strat_state.map.clone(),
                                     special_fields: SpecialFields::new(),
                                 },
@@ -788,7 +764,7 @@ fn lobby_loop(
                                             .send_proto(S2CInner::LobbySetCurrentStrat(
                                                 primary::LobbySetCurrentStrat {
                                                     strat: MessageField::some(
-                                                        db_strat_state_to_proto(strat_db.clone()),
+                                                        strat_db.clone().to_proto(),
                                                     ),
                                                     map: strat_db.map.clone(),
                                                     special_fields: SpecialFields::new(),
@@ -800,9 +776,10 @@ fn lobby_loop(
                                 }
                             }
                             C2SInner::LobbyDrawCommand(msg) => {
-                                if let Some(phase_floor) = curr_strat_state
-                                    .as_mut()
-                                    .and_then(|state| state.phase_floor_mut(msg.phase, msg.floor))
+                                if let Some(phase_floor) =
+                                    curr_strat_state.as_mut().and_then(|state| {
+                                        state.phase_floor_mut(&msg.phase_id, msg.floor)
+                                    })
                                 {
                                     match msg.Kind.clone().unwrap() {
                                         primary::lobby_draw_command::Kind::SetDrawPath(msg) => {
@@ -853,18 +830,21 @@ fn lobby_loop(
                                     let map_meta =
                                         MapId::from_map_name(&strat_state.map).unwrap().metadata();
 
-                                    strat_state.phases.push(StratPhase {
-                                        phase_name: msg.phaseName.clone(),
-                                        floors: map_meta
-                                            .floors
-                                            .into_iter()
-                                            .map(|_| PhaseFloor {
-                                                draw_paths: HashMap::new(),
-                                                arrows: HashMap::new(),
-                                                icons: HashMap::new(),
-                                            })
-                                            .collect(),
-                                    });
+                                    strat_state.phases.insert(
+                                        msg.phase_id.clone(),
+                                        StratPhase {
+                                            phase_name: msg.phase_name.clone(),
+                                            floors: map_meta
+                                                .floors
+                                                .into_iter()
+                                                .map(|_| PhaseFloor {
+                                                    draw_paths: HashMap::new(),
+                                                    arrows: HashMap::new(),
+                                                    icons: HashMap::new(),
+                                                })
+                                                .collect(),
+                                        },
+                                    );
 
                                     for to_send_client in 0..clients.len() {
                                         if to_send_client == cl_idx {
@@ -880,7 +860,7 @@ fn lobby_loop(
                             C2SInner::LobbySetPhaseName(msg) => {
                                 if let Some(phase) = curr_strat_state
                                     .as_mut()
-                                    .and_then(|strat| strat.phases.get_mut(msg.idx as usize))
+                                    .and_then(|strat| strat.phases.get_mut(&msg.phase_id))
                                 {
                                     phase.phase_name = msg.phase_name.clone();
 
@@ -1087,8 +1067,28 @@ async fn accept_client(
 
 const HOST_PUBLIC: bool = true;
 
+fn init_logger() -> anyhow::Result<()> {
+    let path = "logs/log.txt";
+
+    let new_logger = spdlog::default_logger().fork_with(|new| {
+        let file_sink = spdlog::sink::RotatingFileSink::builder()
+            .base_path(path)
+            .rotation_policy(spdlog::sink::RotationPolicy::Daily { hour: 0, minute: 0 })
+            .build_arc()?;
+        // *new.sinks_mut() = vec![file_sink];
+        new.sinks_mut().push(file_sink);
+        Ok(())
+    })?;
+    spdlog::set_default_logger(new_logger);
+    spdlog::default_logger().set_level_filter(spdlog::LevelFilter::All);
+
+    Ok(())
+}
+
 #[tokio::main]
-async fn main() -> Result<(), anyhow::Error> {
+async fn main() -> anyhow::Result<()> {
+    init_logger()?;
+
     let addr = if HOST_PUBLIC {
         "0.0.0.0:8080"
     } else {
@@ -1104,7 +1104,11 @@ async fn main() -> Result<(), anyhow::Error> {
     let shared_state = SharedStateHandle(Arc::new(Mutex::new(shared_state)));
     context_println!("Started!");
 
-    tokio::spawn(async move {
+    let ctrlc_handle = tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.unwrap();
+    });
+
+    let accept_loop_handle = tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
             context_println!("TCP Connection established, attempting HTTP handshake");
             let Ok((_request, ws_stream)) = ServerBuilder::new().accept(stream).await else {
@@ -1127,9 +1131,22 @@ async fn main() -> Result<(), anyhow::Error> {
         }
 
         Ok::<_, anyhow::Error>(())
-    })
-    .await
-    .unwrap()?;
+    });
+
+    loop {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        if ctrlc_handle.is_finished() {
+            println!("\nCtrl-C intercepted, closing...");
+            break;
+        }
+        if accept_loop_handle.is_finished() {
+            accept_loop_handle.await??;
+            println!("Accept loop finished, closing...");
+            break;
+        }
+    }
+
+    println!("Closed gracefully!");
 
     Ok(())
 }

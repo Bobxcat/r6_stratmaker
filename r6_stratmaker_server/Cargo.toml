@@ -20,7 +20,11 @@ serde = { version = "1.0.229", features = ["derive"] }
 bytesize = "2.7.0"
 protobuf = "3.7"
 chrono = "0.4.45"
-# rkyv = { version = "0.8.18", features = ["unaligned"] }
+tar = "0.4.46"
+flate2 = "1.1.10"
+strum = { version = "0.28.0", features = ["derive"] }
+log = "0.4.34"
+spdlog-rs = "0.5.3"
 
 [build-dependencies]
 protobuf-codegen = "3.7"

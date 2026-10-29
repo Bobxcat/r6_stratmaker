@@ -14,6 +14,10 @@ export class Uuid {
 export class UuidMap<V> {
     private inner: Map<string, V> = new Map();
 
+    size(): number {
+        return this.inner.size;
+    }
+
     keys(): Iterable<Uuid> {
         return Array.from(this.inner.keys()).map((data) => new Uuid(data));
     }

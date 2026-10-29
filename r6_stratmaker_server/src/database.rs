@@ -1,493 +1,36 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{io::BufWriter, path::Path, time::Duration};
 
-use anyhow::Error;
+use anyhow::Context;
 use fjall::{Database, Keyspace, KeyspaceCreateOptions};
-use protobuf::{MessageField, SpecialFields};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
-use crate::protos;
+use crate::{
+    context_str,
+    database_versions::{
+        DatabaseVersion,
+        curr::{DBKeyspace, DBKeyspaceId},
+    },
+};
 
-pub trait DBKeyspace {
-    type Key: Serialize + for<'a> Deserialize<'a> + Send;
-    type Entry: Default + Serialize + for<'a> Deserialize<'a> + Send + 'static;
-
-    fn keyspace_id() -> DBKeyspaceId;
-}
-
-pub trait ProtoConvert {
-    type Proto;
-
-    fn from_proto(proto: Self::Proto) -> Self;
-    fn to_proto(self) -> Self::Proto;
-}
-
-pub struct UsersKeyspace;
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct Username(pub String);
-
-impl Display for Username {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.0, f)
-    }
-}
-
-#[derive(Deserialize, Serialize, Default, Debug)]
-pub struct UsersEntry {
-    pub strats: Vec<StratId>,
-}
-
-impl DBKeyspace for UsersKeyspace {
-    type Key = Username;
-
-    type Entry = UsersEntry;
-
-    fn keyspace_id() -> DBKeyspaceId {
-        DBKeyspaceId::Users
-    }
-}
-
-pub struct StratsKeyspace;
-
-#[derive(Deserialize, Serialize, Debug, Default, Clone, Copy, PartialEq)]
-pub struct Point {
-    pub x: f64,
-    pub y: f64,
-}
-
-impl Point {
-    pub fn from_proto(proto: protos::primary::Point) -> Self {
-        Self {
-            x: proto.x,
-            y: proto.y,
+async fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> anyhow::Result<()> {
+    tokio::fs::create_dir_all(&dst)
+        .await
+        .context(context_str!())?;
+    let mut dirs = tokio::fs::read_dir(src).await.context(context_str!())?;
+    while let Some(entry) = dirs.next_entry().await.context(context_str!())? {
+        let ty = entry.file_type().await.context(context_str!())?;
+        if ty.is_dir() {
+            Box::pin(copy_dir_all(
+                entry.path(),
+                dst.as_ref().join(entry.file_name()),
+            ))
+            .await?;
+        } else {
+            tokio::fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))
+                .await
+                .context(context_str!())?;
         }
     }
-    pub fn to_proto(self) -> protos::primary::Point {
-        protos::primary::Point {
-            x: self.x,
-            y: self.y,
-            special_fields: SpecialFields::new(),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq)]
-pub struct StratId(pub Uuid);
-
-impl StratId {
-    pub fn new() -> Self {
-        Self(Uuid::new_v4())
-    }
-
-    pub fn to_string(&self) -> String {
-        format!("{}", self.0)
-    }
-
-    pub fn from_str(input: &str) -> Result<Self, uuid::Error> {
-        Ok(Self(Uuid::try_parse(input)?))
-    }
-}
-
-#[derive(Deserialize, Serialize, Default, Debug, Clone)]
-pub struct DrawPath {
-    pub points: Vec<Point>,
-    pub color: Color,
-}
-
-impl ProtoConvert for DrawPath {
-    type Proto = protos::primary::DrawPath;
-
-    fn from_proto(proto: Self::Proto) -> Self {
-        Self {
-            points: proto.points.into_iter().map(Point::from_proto).collect(),
-            color: Color::from_proto(proto.color.unwrap()),
-        }
-    }
-
-    fn to_proto(self) -> Self::Proto {
-        Self::Proto {
-            points: self.points.into_iter().map(Point::to_proto).collect(),
-            color: MessageField::some(self.color.to_proto()),
-            special_fields: SpecialFields::new(),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Default, Debug, Clone)]
-pub struct Arrow {
-    pub start: Point,
-    pub end: Point,
-    pub color: Color,
-}
-
-impl ProtoConvert for Arrow {
-    type Proto = protos::primary::Arrow;
-
-    fn from_proto(proto: Self::Proto) -> Self {
-        Self {
-            start: Point::from_proto(proto.start.unwrap()),
-            end: Point::from_proto(proto.end.unwrap()),
-            color: Color::from_proto(proto.color.unwrap()),
-        }
-    }
-
-    fn to_proto(self) -> Self::Proto {
-        Self::Proto {
-            start: MessageField::some(self.start.to_proto()),
-            end: MessageField::some(self.end.to_proto()),
-            color: MessageField::some(self.color.to_proto()),
-            special_fields: SpecialFields::new(),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub enum IconKind {
-    TeamOperator { teammate_idx: u32 },
-    TeamAbility { teammate_idx: u32 },
-    TeamUtility { teammate_idx: u32 },
-    FreeOperator { operator: String },
-    FreeAbility { ability: String },
-    FreeUtility { util: String },
-
-    Reinforcement,
-    Defuser,
-    Barricade,
-
-    RunnableRotate,
-    FootHole,
-    HeadHole,
-    VaultHole,
-}
-
-impl Default for IconKind {
-    fn default() -> Self {
-        IconKind::TeamOperator { teammate_idx: 0 }
-    }
-}
-
-#[derive(Deserialize, Serialize, Default, Debug, Clone)]
-pub struct PlacedIcon {
-    pub pos: Point,
-    pub kind: IconKind,
-}
-
-impl ProtoConvert for PlacedIcon {
-    type Proto = protos::primary::Icon;
-
-    fn from_proto(proto: Self::Proto) -> Self {
-        Self {
-            pos: Point::from_proto(proto.pos.unwrap()),
-            kind: match proto.IconKind.unwrap() {
-                protos::primary::icon::IconKind::TeamOperator(team_operator) => {
-                    IconKind::TeamOperator {
-                        teammate_idx: team_operator.teammate_idx,
-                    }
-                }
-                protos::primary::icon::IconKind::TeamAbility(team_ability) => {
-                    IconKind::TeamAbility {
-                        teammate_idx: team_ability.teammate_idx,
-                    }
-                }
-                protos::primary::icon::IconKind::TeamUtility(team_utility) => {
-                    IconKind::TeamUtility {
-                        teammate_idx: team_utility.teammate_idx,
-                    }
-                }
-                protos::primary::icon::IconKind::FreeOperator(free_operator) => {
-                    IconKind::FreeOperator {
-                        operator: free_operator.operator,
-                    }
-                }
-                protos::primary::icon::IconKind::FreeAbility(free_ability) => {
-                    IconKind::FreeAbility {
-                        ability: free_ability.ability,
-                    }
-                }
-                protos::primary::icon::IconKind::FreeUtility(free_utility) => {
-                    IconKind::FreeUtility {
-                        util: free_utility.util,
-                    }
-                }
-                protos::primary::icon::IconKind::Reinforcement(_) => IconKind::Reinforcement,
-                protos::primary::icon::IconKind::Defuser(_) => IconKind::Defuser,
-                protos::primary::icon::IconKind::RunnableRotate(_) => IconKind::RunnableRotate,
-                protos::primary::icon::IconKind::FootHole(_) => IconKind::FootHole,
-                protos::primary::icon::IconKind::HeadHole(_) => IconKind::HeadHole,
-                protos::primary::icon::IconKind::VaultHole(_) => IconKind::VaultHole,
-                protos::primary::icon::IconKind::Barricade(_) => IconKind::Barricade,
-            },
-        }
-    }
-
-    fn to_proto(self) -> Self::Proto {
-        Self::Proto {
-            pos: MessageField::some(self.pos.to_proto()),
-            IconKind: Some(match self.kind {
-                IconKind::TeamOperator { teammate_idx } => {
-                    protos::primary::icon::IconKind::TeamOperator(
-                        protos::primary::icon::TeamOperator {
-                            teammate_idx,
-                            special_fields: SpecialFields::new(),
-                        },
-                    )
-                }
-                IconKind::TeamAbility { teammate_idx } => {
-                    protos::primary::icon::IconKind::TeamAbility(
-                        protos::primary::icon::TeamAbility {
-                            teammate_idx,
-                            special_fields: SpecialFields::new(),
-                        },
-                    )
-                }
-                IconKind::TeamUtility { teammate_idx } => {
-                    protos::primary::icon::IconKind::TeamUtility(
-                        protos::primary::icon::TeamUtility {
-                            teammate_idx,
-                            special_fields: SpecialFields::new(),
-                        },
-                    )
-                }
-                IconKind::FreeOperator { operator } => {
-                    protos::primary::icon::IconKind::FreeOperator(
-                        protos::primary::icon::FreeOperator {
-                            operator,
-                            special_fields: SpecialFields::new(),
-                        },
-                    )
-                }
-                IconKind::FreeAbility { ability } => protos::primary::icon::IconKind::FreeAbility(
-                    protos::primary::icon::FreeAbility {
-                        ability,
-                        special_fields: SpecialFields::new(),
-                    },
-                ),
-                IconKind::FreeUtility { util } => protos::primary::icon::IconKind::FreeUtility(
-                    protos::primary::icon::FreeUtility {
-                        util,
-                        special_fields: SpecialFields::new(),
-                    },
-                ),
-                IconKind::Reinforcement => protos::primary::icon::IconKind::Reinforcement(
-                    protos::primary::icon::Reinforcement {
-                        special_fields: SpecialFields::new(),
-                    },
-                ),
-                IconKind::Defuser => {
-                    protos::primary::icon::IconKind::Defuser(protos::primary::icon::Defuser {
-                        special_fields: SpecialFields::new(),
-                    })
-                }
-                IconKind::RunnableRotate => protos::primary::icon::IconKind::RunnableRotate(
-                    protos::primary::icon::RunnableRotate {
-                        special_fields: SpecialFields::new(),
-                    },
-                ),
-                IconKind::FootHole => {
-                    protos::primary::icon::IconKind::FootHole(protos::primary::icon::FootHole {
-                        special_fields: SpecialFields::new(),
-                    })
-                }
-                IconKind::HeadHole => {
-                    protos::primary::icon::IconKind::HeadHole(protos::primary::icon::HeadHole {
-                        special_fields: SpecialFields::new(),
-                    })
-                }
-                IconKind::VaultHole => {
-                    protos::primary::icon::IconKind::VaultHole(protos::primary::icon::VaultHole {
-                        special_fields: SpecialFields::new(),
-                    })
-                }
-                IconKind::Barricade => {
-                    protos::primary::icon::IconKind::Barricade(protos::primary::icon::Barricade {
-                        special_fields: SpecialFields::new(),
-                    })
-                }
-            }),
-            special_fields: SpecialFields::new(),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Default, Debug, Clone)]
-pub struct PhaseFloor {
-    pub draw_paths: HashMap<String, DrawPath>,
-    pub arrows: HashMap<String, Arrow>,
-    pub icons: HashMap<String, PlacedIcon>,
-}
-
-impl ProtoConvert for PhaseFloor {
-    type Proto = protos::primary::StratFloor;
-
-    fn from_proto(proto: Self::Proto) -> Self {
-        Self {
-            draw_paths: proto
-                .draw_paths
-                .into_iter()
-                .map(|(id, path)| (id, DrawPath::from_proto(path)))
-                .collect(),
-            arrows: proto
-                .arrows
-                .into_iter()
-                .map(|(id, path)| (id, Arrow::from_proto(path)))
-                .collect(),
-            icons: proto
-                .icons
-                .into_iter()
-                .map(|(id, path)| (id, PlacedIcon::from_proto(path)))
-                .collect(),
-        }
-    }
-
-    fn to_proto(self) -> Self::Proto {
-        Self::Proto {
-            draw_paths: self
-                .draw_paths
-                .into_iter()
-                .map(|(id, path)| (id, path.to_proto()))
-                .collect(),
-            arrows: self
-                .arrows
-                .into_iter()
-                .map(|(id, arrow)| (id, arrow.to_proto()))
-                .collect(),
-            icons: self
-                .icons
-                .into_iter()
-                .map(|(id, icon)| (id, icon.to_proto()))
-                .collect(),
-
-            special_fields: SpecialFields::new(),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Default, Debug, Clone)]
-pub struct StratPhase {
-    pub phase_name: String,
-    pub floors: Vec<PhaseFloor>,
-}
-
-impl ProtoConvert for StratPhase {
-    type Proto = protos::primary::StratPhase;
-
-    fn from_proto(proto: Self::Proto) -> Self {
-        Self {
-            phase_name: proto.phase_name,
-            floors: proto
-                .floors
-                .into_iter()
-                .map(PhaseFloor::from_proto)
-                .collect(),
-        }
-    }
-
-    fn to_proto(self) -> Self::Proto {
-        Self::Proto {
-            phase_name: self.phase_name,
-            floors: self.floors.into_iter().map(PhaseFloor::to_proto).collect(),
-            special_fields: SpecialFields::new(),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Default, Debug, Clone)]
-pub struct Color {
-    pub r: f64,
-    pub g: f64,
-    pub b: f64,
-}
-
-impl ProtoConvert for Color {
-    type Proto = protos::primary::Color;
-
-    fn from_proto(color: Self::Proto) -> Self {
-        Self {
-            r: color.r,
-            g: color.g,
-            b: color.b,
-        }
-    }
-
-    fn to_proto(self) -> Self::Proto {
-        Self::Proto {
-            r: self.r,
-            g: self.g,
-            b: self.b,
-            special_fields: SpecialFields::new(),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct Teammate {
-    pub operator: String,
-    pub util: String,
-    pub color: Color,
-}
-
-impl ProtoConvert for Teammate {
-    type Proto = protos::primary::Teammate;
-
-    fn from_proto(proto: Self::Proto) -> Self {
-        Self {
-            operator: proto.operator,
-            color: Color::from_proto(proto.color.unwrap()),
-            util: proto.util,
-        }
-    }
-
-    fn to_proto(self) -> Self::Proto {
-        Self::Proto {
-            operator: self.operator,
-            color: MessageField::some(self.color.to_proto()),
-            util: self.util,
-            special_fields: SpecialFields::new(),
-        }
-    }
-}
-
-impl Default for Teammate {
-    fn default() -> Self {
-        Self {
-            operator: "ace".into(),
-            util: "".into(),
-            color: Color::default(),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Default, Debug, Clone)]
-pub struct StratEntry {
-    pub strat_name: String,
-    pub map: String,
-    pub teammates: Vec<Teammate>,
-    pub phases: Vec<StratPhase>,
-}
-
-impl StratEntry {
-    pub fn phase_floor_mut(&mut self, phase: u32, floor: u32) -> Option<&mut PhaseFloor> {
-        self.phases
-            .get_mut(phase as usize)
-            .and_then(|phase| phase.floors.get_mut(floor as usize))
-    }
-}
-
-impl DBKeyspace for StratsKeyspace {
-    type Key = StratId;
-
-    type Entry = StratEntry;
-
-    fn keyspace_id() -> DBKeyspaceId {
-        DBKeyspaceId::Strats
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum DBKeyspaceId {
-    Users,
-    Strats,
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -499,14 +42,117 @@ pub struct DatabaseHandle {
 }
 
 impl DatabaseHandle {
+    const DATABASE_PATH: &str = ".fjall_database";
+    const BACKUP_PATH: &str = ".fjall_backups";
+    const UPGRADE_DIR: &str = ".fjall_upgrading";
+
     /// ONLY CALL ONCE! Or rather, only have one instance active!
-    pub async fn initialize() -> Result<Self, Error> {
-        let database = Database::builder(".fjall_database").open()?;
-        Ok(Self {
-            users: database.keyspace("users", KeyspaceCreateOptions::default)?,
-            strategies: database.keyspace("strategies", KeyspaceCreateOptions::default)?,
+    pub async fn initialize() -> anyhow::Result<Self> {
+        let database = Database::builder(Self::DATABASE_PATH).open()?;
+        Self::backup_inner(database.clone())
+            .await
+            .context(context_str!())?;
+        drop(database);
+
+        // We ensure the database is upgraded before initializing the keyspaces (which may be incompatible with the version)
+        if DatabaseVersion::from_database_path(Self::DATABASE_PATH) != DatabaseVersion::curr() {
+            let upgrade_from = Path::new(Self::UPGRADE_DIR).join("from");
+            let upgrade_into = Path::new(Self::UPGRADE_DIR).join("into");
+
+            tokio::fs::create_dir_all(&upgrade_from)
+                .await
+                .context(context_str!())?;
+
+            copy_dir_all(Self::DATABASE_PATH, &upgrade_from)
+                .await
+                .context(context_str!())?;
+
+            while DatabaseVersion::from_database_path(&upgrade_from) != DatabaseVersion::curr() {
+                let v = DatabaseVersion::from_database_path(&upgrade_from);
+                println!("UPGRADING DATABASE FROM {v:?}");
+
+                let db_from = Database::builder(&upgrade_from)
+                    .open()
+                    .context(context_str!())?;
+                DatabaseVersion::upgrade_database(&db_from, &upgrade_into)
+                    .context(context_str!())?;
+                drop(db_from);
+
+                // FIXME: Replace with deleting the `from` and renaming the `into` directory to `from`
+                tokio::fs::remove_dir_all(&upgrade_from)
+                    .await
+                    .context(context_str!())?;
+                copy_dir_all(&upgrade_into, &upgrade_from)
+                    .await
+                    .context(context_str!())?;
+                tokio::fs::remove_dir_all(&upgrade_into)
+                    .await
+                    .context(context_str!())?;
+            }
+
+            tokio::fs::remove_dir_all(Self::DATABASE_PATH)
+                .await
+                .context(context_str!())?;
+            copy_dir_all(&upgrade_from, Self::DATABASE_PATH)
+                .await
+                .context(context_str!())?;
+
+            tokio::fs::remove_dir_all(Self::UPGRADE_DIR)
+                .await
+                .context(context_str!())?;
+        }
+
+        let database = Database::builder(Self::DATABASE_PATH)
+            .open()
+            .context(context_str!())?;
+
+        let this = Self {
+            users: database.keyspace(DBKeyspaceId::Users.name(), KeyspaceCreateOptions::default)?,
+            strategies: database
+                .keyspace(DBKeyspaceId::Strats.name(), KeyspaceCreateOptions::default)?,
             database,
+        };
+
+        let backup_frequency = Duration::from_hours(12);
+
+        let handle_clone = this.clone();
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(backup_frequency);
+            loop {
+                interval.tick().await;
+                println!("Backing up...");
+                let _ = handle_clone.backup().await;
+                println!("Backup Complete!");
+            }
+        });
+
+        Ok(this)
+    }
+
+    async fn backup_inner(db: Database) -> anyhow::Result<()> {
+        tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            let _ = std::fs::create_dir(Self::BACKUP_PATH);
+            db.persist(fjall::PersistMode::SyncAll)?;
+            let timestamp = format!("{}", chrono::offset::Utc::now().format("%Y-%m-%d_%H-%M"));
+            let out_path = Path::new(Self::BACKUP_PATH).join(format!("backup_{timestamp}.tar.gz"));
+
+            let out_file = BufWriter::new(std::fs::File::create(out_path)?);
+            let out_gz = flate2::write::GzEncoder::new(out_file, flate2::Compression::best());
+
+            let mut tarball = tar::Builder::new(out_gz);
+            tarball.append_dir_all("", Self::DATABASE_PATH)?;
+            tarball.finish()?;
+
+            Ok(())
         })
+        .await??;
+        Ok(())
+    }
+
+    pub async fn backup(&self) -> anyhow::Result<()> {
+        let db = self.database.clone();
+        Self::backup_inner(db).await
     }
 
     fn get_keyspace(&self, keyspace: DBKeyspaceId) -> &Keyspace {

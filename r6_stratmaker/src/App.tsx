@@ -994,8 +994,9 @@ class StratEditingState {
   canvasScalesChanged: boolean = false;
   selectedFloor: number = 0;
 
-  private phases: StratEditingPhase[] = [];
-  selectedPhase: number = 0;
+  private phases: UuidMap<StratEditingPhase> = new UuidMap();
+  selectedPhase: Uuid = new Uuid("");
+  phaseOrder: Uuid[] = [];
 
   reset() {
     Object.assign(this, new StratEditingState());
@@ -1052,7 +1053,7 @@ class StratEditingState {
 
   /** NETWORKED */
   pushEmptyPhase() {
-    const phaseName = `Phase ${this.phases.length}`;
+    const phaseName = `Phase ${this.phaseOrder.length}`;
     this.pushEmptyPhaseRaw(phaseName);
     if (this.mode == StratEditingMode.Lobby) {
       websocket?.sendProto(protos.Client2Server.create({ lobbyCreatePhase: { phaseName } }));
@@ -1061,20 +1062,22 @@ class StratEditingState {
 
   /** Use with care! Not networked */
   pushEmptyPhaseRaw(name: string) {
-    var phase = new StratEditingPhase(name, this.mapFloors.map((_floorName) => new StratEditingPhaseFloor()));
-    this.phases.push(phase);
+    let phase = new StratEditingPhase(name, this.mapFloors.map((_floorName) => new StratEditingPhaseFloor()));
+    let id = new Uuid();
+    this.phases.set(id, phase);
+    this.phaseOrder.push(id);
   }
 
   /** NETWORKED */
-  pushDrawElement(phase: number, floor: number, drawElement: DrawElement): Uuid {
+  pushDrawElement(phase: Uuid, floor: number, drawElement: DrawElement): Uuid {
     const id = new Uuid();
     this.setDrawElement(phase, floor, id, drawElement);
     return id;
   }
 
   /** Use with care! Not networked */
-  getDrawElementRef(phase: number, floor: number, id: Uuid): DrawElement | undefined {
-    const phaseFloor = this.phases[phase]?.floors[floor];
+  getDrawElementRef(phase: Uuid, floor: number, id: Uuid): DrawElement | undefined {
+    const phaseFloor = this.phases.get(phase)?.floors[floor];
     if (!phaseFloor) {
       return undefined;
     }
@@ -1083,8 +1086,8 @@ class StratEditingState {
   }
 
   /** NETWORKED */
-  setDrawElement(phase: number, floor: number, id: Uuid, drawElement: DrawElement) {
-    const phaseFloor = this.phases[phase]?.floors[floor];
+  setDrawElement(phase: Uuid, floor: number, id: Uuid, drawElement: DrawElement) {
+    const phaseFloor = this.phases.get(phase)?.floors[floor];
     if (!phaseFloor) {
       return;
     }
@@ -1095,7 +1098,7 @@ class StratEditingState {
         case DrawElementKind.DrawPath: {
           websocket?.sendProto(protos.Client2Server.create({
             lobbyDrawCommand: {
-              phase,
+              phaseId: phase.data,
               floor,
               setDrawPath: { id: id.data, data: drawEnum.data.toProto() }
             }
@@ -1105,7 +1108,7 @@ class StratEditingState {
         case DrawElementKind.Arrow: {
           websocket?.sendProto(protos.Client2Server.create({
             lobbyDrawCommand: {
-              phase,
+              phaseId: phase.data,
               floor,
               setArrow: { id: id.data, data: drawEnum.data.toProto() }
             }
@@ -1115,7 +1118,7 @@ class StratEditingState {
         case DrawElementKind.Icon: {
           websocket?.sendProto(protos.Client2Server.create({
             lobbyDrawCommand: {
-              phase,
+              phaseId: phase.data,
               floor,
               setIcon: { id: id.data, data: drawEnum.data.toProto() }
             }
@@ -1129,8 +1132,8 @@ class StratEditingState {
   }
 
   /** NETWORKED */
-  setPhaseName(phase: number, newName: string) {
-    const phaseRef = this.phases[phase];
+  setPhaseName(phase: Uuid, newName: string) {
+    const phaseRef = this.phases.get(phase);
     if (!phaseRef) {
       return;
     }
@@ -1138,7 +1141,7 @@ class StratEditingState {
     if (this.mode == StratEditingMode.Lobby) {
       websocket?.sendProto(protos.Client2Server.create({
         lobbySetPhaseName: {
-          idx: phase,
+          phaseId: phase.data,
           phaseName: newName,
         }
       }));
@@ -1148,8 +1151,8 @@ class StratEditingState {
   }
 
   /** NETWORKED */
-  deleteDrawElement(phase: number, floor: number, id: Uuid) {
-    const phaseFloor = this.phases[phase]?.floors[floor];
+  deleteDrawElement(phase: Uuid, floor: number, id: Uuid) {
+    const phaseFloor = this.phases.get(phase)?.floors[floor];
     if (!phaseFloor) {
       return;
     }
@@ -1162,7 +1165,7 @@ class StratEditingState {
           case DrawElementKind.DrawPath: {
             websocket?.sendProto(protos.Client2Server.create({
               lobbyDrawCommand: {
-                phase,
+                phaseId: phase.data,
                 floor,
                 deleteDrawPath: { id: id.data }
               }
@@ -1172,7 +1175,7 @@ class StratEditingState {
           case DrawElementKind.Arrow: {
             websocket?.sendProto(protos.Client2Server.create({
               lobbyDrawCommand: {
-                phase,
+                phaseId: phase.data,
                 floor,
                 deleteArrow: { id: id.data }
               }
@@ -1182,7 +1185,7 @@ class StratEditingState {
           case DrawElementKind.Icon: {
             websocket?.sendProto(protos.Client2Server.create({
               lobbyDrawCommand: {
-                phase,
+                phaseId: phase.data,
                 floor,
                 deleteIcon: { id: id.data }
               }
@@ -1194,8 +1197,8 @@ class StratEditingState {
     }
   }
 
-  pushPreviousDrawAction(phase: number, action: DrawAction) {
-    const phaseRef = this.phases[phase];
+  pushPreviousDrawAction(phase: Uuid, action: DrawAction) {
+    const phaseRef = this.phases.get(phase);
     if (!phaseRef) {
       return;
     }
@@ -1203,8 +1206,8 @@ class StratEditingState {
     phaseRef.pushPreviousDrawAction(action);
   }
 
-  getPreviousDrawActionsRef(phase: number): DrawAction[] {
-    const phaseRef = this.phases[phase];
+  getPreviousDrawActionsRef(phase: Uuid): DrawAction[] {
+    const phaseRef = this.phases.get(phase);
     if (!phaseRef) {
       return [];
     }
@@ -1213,17 +1216,17 @@ class StratEditingState {
   }
 
   /** Use with care! Not networked */
-  getPhasesRef(): StratEditingPhase[] {
+  getPhasesRef(): UuidMap<StratEditingPhase> {
     return this.phases;
   }
 
   /** Use with care! Not networked */
-  setPhasesRaw(phases: StratEditingPhase[]) {
+  setPhasesRaw(phases: UuidMap<StratEditingPhase>) {
     this.phases = phases;
   }
 
   currentPhaseFloorIsValid(): boolean {
-    return this.selectedPhase < this.phases.length && this.selectedFloor < this.phases[this.selectedPhase].floors.length;
+    return this.phases.get(this.selectedPhase) !== undefined;
   }
 }
 
@@ -1448,6 +1451,17 @@ function mapMapToObject<V1, V2>(map: UuidMap<V1>, cb: (id: Uuid, v: V1) => [stri
   return record;
 }
 
+function mapObjectToMap<V1, V2>(obj: Record<string, V1>, cb: (v: V1) => V2): UuidMap<V2> {
+  let map: UuidMap<V2> = new UuidMap();
+
+  for (const entry in obj) {
+    const out = cb(obj[entry]);
+    map.set(new Uuid(entry), out);
+  }
+
+  return map;
+}
+
 function println(msg: string) {
   if (isTauri()) {
     invoke("console_println", { msg })
@@ -1564,7 +1578,7 @@ function App() {
       stratEditingState.mapSVGViewboxWidth = metadata.viewbox_width;
       stratEditingState.mapSVGViewboxHeight = metadata.viewbox_height;
 
-      if (stratEditingState.getPhasesRef().length == 0) {
+      if (stratEditingState.getPhasesRef().size() == 0) {
         stratEditingState.pushEmptyPhaseRaw("Phase 0");
       }
       updateStratEditingStateDisplay();
@@ -1624,7 +1638,7 @@ function App() {
     stratEditingState.setTeammateLoadoutsRaw(state.teammates.map((teammate) => {
       return StratEditingLoadout.fromProto(teammate);
     }));
-    stratEditingState.setPhasesRaw(state.phases.map((protoPhase) => {
+    function phaseFromProto(protoPhase: protos.StratPhase): StratEditingPhase {
       const floors = protoPhase.floors.map((protoFloor) => {
         let floor = new StratEditingPhaseFloor();
         for (const id in protoFloor.drawPaths) {
@@ -1640,12 +1654,17 @@ function App() {
         return floor;
       });
       return new StratEditingPhase(protoPhase.phaseName, floors);
+    }
+
+    stratEditingState.setPhasesRaw(mapObjectToMap(state.phases, (protoPhase) => {
+      return phaseFromProto(protoPhase);
     }));
+    stratEditingState.phaseOrder = state.phaseOrder.map((v) => new Uuid(v));
 
     // Select the floor with the most stuff on it, out of all the floors on the first phase
-    stratEditingState.selectedPhase = 0;
+    stratEditingState.selectedPhase = stratEditingState.phaseOrder[0];
     stratEditingState.selectedFloor = 0;
-    const phase0 = stratEditingState.getPhasesRef()[0];
+    const phase0 = stratEditingState.getPhasesRef().get(stratEditingState.selectedPhase);
     if (phase0) {
       for (let floorIdx = 0; floorIdx < phase0.floors.length; floorIdx += 1) {
         if (phase0.floors[floorIdx].allDrawElements().length >
@@ -1709,7 +1728,7 @@ function App() {
       redrawFreeDrawCanvasQueued = true;
     } else if (msg.lobbyDrawCommand) {
       let cmd = msg.lobbyDrawCommand;
-      let phaseFloor = stratEditingState.getPhasesRef()[cmd.phase].floors[cmd.floor];
+      let phaseFloor = stratEditingState.getPhasesRef().get(new Uuid(cmd.phaseId))!.floors[cmd.floor];
       if (cmd.setDrawPath) {
         phaseFloor.drawPaths.set(new Uuid(cmd.setDrawPath.id), DrawPath.fromProto(cmd.setDrawPath.data!));
       } else if (cmd.setArrow) {
@@ -1729,7 +1748,7 @@ function App() {
       stratEditingState.pushEmptyPhaseRaw(msg.lobbyCreatePhase.phaseName);
       updateStratEditingStateDisplay();
     } else if (msg.lobbySetPhaseName) {
-      stratEditingState.getPhasesRef()[msg.lobbySetPhaseName.idx].phaseName = msg.lobbySetPhaseName.phaseName;
+      stratEditingState.getPhasesRef().get(new Uuid(msg.lobbySetPhaseName.phaseId))!.phaseName = msg.lobbySetPhaseName.phaseName;
       updateStratEditingStateDisplay();
     } else if (msg.lobbySetTeammateLoadout) {
       stratEditingState.getTeammateLoadoutsRaw()[msg.lobbySetTeammateLoadout.idx] = StratEditingLoadout.fromProto(msg.lobbySetTeammateLoadout.newLoadout!);
@@ -2048,7 +2067,7 @@ function App() {
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const phase = stratEditingState.getPhasesRef()[stratEditingState.selectedPhase];
+      const phase = stratEditingState.getPhasesRef().get(stratEditingState.selectedPhase);
 
       if (!phase) {
         return;
@@ -2310,7 +2329,7 @@ function App() {
           case DrawTool.SelectAndEdit: {
             const toolState = stratEditingState.toolStates.selectAndEdit;
             const phase = stratEditingState.selectedPhase;
-            const phaseRawRef = stratEditingState.getPhasesRef()[stratEditingState.selectedPhase];
+            const phaseRawRef = stratEditingState.getPhasesRef().get(stratEditingState.selectedPhase)!;
 
             const prevSelected = toolState.selected?.clone();
 
@@ -2482,7 +2501,7 @@ function App() {
 
         // Update redo stack
         {
-          const phase = stratEditingState.getPhasesRef()[stratEditingState.selectedPhase];
+          const phase = stratEditingState.getPhasesRef().get(stratEditingState.selectedPhase)!;
           phase.redoStack.push(previousDrawAction);
         }
 
@@ -2515,7 +2534,7 @@ function App() {
 
         let redoAction = undefined;
         {
-          const phaseRef = stratEditingState.getPhasesRef()[phase];
+          const phaseRef = stratEditingState.getPhasesRef().get(phase)!;
           if (!phaseRef) {
             return;
           }
@@ -2595,8 +2614,8 @@ function App() {
     }
 
     async function saveProgress() {
-      const phases: protos.StratPhase[] = stratEditingState.getPhasesRef().map((phase) => {
-        return {
+      const phases: Record<string, protos.StratPhase> = mapMapToObject(stratEditingState.getPhasesRef(), (id, phase) => {
+        let protoPhase: protos.StratPhase = {
           phaseName: phase.phaseName, floors: phase.floors.map((floor) => {
             return {
               drawPaths: mapMapToObject(floor.drawPaths, (id, path) => {
@@ -2611,12 +2630,15 @@ function App() {
             };
           })
         };
+        return [id.data, protoPhase];
       });
       const teammates: protos.Teammate[] = stratEditingState.getTeammateLoadoutsRaw().map((loadout) => {
         return { operator: loadout.operator, color: loadout.color.toProto(), util: loadout.util }
       });
 
-      const state: protos.StratState = { stratName: stratEditingState.stratName, phases, teammates };
+      const phaseOrder: string[] = stratEditingState.phaseOrder.map((id) => id.data);
+
+      const state: protos.StratState = { stratName: stratEditingState.stratName, phases, phaseOrder, teammates };
 
       await websocket?.sendProto(protos.Client2Server.create({ saveStrat: { stratId: stratEditingState.stratId, state: state } }));
     }
@@ -2703,17 +2725,17 @@ function App() {
         <div className="row" style={{ margin: "0.25vw" }}>
           <p>Current Phase: </p>
           <input
-            value={stratEditingStateDisplay.getPhasesRef()[stratEditingState.selectedPhase]?.phaseName}
+            value={stratEditingStateDisplay.getPhasesRef().get(stratEditingStateDisplay.selectedPhase)?.phaseName}
             onChange={(e) => {
               stratEditingState.setPhaseName(stratEditingState.selectedPhase, e.target.value);
               updateStratEditingStateDisplay();
             }} />
         </div>
         <div className="row" style={{ margin: "0.25vw" }}>
-          {stratEditingStateDisplay.getPhasesRef().map((phase, i) =>
+          {stratEditingStateDisplay.phaseOrder.map((phase, i) =>
             <button key={i} onClick={(e) => {
               e.preventDefault();
-              stratEditingState.selectedPhase = i;
+              stratEditingState.selectedPhase = stratEditingState.phaseOrder[i];
 
               stratEditingState.toolStates.arrow = new ArrowToolState();
               stratEditingState.toolStates.freeDraw = new FreeDrawToolState();
@@ -2721,7 +2743,7 @@ function App() {
               stratEditingState.toolStates.selectAndEdit = new SelectAndEditToolState();
               redrawFreeDrawCanvas(canvasIds.freeDraw);
               updateStratEditingStateDisplay();
-            }}>{phase.phaseName}</button>
+            }}>{stratEditingState.getPhasesRef().get(phase)?.phaseName}</button>
           )}
           <button onClick={(e) => {
             e.preventDefault();

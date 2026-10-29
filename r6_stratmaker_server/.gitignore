@@ -1,2 +1,4 @@
 /target
 /.fjall_database
+/.fjall_backups
+/logs

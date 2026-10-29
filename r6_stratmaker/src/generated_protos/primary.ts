@@ -128,8 +128,14 @@ export interface Teammate {
 
 export interface StratState {
   stratName: string;
-  phases: StratPhase[];
+  phases: { [key: string]: StratPhase };
+  phaseOrder: string[];
   teammates: Teammate[];
+}
+
+export interface StratState_PhasesEntry {
+  key: string;
+  value: StratPhase | undefined;
 }
 
 /** Hello */
@@ -262,7 +268,7 @@ export interface LobbySetCurrentStrat {
 
 /** LobbyDrawCommand */
 export interface LobbyDrawCommand {
-  phase: number;
+  phaseId: string;
   floor: number;
   setDrawPath?: LobbyDrawCommand_SetDrawPath | undefined;
   setArrow?: LobbyDrawCommand_SetArrow | undefined;
@@ -301,12 +307,13 @@ export interface LobbyDrawCommand_DeleteIcon {
 
 /** LobbyCreatePhase */
 export interface LobbyCreatePhase {
+  phaseId: string;
   phaseName: string;
 }
 
 /** LobbySetPhaseName */
 export interface LobbySetPhaseName {
-  idx: number;
+  phaseId: string;
   phaseName: string;
 }
 
@@ -2522,7 +2529,7 @@ export const Teammate: MessageFns<Teammate> = {
 };
 
 function createBaseStratState(): StratState {
-  return { stratName: "", phases: [], teammates: [] };
+  return { stratName: "", phases: {}, phaseOrder: [], teammates: [] };
 }
 
 export const StratState: MessageFns<StratState> = {
@@ -2530,8 +2537,11 @@ export const StratState: MessageFns<StratState> = {
     if (message.stratName !== "") {
       writer.uint32(10).string(message.stratName);
     }
-    for (const v of message.phases) {
-      StratPhase.encode(v!, writer.uint32(18).fork()).join();
+    globalThis.Object.entries(message.phases).forEach(([key, value]: [string, StratPhase]) => {
+      StratState_PhasesEntry.encode({ key: key as any, value }, writer.uint32(18).fork()).join();
+    });
+    for (const v of message.phaseOrder) {
+      writer.uint32(34).string(v!);
     }
     for (const v of message.teammates) {
       Teammate.encode(v!, writer.uint32(26).fork()).join();
@@ -2565,7 +2575,18 @@ export const StratState: MessageFns<StratState> = {
               break;
             }
 
-            message.phases.push(StratPhase.decode(reader, reader.uint32()));
+            const entry2 = StratState_PhasesEntry.decode(reader, reader.uint32());
+            if (entry2.value !== undefined) {
+              message.phases[entry2.key] = entry2.value;
+            }
+            continue;
+          }
+          case 4: {
+            if (tag !== 34) {
+              break;
+            }
+
+            message.phaseOrder.push(reader.string());
             continue;
           }
           case 3: {
@@ -2595,7 +2616,25 @@ export const StratState: MessageFns<StratState> = {
         : isSet(object.strat_name)
         ? globalThis.String(object.strat_name)
         : "",
-      phases: globalThis.Array.isArray(object?.phases) ? object.phases.map((e: any) => StratPhase.fromJSON(e)) : [],
+      phases: isObject(object.phases)
+        ? (globalThis.Object.entries(object.phases) as [string, any][]).reduce(
+          (acc: { [key: string]: StratPhase }, [key, value]: [string, any]) => {
+            globalThis.Object.defineProperty(acc, key, {
+              value: StratPhase.fromJSON(value),
+              enumerable: true,
+              configurable: true,
+              writable: true,
+            });
+            return acc;
+          },
+          {},
+        )
+        : {},
+      phaseOrder: globalThis.Array.isArray(object?.phaseOrder)
+        ? object.phaseOrder.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.phase_order)
+        ? object.phase_order.map((e: any) => globalThis.String(e))
+        : [],
       teammates: globalThis.Array.isArray(object?.teammates)
         ? object.teammates.map((e: any) => Teammate.fromJSON(e))
         : [],
@@ -2607,8 +2646,17 @@ export const StratState: MessageFns<StratState> = {
     if (message.stratName !== "") {
       obj.stratName = message.stratName;
     }
-    if (message.phases?.length) {
-      obj.phases = message.phases.map((e) => StratPhase.toJSON(e));
+    if (message.phases) {
+      const entries = globalThis.Object.entries(message.phases) as [string, StratPhase][];
+      if (entries.length > 0) {
+        obj.phases = {};
+        entries.forEach(([k, v]) => {
+          obj.phases[k] = StratPhase.toJSON(v);
+        });
+      }
+    }
+    if (message.phaseOrder?.length) {
+      obj.phaseOrder = message.phaseOrder;
     }
     if (message.teammates?.length) {
       obj.teammates = message.teammates.map((e) => Teammate.toJSON(e));
@@ -2622,8 +2670,104 @@ export const StratState: MessageFns<StratState> = {
   fromPartial<I extends Exact<DeepPartial<StratState>, I>>(object: I): StratState {
     const message = createBaseStratState();
     message.stratName = object.stratName ?? "";
-    message.phases = object.phases?.map((e) => StratPhase.fromPartial(e)) || [];
+    message.phases = (globalThis.Object.entries(object.phases ?? {}) as [string, StratPhase][]).reduce(
+      (acc: { [key: string]: StratPhase }, [key, value]: [string, StratPhase]) => {
+        if (value !== undefined) {
+          acc[key] = StratPhase.fromPartial(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    message.phaseOrder = object.phaseOrder?.map((e) => e) || [];
     message.teammates = object.teammates?.map((e) => Teammate.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseStratState_PhasesEntry(): StratState_PhasesEntry {
+  return { key: "", value: undefined };
+}
+
+export const StratState_PhasesEntry: MessageFns<StratState_PhasesEntry> = {
+  encode(message: StratState_PhasesEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== undefined) {
+      StratPhase.encode(message.value, writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): StratState_PhasesEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseStratState_PhasesEntry();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.key = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.value = StratPhase.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): StratState_PhasesEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? StratPhase.fromJSON(object.value) : undefined,
+    };
+  },
+
+  toJSON(message: StratState_PhasesEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== undefined) {
+      obj.value = StratPhase.toJSON(message.value);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<StratState_PhasesEntry>, I>>(base?: I): StratState_PhasesEntry {
+    return StratState_PhasesEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<StratState_PhasesEntry>, I>>(object: I): StratState_PhasesEntry {
+    const message = createBaseStratState_PhasesEntry();
+    message.key = object.key ?? "";
+    message.value = (object.value !== undefined && object.value !== null)
+      ? StratPhase.fromPartial(object.value)
+      : undefined;
     return message;
   },
 };
@@ -4624,7 +4768,7 @@ export const LobbySetCurrentStrat: MessageFns<LobbySetCurrentStrat> = {
 
 function createBaseLobbyDrawCommand(): LobbyDrawCommand {
   return {
-    phase: 0,
+    phaseId: "",
     floor: 0,
     setDrawPath: undefined,
     setArrow: undefined,
@@ -4637,8 +4781,8 @@ function createBaseLobbyDrawCommand(): LobbyDrawCommand {
 
 export const LobbyDrawCommand: MessageFns<LobbyDrawCommand> = {
   encode(message: LobbyDrawCommand, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.phase !== 0) {
-      writer.uint32(8).uint32(message.phase);
+    if (message.phaseId !== "") {
+      writer.uint32(10).string(message.phaseId);
     }
     if (message.floor !== 0) {
       writer.uint32(16).uint32(message.floor);
@@ -4678,11 +4822,11 @@ export const LobbyDrawCommand: MessageFns<LobbyDrawCommand> = {
         const tag = reader.uint32();
         switch (tag >>> 3) {
           case 1: {
-            if (tag !== 8) {
+            if (tag !== 10) {
               break;
             }
 
-            message.phase = reader.uint32();
+            message.phaseId = reader.string();
             continue;
           }
           case 2: {
@@ -4755,7 +4899,11 @@ export const LobbyDrawCommand: MessageFns<LobbyDrawCommand> = {
 
   fromJSON(object: any): LobbyDrawCommand {
     return {
-      phase: isSet(object.phase) ? globalThis.Number(object.phase) : 0,
+      phaseId: isSet(object.phaseId)
+        ? globalThis.String(object.phaseId)
+        : isSet(object.phase_id)
+        ? globalThis.String(object.phase_id)
+        : "",
       floor: isSet(object.floor) ? globalThis.Number(object.floor) : 0,
       setDrawPath: isSet(object.setDrawPath)
         ? LobbyDrawCommand_SetDrawPath.fromJSON(object.setDrawPath)
@@ -4792,8 +4940,8 @@ export const LobbyDrawCommand: MessageFns<LobbyDrawCommand> = {
 
   toJSON(message: LobbyDrawCommand): unknown {
     const obj: any = {};
-    if (message.phase !== 0) {
-      obj.phase = Math.round(message.phase);
+    if (message.phaseId !== "") {
+      obj.phaseId = message.phaseId;
     }
     if (message.floor !== 0) {
       obj.floor = Math.round(message.floor);
@@ -4824,7 +4972,7 @@ export const LobbyDrawCommand: MessageFns<LobbyDrawCommand> = {
   },
   fromPartial<I extends Exact<DeepPartial<LobbyDrawCommand>, I>>(object: I): LobbyDrawCommand {
     const message = createBaseLobbyDrawCommand();
-    message.phase = object.phase ?? 0;
+    message.phaseId = object.phaseId ?? "";
     message.floor = object.floor ?? 0;
     message.setDrawPath = (object.setDrawPath !== undefined && object.setDrawPath !== null)
       ? LobbyDrawCommand_SetDrawPath.fromPartial(object.setDrawPath)
@@ -5307,11 +5455,14 @@ export const LobbyDrawCommand_DeleteIcon: MessageFns<LobbyDrawCommand_DeleteIcon
 };
 
 function createBaseLobbyCreatePhase(): LobbyCreatePhase {
-  return { phaseName: "" };
+  return { phaseId: "", phaseName: "" };
 }
 
 export const LobbyCreatePhase: MessageFns<LobbyCreatePhase> = {
   encode(message: LobbyCreatePhase, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.phaseId !== "") {
+      writer.uint32(18).string(message.phaseId);
+    }
     if (message.phaseName !== "") {
       writer.uint32(10).string(message.phaseName);
     }
@@ -5331,6 +5482,14 @@ export const LobbyCreatePhase: MessageFns<LobbyCreatePhase> = {
       while (reader.pos < end) {
         const tag = reader.uint32();
         switch (tag >>> 3) {
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.phaseId = reader.string();
+            continue;
+          }
           case 1: {
             if (tag !== 10) {
               break;
@@ -5352,11 +5511,25 @@ export const LobbyCreatePhase: MessageFns<LobbyCreatePhase> = {
   },
 
   fromJSON(object: any): LobbyCreatePhase {
-    return { phaseName: isSet(object.phaseName) ? globalThis.String(object.phaseName) : "" };
+    return {
+      phaseId: isSet(object.phaseId)
+        ? globalThis.String(object.phaseId)
+        : isSet(object.phase_id)
+        ? globalThis.String(object.phase_id)
+        : "",
+      phaseName: isSet(object.phaseName)
+        ? globalThis.String(object.phaseName)
+        : isSet(object.phase_name)
+        ? globalThis.String(object.phase_name)
+        : "",
+    };
   },
 
   toJSON(message: LobbyCreatePhase): unknown {
     const obj: any = {};
+    if (message.phaseId !== "") {
+      obj.phaseId = message.phaseId;
+    }
     if (message.phaseName !== "") {
       obj.phaseName = message.phaseName;
     }
@@ -5368,19 +5541,20 @@ export const LobbyCreatePhase: MessageFns<LobbyCreatePhase> = {
   },
   fromPartial<I extends Exact<DeepPartial<LobbyCreatePhase>, I>>(object: I): LobbyCreatePhase {
     const message = createBaseLobbyCreatePhase();
+    message.phaseId = object.phaseId ?? "";
     message.phaseName = object.phaseName ?? "";
     return message;
   },
 };
 
 function createBaseLobbySetPhaseName(): LobbySetPhaseName {
-  return { idx: 0, phaseName: "" };
+  return { phaseId: "", phaseName: "" };
 }
 
 export const LobbySetPhaseName: MessageFns<LobbySetPhaseName> = {
   encode(message: LobbySetPhaseName, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.idx !== 0) {
-      writer.uint32(8).uint32(message.idx);
+    if (message.phaseId !== "") {
+      writer.uint32(10).string(message.phaseId);
     }
     if (message.phaseName !== "") {
       writer.uint32(18).string(message.phaseName);
@@ -5402,11 +5576,11 @@ export const LobbySetPhaseName: MessageFns<LobbySetPhaseName> = {
         const tag = reader.uint32();
         switch (tag >>> 3) {
           case 1: {
-            if (tag !== 8) {
+            if (tag !== 10) {
               break;
             }
 
-            message.idx = reader.uint32();
+            message.phaseId = reader.string();
             continue;
           }
           case 2: {
@@ -5431,7 +5605,11 @@ export const LobbySetPhaseName: MessageFns<LobbySetPhaseName> = {
 
   fromJSON(object: any): LobbySetPhaseName {
     return {
-      idx: isSet(object.idx) ? globalThis.Number(object.idx) : 0,
+      phaseId: isSet(object.phaseId)
+        ? globalThis.String(object.phaseId)
+        : isSet(object.phase_id)
+        ? globalThis.String(object.phase_id)
+        : "",
       phaseName: isSet(object.phaseName)
         ? globalThis.String(object.phaseName)
         : isSet(object.phase_name)
@@ -5442,8 +5620,8 @@ export const LobbySetPhaseName: MessageFns<LobbySetPhaseName> = {
 
   toJSON(message: LobbySetPhaseName): unknown {
     const obj: any = {};
-    if (message.idx !== 0) {
-      obj.idx = Math.round(message.idx);
+    if (message.phaseId !== "") {
+      obj.phaseId = message.phaseId;
     }
     if (message.phaseName !== "") {
       obj.phaseName = message.phaseName;
@@ -5456,7 +5634,7 @@ export const LobbySetPhaseName: MessageFns<LobbySetPhaseName> = {
   },
   fromPartial<I extends Exact<DeepPartial<LobbySetPhaseName>, I>>(object: I): LobbySetPhaseName {
     const message = createBaseLobbySetPhaseName();
-    message.idx = object.idx ?? 0;
+    message.phaseId = object.phaseId ?? "";
     message.phaseName = object.phaseName ?? "";
     return message;
   },

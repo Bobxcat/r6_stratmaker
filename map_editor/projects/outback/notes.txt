@@ -1,0 +1,10 @@
+* Obstacles
+
+1f:
+* Walls into aqua
+* Kitchen walls
+* North wall alignment in closet
+
+2f:
+* Garage??
+* Site east of bull obstacles

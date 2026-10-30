@@ -1605,7 +1605,9 @@ function App() {
       stratEditingState.mapSVGViewboxHeight = metadata.viewbox_height;
 
       if (stratEditingState.getPhasesRef().size() == 0) {
-        stratEditingState.pushEmptyPhaseRaw(new Uuid(), "Phase 0");
+        let id = new Uuid();
+        stratEditingState.pushEmptyPhaseRaw(id, "Phase 0");
+        stratEditingState.selectedPhase = id;
       }
       updateStratEditingStateDisplay();
     }

@@ -1,10 +1,2 @@
-B:
-* Positioning of external garage wall
-* Obstacles in server
-
-1f:
-* Obstacles
-
 2f:
 * Fix the misaligned hex walls in lobby (outside bathroom)
-* Obstacles

@@ -251,11 +251,17 @@ message LobbyCreatePhase {
     string phase_name = 1;
 }
 
+// LobbyDeletePhase
+message LobbyDeletePhase {
+    string phase_id = 1;
+}
+
 // LobbySetPhaseName
 message LobbySetPhaseName {
     string phase_id = 1;
     string phase_name = 2;
 }
+
 
 // LobbySetTeammateLoadout
 message LobbySetTeammateLoadout {
@@ -288,6 +294,7 @@ message Client2Server {
         LobbySetPhaseName lobby_set_phase_name = 109;
         LobbySetTeammateLoadout lobby_set_teammate_loadout = 110;
         LobbySetPhaseOrder lobby_set_phase_order = 111;
+        LobbyDeletePhase lobby_delete_phase = 112;
     }
 }
 
@@ -313,5 +320,6 @@ message Server2Client {
         LobbySetPhaseName lobby_set_phase_name = 109;
         LobbySetTeammateLoadout lobby_set_teammate_loadout = 110;
         LobbySetPhaseOrder lobby_set_phase_order = 111;
+        LobbyDeletePhase lobby_delete_phase = 112;
     }
 }

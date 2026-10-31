@@ -577,6 +577,7 @@ async fn handle_generic_message(
         | C2SInner::LobbyLoadStrat(_)
         | C2SInner::LobbyDrawCommand(_)
         | C2SInner::LobbyCreatePhase(_)
+        | C2SInner::LobbyDeletePhase(_)
         | C2SInner::LobbySetPhaseName(_)
         | C2SInner::LobbySetTeammateLoadout(_)
         | C2SInner::LobbySetPhaseOrder(_) => return Ok(Some(msg_received)),
@@ -858,6 +859,21 @@ fn lobby_loop(
                                     }
                                 }
                             }
+                            C2SInner::LobbyDeletePhase(msg) => {
+                                if let Some(strat_state) = curr_strat_state.as_mut() {
+                                    strat_state.phases.remove(&msg.phase_id);
+
+                                    for to_send_client in 0..clients.len() {
+                                        if to_send_client == cl_idx {
+                                            continue;
+                                        }
+                                        let _ = clients[to_send_client]
+                                            .ws
+                                            .send_proto(S2CInner::LobbyDeletePhase(msg.clone()))
+                                            .await;
+                                    }
+                                }
+                            }
                             C2SInner::LobbySetPhaseName(msg) => {
                                 if let Some(phase) = curr_strat_state
                                     .as_mut()
@@ -1009,6 +1025,7 @@ async fn client_loop(
                     | C2SInner::LobbyLoadStrat(..)
                     | C2SInner::LobbyDrawCommand(..)
                     | C2SInner::LobbyCreatePhase(..)
+                    | C2SInner::LobbyDeletePhase(_)
                     | C2SInner::LobbySetPhaseName(..)
                     | C2SInner::LobbySetTeammateLoadout(..)
                     | C2SInner::GetMapList(..)

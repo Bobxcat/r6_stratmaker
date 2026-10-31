@@ -313,6 +313,11 @@ export interface LobbyCreatePhase {
   phaseName: string;
 }
 
+/** LobbyDeletePhase */
+export interface LobbyDeletePhase {
+  phaseId: string;
+}
+
 /** LobbySetPhaseName */
 export interface LobbySetPhaseName {
   phaseId: string;
@@ -348,6 +353,7 @@ export interface Client2Server {
   lobbySetPhaseName?: LobbySetPhaseName | undefined;
   lobbySetTeammateLoadout?: LobbySetTeammateLoadout | undefined;
   lobbySetPhaseOrder?: LobbySetPhaseOrder | undefined;
+  lobbyDeletePhase?: LobbyDeletePhase | undefined;
 }
 
 export interface Server2Client {
@@ -370,6 +376,7 @@ export interface Server2Client {
   lobbySetPhaseName?: LobbySetPhaseName | undefined;
   lobbySetTeammateLoadout?: LobbySetTeammateLoadout | undefined;
   lobbySetPhaseOrder?: LobbySetPhaseOrder | undefined;
+  lobbyDeletePhase?: LobbyDeletePhase | undefined;
 }
 
 function createBasePoint(): Point {
@@ -5556,6 +5563,79 @@ export const LobbyCreatePhase: MessageFns<LobbyCreatePhase> = {
   },
 };
 
+function createBaseLobbyDeletePhase(): LobbyDeletePhase {
+  return { phaseId: "" };
+}
+
+export const LobbyDeletePhase: MessageFns<LobbyDeletePhase> = {
+  encode(message: LobbyDeletePhase, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.phaseId !== "") {
+      writer.uint32(10).string(message.phaseId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LobbyDeletePhase {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLobbyDeletePhase();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.phaseId = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LobbyDeletePhase {
+    return {
+      phaseId: isSet(object.phaseId)
+        ? globalThis.String(object.phaseId)
+        : isSet(object.phase_id)
+        ? globalThis.String(object.phase_id)
+        : "",
+    };
+  },
+
+  toJSON(message: LobbyDeletePhase): unknown {
+    const obj: any = {};
+    if (message.phaseId !== "") {
+      obj.phaseId = message.phaseId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LobbyDeletePhase>, I>>(base?: I): LobbyDeletePhase {
+    return LobbyDeletePhase.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LobbyDeletePhase>, I>>(object: I): LobbyDeletePhase {
+    const message = createBaseLobbyDeletePhase();
+    message.phaseId = object.phaseId ?? "";
+    return message;
+  },
+};
+
 function createBaseLobbySetPhaseName(): LobbySetPhaseName {
   return { phaseId: "", phaseName: "" };
 }
@@ -5822,6 +5902,7 @@ function createBaseClient2Server(): Client2Server {
     lobbySetPhaseName: undefined,
     lobbySetTeammateLoadout: undefined,
     lobbySetPhaseOrder: undefined,
+    lobbyDeletePhase: undefined,
   };
 }
 
@@ -5877,6 +5958,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.lobbySetPhaseOrder !== undefined) {
       LobbySetPhaseOrder.encode(message.lobbySetPhaseOrder, writer.uint32(890).fork()).join();
+    }
+    if (message.lobbyDeletePhase !== undefined) {
+      LobbyDeletePhase.encode(message.lobbyDeletePhase, writer.uint32(898).fork()).join();
     }
     return writer;
   },
@@ -6030,6 +6114,14 @@ export const Client2Server: MessageFns<Client2Server> = {
             message.lobbySetPhaseOrder = LobbySetPhaseOrder.decode(reader, reader.uint32());
             continue;
           }
+          case 112: {
+            if (tag !== 898) {
+              break;
+            }
+
+            message.lobbyDeletePhase = LobbyDeletePhase.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -6125,6 +6217,11 @@ export const Client2Server: MessageFns<Client2Server> = {
         : isSet(object.lobby_set_phase_order)
         ? LobbySetPhaseOrder.fromJSON(object.lobby_set_phase_order)
         : undefined,
+      lobbyDeletePhase: isSet(object.lobbyDeletePhase)
+        ? LobbyDeletePhase.fromJSON(object.lobbyDeletePhase)
+        : isSet(object.lobby_delete_phase)
+        ? LobbyDeletePhase.fromJSON(object.lobby_delete_phase)
+        : undefined,
     };
   },
 
@@ -6180,6 +6277,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     }
     if (message.lobbySetPhaseOrder !== undefined) {
       obj.lobbySetPhaseOrder = LobbySetPhaseOrder.toJSON(message.lobbySetPhaseOrder);
+    }
+    if (message.lobbyDeletePhase !== undefined) {
+      obj.lobbyDeletePhase = LobbyDeletePhase.toJSON(message.lobbyDeletePhase);
     }
     return obj;
   },
@@ -6239,6 +6339,9 @@ export const Client2Server: MessageFns<Client2Server> = {
     message.lobbySetPhaseOrder = (object.lobbySetPhaseOrder !== undefined && object.lobbySetPhaseOrder !== null)
       ? LobbySetPhaseOrder.fromPartial(object.lobbySetPhaseOrder)
       : undefined;
+    message.lobbyDeletePhase = (object.lobbyDeletePhase !== undefined && object.lobbyDeletePhase !== null)
+      ? LobbyDeletePhase.fromPartial(object.lobbyDeletePhase)
+      : undefined;
     return message;
   },
 };
@@ -6264,6 +6367,7 @@ function createBaseServer2Client(): Server2Client {
     lobbySetPhaseName: undefined,
     lobbySetTeammateLoadout: undefined,
     lobbySetPhaseOrder: undefined,
+    lobbyDeletePhase: undefined,
   };
 }
 
@@ -6325,6 +6429,9 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.lobbySetPhaseOrder !== undefined) {
       LobbySetPhaseOrder.encode(message.lobbySetPhaseOrder, writer.uint32(890).fork()).join();
+    }
+    if (message.lobbyDeletePhase !== undefined) {
+      LobbyDeletePhase.encode(message.lobbyDeletePhase, writer.uint32(898).fork()).join();
     }
     return writer;
   },
@@ -6494,6 +6601,14 @@ export const Server2Client: MessageFns<Server2Client> = {
             message.lobbySetPhaseOrder = LobbySetPhaseOrder.decode(reader, reader.uint32());
             continue;
           }
+          case 112: {
+            if (tag !== 898) {
+              break;
+            }
+
+            message.lobbyDeletePhase = LobbyDeletePhase.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -6603,6 +6718,11 @@ export const Server2Client: MessageFns<Server2Client> = {
         : isSet(object.lobby_set_phase_order)
         ? LobbySetPhaseOrder.fromJSON(object.lobby_set_phase_order)
         : undefined,
+      lobbyDeletePhase: isSet(object.lobbyDeletePhase)
+        ? LobbyDeletePhase.fromJSON(object.lobbyDeletePhase)
+        : isSet(object.lobby_delete_phase)
+        ? LobbyDeletePhase.fromJSON(object.lobby_delete_phase)
+        : undefined,
     };
   },
 
@@ -6664,6 +6784,9 @@ export const Server2Client: MessageFns<Server2Client> = {
     }
     if (message.lobbySetPhaseOrder !== undefined) {
       obj.lobbySetPhaseOrder = LobbySetPhaseOrder.toJSON(message.lobbySetPhaseOrder);
+    }
+    if (message.lobbyDeletePhase !== undefined) {
+      obj.lobbyDeletePhase = LobbyDeletePhase.toJSON(message.lobbyDeletePhase);
     }
     return obj;
   },
@@ -6731,6 +6854,9 @@ export const Server2Client: MessageFns<Server2Client> = {
         : undefined;
     message.lobbySetPhaseOrder = (object.lobbySetPhaseOrder !== undefined && object.lobbySetPhaseOrder !== null)
       ? LobbySetPhaseOrder.fromPartial(object.lobbySetPhaseOrder)
+      : undefined;
+    message.lobbyDeletePhase = (object.lobbyDeletePhase !== undefined && object.lobbyDeletePhase !== null)
+      ? LobbyDeletePhase.fromPartial(object.lobbyDeletePhase)
       : undefined;
     return message;
   },

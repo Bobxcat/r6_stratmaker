@@ -1057,7 +1057,7 @@ class StratEditingState {
     const phaseName = `Phase ${this.phaseOrder.length}`;
     this.pushEmptyPhaseRaw(id, phaseName);
     if (this.mode == StratEditingMode.Lobby) {
-      websocket?.sendProto(protos.Client2Server.create({ lobbyCreatePhase: { phaseName } }));
+      websocket?.sendProto(protos.Client2Server.create({ lobbyCreatePhase: { phaseId: id.data, phaseName } }));
     }
     this.setPhaseOrder(this.phaseOrder);
   }
@@ -1070,6 +1070,30 @@ class StratEditingState {
     let phase = new StratEditingPhase(name, this.mapFloors.map((_floorName) => new StratEditingPhaseFloor()));
     this.phases.set(id, phase);
     this.phaseOrder.push(id);
+  }
+
+  /** NETWORKED */
+  deletePhase(id: Uuid) {
+    this.deletePhaseRaw(id);
+    if (this.mode == StratEditingMode.Lobby) {
+      websocket?.sendProto(protos.Client2Server.create({ lobbyDeletePhase: { phaseId: id.data } }));
+    }
+    this.setPhaseOrder(this.phaseOrder);
+  }
+
+  /** Use with care! Not networked
+   * 
+   * Updates phase order
+  */
+  deletePhaseRaw(id: Uuid) {
+    this.phases.delete(id);
+    let idx = this.phaseOrder.map(id => id.data).indexOf(id.data);
+    this.phaseOrder.splice(idx, 1);
+
+    if (this.selectedPhase.data == id.data) {
+      this.selectedPhase = this.phaseOrder[0] ?? new Uuid("");
+      redrawFreeDrawCanvasQueued = true;
+    }
   }
 
   /** NETWORKED */
@@ -1774,6 +1798,9 @@ function App() {
       updateStratEditingStateDisplay();
     } else if (msg.lobbyCreatePhase) {
       stratEditingState.pushEmptyPhaseRaw(new Uuid(msg.lobbyCreatePhase.phaseId), msg.lobbyCreatePhase.phaseName);
+      updateStratEditingStateDisplay();
+    } else if (msg.lobbyDeletePhase) {
+      stratEditingState.deletePhaseRaw(new Uuid(msg.lobbyDeletePhase.phaseId));
       updateStratEditingStateDisplay();
     } else if (msg.lobbySetPhaseName) {
       stratEditingState.getPhasesRef().get(new Uuid(msg.lobbySetPhaseName.phaseId))!.phaseName = msg.lobbySetPhaseName.phaseName;
@@ -2742,6 +2769,14 @@ function App() {
             stratEditingState.pushEmptyPhase(new Uuid());
             updateStratEditingStateDisplay();
           }}>Create new phase</button>
+          <button onClick={(e) => {
+            e.preventDefault();
+            const phaseName = stratEditingState.getPhasesRef().get(stratEditingState.selectedPhase)?.phaseName;
+            if (window.confirm(`Are you sure you want to delete phase '${phaseName}'?`)) {
+              stratEditingState.deletePhase(stratEditingState.selectedPhase);
+              updateStratEditingStateDisplay();
+            }
+          }}>Delete this phase</button>
         </>);
       }
 

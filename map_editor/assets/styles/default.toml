@@ -3,6 +3,10 @@ lightness = 0.4952
 chroma = 0.1608
 hue = 288.2
 alpha = 1.0
+#lightness = 0.7
+#chroma = 0.0987
+#hue = 276.35
+#alpha = 1.0
 
 [destructable_color.LinearRgba]
 red = 1.0

@@ -971,7 +971,6 @@ class StratEditingState {
   ].map(Color.fromRgb));
 
   mode: StratEditingMode = StratEditingMode.Singleplayer;
-  lobbyMembers: string[] = [];
 
   selectedDrawColor: Color = StratEditingState.freeDrawPalette[0];
 
@@ -1280,6 +1279,11 @@ class StratEditingState {
   }
 }
 
+class LobbyState {
+  members: string[] = [];
+  stratList: LobbyStratMetadata[] = [];
+}
+
 const stratEditingState = new StratEditingState();
 let redrawFreeDrawCanvasQueued: boolean = false;
 /** The ratio of canvas units per world units */
@@ -1561,7 +1565,7 @@ function App() {
   const [stratList, setStratList] = useState<Array<StratMetadata>>([]);
 
   const [lobbyList, setLobbyList] = useState<Array<LobbyListInfo>>([]);
-  const [lobbyStratList, setLobbyStratList] = useState<Array<LobbyStratMetadata>>([]);
+  const [lobbyState, setLobbyState] = useState<LobbyState>(new LobbyState());
 
   const [operatorsIndexReactive, setOperatorsIndexReactive] = useState<OperatorsIndex>(new OperatorsIndex());
 
@@ -1762,15 +1766,26 @@ function App() {
     } else if (msg.joinLobbyResponse) {
       setCurrPage(Page.InLobbySelectStratPage);
     } else if (msg.updateLobbyMembers) {
-      stratEditingState.lobbyMembers = msg.updateLobbyMembers.members;
-      updateStratEditingStateDisplay();
+      let members = msg.updateLobbyMembers.members;
+      setLobbyState(state => {
+        return {
+          ...state,
+          members,
+        }
+      });
     } else if (msg.updateLobbyStratList) {
-      setLobbyStratList(msg.updateLobbyStratList.strats.map((strat) =>
-        new LobbyStratMetadata(
-          strat.authorName,
-          new StratMetadata(strat.stratId, strat.stratName, strat.map)
-        )
-      ));
+      let strats = msg.updateLobbyStratList.strats;
+      setLobbyState(state => {
+        return {
+          ...state,
+          stratList: strats.map((strat) =>
+            new LobbyStratMetadata(
+              strat.authorName,
+              new StratMetadata(strat.stratId, strat.stratName, strat.map)
+            )
+          )
+        }
+      });
     } else if (msg.lobbySetCurrentStrat) {
       stratEditingState.stratId = "";
       stratEditingState.map = msg.lobbySetCurrentStrat.map;
@@ -1980,6 +1995,7 @@ function App() {
 
   function inLobbySelectStratPageComponent() {
     async function loadStrat(strat: LobbyStratMetadata) {
+      stratEditingState.reset();
       redrawFreeDrawCanvasQueued = true;
       await websocket?.sendProto(protos.Client2Server.create({ lobbyLoadStrat: { stratId: strat.strat.uuid } }));
     }
@@ -1987,12 +2003,19 @@ function App() {
     return (<>
       <div className="col" style={{ border: "2px solid #0f0f0f", borderRadius: "8px" }}>
         <p>Lobby members: </p>
-        {stratEditingStateDisplay.lobbyMembers.map((memberName) => <>
+        {lobbyState.members.map((memberName) => <>
           <p>{memberName}</p>
         </>)}
       </div>
+      {stratEditingState.mode == StratEditingMode.Lobby &&
+        (<button onClick={(e) => {
+          e.preventDefault();
+          setCurrPage(Page.StratEditorPage);
+          redrawFreeDrawCanvasQueued = true;
+        }}>Back to Current Strat</button>)
+      }
       <p>Select a strat!</p>
-      {lobbyStratList.map((strat) => <>
+      {lobbyState.stratList.map((strat) => <>
         <div key={strat.strat.uuid} className="strat-list-strat-container">
           <p>{strat.author}</p>
           <p>{strat.strat.strat_name}</p>
@@ -2811,7 +2834,7 @@ function App() {
                   break;
                 }
                 case StratEditingMode.Lobby: {
-                  stratEditingState.reset();
+                  // Don't reset the strat state, since we might need to re-enter the strat
                   updateStratEditingStateDisplay();
                   setCurrPage(Page.InLobbySelectStratPage);
                   break;
@@ -2832,7 +2855,7 @@ function App() {
               <div style={{ width: "15vw", margin: "0.25vw" }}>
                 <p>Lobby Members</p>
                 <>
-                  {stratEditingStateDisplay.lobbyMembers.forEach((member) =>
+                  {lobbyState.members.forEach((member) =>
                     <p>{member}</p>
                   )}
                 </>

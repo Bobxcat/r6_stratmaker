@@ -2196,7 +2196,8 @@ function App() {
         stratEditingState.prevCanvasScales.set(canvasId, 1);
         prevScale = 1;
       }
-      const newScale = canvasPxPerSVGPixel;
+      const newScale = canvasPxPerSVGPixel * window.devicePixelRatio;
+      // const newScale = canvasPxPerSVGPixel;
       if (Math.abs(newScale - prevScale) > 0.001) {
         ctx.scale(newScale / prevScale, newScale / prevScale);
         stratEditingState.prevCanvasScales.set(canvasId, newScale);

@@ -425,22 +425,30 @@ class Arrow implements DrawElement {
 }
 
 class StratMetadata {
+  author: string;
   uuid: string;
   strat_name: string;
   map: string;
-  constructor(uuid: string, strat_name: string, map: string) {
+  constructor(author: string, uuid: string, strat_name: string, map: string) {
+    this.author = author;
     this.uuid = uuid;
     this.strat_name = strat_name;
     this.map = map;
   }
-}
 
-class LobbyStratMetadata {
-  author: string;
-  strat: StratMetadata;
-  constructor(author: string, strat: StratMetadata) {
-    this.author = author;
-    this.strat = strat;
+  /** Returns `-1` if `this < rhs`, `0` if `this == rhs`, and `1` if `this > rhs` */
+  cmp(rhs: StratMetadata): number {
+    // Sort by map then author then strat name
+    if (this.map > rhs.map) return 1;
+    if (this.map < rhs.map) return -1;
+
+    if (this.author > rhs.author) return 1;
+    if (this.author < rhs.author) return -1;
+
+    if (this.strat_name > rhs.strat_name) return 1;
+    if (this.strat_name < rhs.strat_name) return -1;
+
+    return 0;
   }
 }
 
@@ -1281,7 +1289,7 @@ class StratEditingState {
 
 class LobbyState {
   members: string[] = [];
-  stratList: LobbyStratMetadata[] = [];
+  stratList: StratMetadata[] = [];
 }
 
 const stratEditingState = new StratEditingState();
@@ -1543,6 +1551,22 @@ function setCookie(key: string, value: string, expireDays: number) {
   document.cookie = key + "=" + value + ";" + expires + ";path=/";
 }
 
+/** `snake_case` -> `Capital Case` */
+function snakeCaseToCapitalCase(snake: string): string {
+  let outStr = "";
+
+  for (let segment of snake.split("_")) {
+    if (outStr) {
+      outStr += " ";
+    }
+    segment = segment.trim();
+    segment = segment.slice(0, 1).toUpperCase() + segment.slice(1);
+    outStr += segment;
+  }
+
+  return outStr;
+}
+
 const canvasIds = {
   placementPreview: "placement-preview-canvas",
   freeDraw: "free-draw-canvas",
@@ -1747,7 +1771,7 @@ function App() {
     } else if (msg.getStratListResponse) {
       var newStratList: Array<StratMetadata> = [];
       msg.getStratListResponse.strats.forEach((strat) => {
-        newStratList.push(new StratMetadata(strat.stratId, strat.stratName, strat.map));
+        newStratList.push(new StratMetadata("", strat.stratId, strat.stratName, strat.map));
       });
       setStratList(newStratList);
     } else if (msg.createEmptyStratResponse) {
@@ -1776,14 +1800,13 @@ function App() {
     } else if (msg.updateLobbyStratList) {
       let strats = msg.updateLobbyStratList.strats;
       setLobbyState(state => {
+        let stratList = strats.map((strat) =>
+          new StratMetadata(strat.authorName, strat.stratId, strat.stratName, strat.map)
+        );
+        stratList.sort((a, b) => a.cmp(b));
         return {
           ...state,
-          stratList: strats.map((strat) =>
-            new LobbyStratMetadata(
-              strat.authorName,
-              new StratMetadata(strat.stratId, strat.stratName, strat.map)
-            )
-          )
+          stratList,
         }
       });
     } else if (msg.lobbySetCurrentStrat) {
@@ -1835,24 +1858,33 @@ function App() {
     }
   }
 
-  function tileListComponent<T>(keys: T[], listInnerComponent: (key: T) => any, onClick: (key: T) => void, rowWidthOverride?: number) {
-    // Note: this is a test for the "truthyness" of widthOverride, which means that `widthOverride == 0` will *also* go to `10`
+  function tileListComponentRaw<T>(keys: T[], listInnerComponent: (key: T) => any, rowWidthOverride?: number) {
     const rowWidth = rowWidthOverride ? rowWidthOverride : 10;
-    var rows: T[][] = arrayChunk(keys, rowWidth);
+    let rows: T[][] = arrayChunk(keys, rowWidth);
 
     return (<>
       <div className="col">
         {rows.map((row) =>
           <div className="row">
-            {row.map((key) =>
-              <button className="col" style={{ margin: 1, padding: 0, width: "fit-content", height: "fit-content" }} onClick={(_) => onClick(key)}>
-                {listInnerComponent(key)}
-              </button>
-            )}
+            {row.map((key) => listInnerComponent(key))}
           </div>
         )}
       </div>
-    </>)
+    </>);
+  }
+
+  function tileListComponent<T>(keys: T[], listInnerComponent: (key: T) => any, onClick: (key: T) => void, rowWidthOverride?: number) {
+    return tileListComponentRaw(keys,
+      (key) => (
+        <button
+          className="col"
+          style={{ margin: 1, padding: 0, width: "fit-content", height: "fit-content" }}
+          onClick={(_) => onClick(key)}>
+          {listInnerComponent(key)}
+        </button>
+      ),
+      rowWidthOverride
+    );
   }
 
   function utilityTileListComponent(onClick: (util: string) => void, imgSize: string, utilForOp?: string, rowWidthOverride?: number) {
@@ -1945,6 +1977,70 @@ function App() {
     </Fragment>);
   }
 
+  class StratListViewState {
+    filterMap = "";
+    selectFilterMapIsActive = false;
+  }
+  const [stratListViewState, setStratListViewState] = useState<StratListViewState>(new StratListViewState());
+
+  function stratListViewComponent(state: StratListViewState, strats: StratMetadata[], loadButtonText: string, loadButtonAction: (strat: StratMetadata) => void) {
+    strats = strats.slice().sort((a, b) => a.cmp(b)).filter((strat) => {
+      if (state.filterMap && strat.map != state.filterMap) {
+        return false;
+      }
+      return true;
+    });
+    return (<>
+      <div className="row" style={{ width: "100%" }}>
+        <div className="col" style={{ margin: "1vw 0", justifyContent: "left", position: "static" }}>
+          <button onClick={(_) => {
+            setStratListViewState({
+              ...state,
+              selectFilterMapIsActive: !state.selectFilterMapIsActive,
+            });
+          }}>Set Map Filter {state.filterMap ? `(${snakeCaseToCapitalCase(state.filterMap)})` : ""}</button>
+          {state.selectFilterMapIsActive && (
+            <div style={{ position: "relative", zIndex: 1000, padding: 0 }}>
+              <div style={{ position: "absolute", zIndex: 1001, top: "0.5vw", left: "-60%", backgroundColor: "#4f4f4f", border: "2px solid #0f0f0f", borderRadius: "8px" }}>
+                {tileListComponent(["CLEAR"].concat(mapList),
+                  (map) => <p style={{ width: "9vw", height: "1.5vw" }}>{snakeCaseToCapitalCase(map)}</p>,
+                  (map) => {
+                    if (map == "CLEAR") {
+                      setStratListViewState({
+                        ...state,
+                        filterMap: "",
+                        selectFilterMapIsActive: false,
+                      })
+                    } else {
+                      setStratListViewState({
+                        ...state,
+                        filterMap: map,
+                        selectFilterMapIsActive: false,
+                      })
+                    }
+                  },
+                  5
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        <div style={{ margin: "0 1vw", border: "0.5vw groove #1c83bb", height: "auto" }}></div>
+        <div>
+          {tileListComponentRaw(strats, (strat) =>
+            <div key={strat.uuid} className="strat-list-strat-container">
+              <p>{snakeCaseToCapitalCase(strat.map)} {strat.author ? `[${strat.author}]` : ""}</p>
+              <p>{strat.strat_name || "---"}</p>
+              <button onClick={(_) => {
+                setStratListViewState(new StratListViewState());
+                loadButtonAction(strat);
+              }}>{loadButtonText}</button>
+            </div>, 5)}
+        </div>
+      </div>
+    </>);
+  }
+
   function stratListPageComponent() {
     async function loadStrat(stratMeta: StratMetadata) {
       stratEditingState.stratId = stratMeta.uuid;
@@ -1955,24 +2051,18 @@ function App() {
     }
 
     return (<>
-      <button onClick={(_) => {
-        websocket?.sendProto(protos.Client2Server.create({ getLobbyList: {} }));
-        setCurrPage(Page.LobbyListPage);
-      }} style={{ width: "fit-content" }}>Join Lobby</button>
+      <div className="row">
+        <button onClick={(_) => {
+          websocket?.sendProto(protos.Client2Server.create({ getLobbyList: {} }));
+          setCurrPage(Page.LobbyListPage);
+        }} style={{ width: "fit-content", margin: "0 0.2vw" }}>Join Lobby</button>
 
-      <p>List of strats!</p>
-      <button onClick={(_) => {
-        setCurrPage(Page.CreateNewStratMapSelectionPage);
-      }}>Create New Strat</button>
-      {stratList.map((stratMeta) =>
-        <div key={stratMeta.uuid} className="strat-list-strat-container">
-          <p>{stratMeta.strat_name}</p>
-          <p>{stratMeta.map}</p>
-          <button onClick={(_) => {
-            loadStrat(stratMeta);
-          }}>Edit</button>
-        </div>
-      )}
+        <button onClick={(_) => {
+          setCurrPage(Page.CreateNewStratMapSelectionPage);
+        }} style={{ width: "fit-content", margin: "0 0.2vw" }}>Create New Strat</button>
+      </div>
+      <div style={{ margin: "1vw 0" }}></div>
+      {stratListViewComponent(stratListViewState, stratList, "Edit", loadStrat)}
     </>)
   }
 
@@ -1994,10 +2084,10 @@ function App() {
   }
 
   function inLobbySelectStratPageComponent() {
-    async function loadStrat(strat: LobbyStratMetadata) {
+    async function loadStrat(strat: StratMetadata) {
       stratEditingState.reset();
       redrawFreeDrawCanvasQueued = true;
-      await websocket?.sendProto(protos.Client2Server.create({ lobbyLoadStrat: { stratId: strat.strat.uuid } }));
+      await websocket?.sendProto(protos.Client2Server.create({ lobbyLoadStrat: { stratId: strat.uuid } }));
     }
 
     return (<>
@@ -2015,16 +2105,7 @@ function App() {
         }}>Back to Current Strat</button>)
       }
       <p>Select a strat!</p>
-      {lobbyState.stratList.map((strat) => <>
-        <div key={strat.strat.uuid} className="strat-list-strat-container">
-          <p>{strat.author}</p>
-          <p>{strat.strat.strat_name}</p>
-          <p>{strat.strat.map}</p>
-          <button onClick={(_) => {
-            loadStrat(strat);
-          }}>Load</button>
-        </div>
-      </>)}
+      {stratListViewComponent(stratListViewState, lobbyState.stratList, "Edit", loadStrat)}
     </>)
   }
 
@@ -2196,8 +2277,7 @@ function App() {
         stratEditingState.prevCanvasScales.set(canvasId, 1);
         prevScale = 1;
       }
-      const newScale = canvasPxPerSVGPixel * window.devicePixelRatio;
-      // const newScale = canvasPxPerSVGPixel;
+      const newScale = canvasPxPerSVGPixel;
       if (Math.abs(newScale - prevScale) > 0.001) {
         ctx.scale(newScale / prevScale, newScale / prevScale);
         stratEditingState.prevCanvasScales.set(canvasId, newScale);

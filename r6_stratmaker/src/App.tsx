@@ -688,8 +688,11 @@ class IconPlacement implements DrawElement {
     let width = undefined;
     let height = undefined;
 
-    function imgAspectRatio(imgData: CanvasImageSource): number {
-      const imgElem: HTMLImageElement = imgData! as HTMLImageElement;
+    function imgAspectRatio(imgData: CanvasImageSource | undefined): number {
+      if (!imgData) {
+        return 1;
+      }
+      const imgElem: HTMLImageElement = imgData as HTMLImageElement;
       return imgElem.width / imgElem.height;
     }
 

@@ -1173,8 +1173,9 @@ async fn main() -> anyhow::Result<()> {
             break;
         }
         if accept_loop_handle.is_finished() {
-            accept_loop_handle.await??;
+            let ret = accept_loop_handle.await;
             println!("Accept loop finished, closing...");
+            println!("RETURNED WiTH: {ret:?}");
             break;
         }
     }

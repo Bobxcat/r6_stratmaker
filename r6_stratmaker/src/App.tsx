@@ -983,6 +983,8 @@ class StratEditingState {
 
   mode: StratEditingMode = StratEditingMode.Singleplayer;
 
+  frameCount: number = 0;
+
   selectedDrawColor: Color = StratEditingState.freeDrawPalette[0];
 
   private teamLoadouts: StratEditingLoadout[] = newArrayOfSize(5, (idx) => {
@@ -2322,6 +2324,10 @@ function App() {
         onUpdateRegisterNonPassiveListeners();
 
         stratEditingState.canvasScalesChanged = recalculateStratEditingCanvasSize();
+        if (stratEditingState.frameCount % 60 == 0) {
+          stratEditingState.canvasScalesChanged = true;
+          redrawFreeDrawCanvasQueued = true;
+        }
         for (const [_, canvasId] of Object.entries(canvasIds)) {
           updateCanvasScale(canvasId);
         }
@@ -2643,6 +2649,8 @@ function App() {
         stratEditingState.prevSelectedDrawTool = stratEditingState.selectedDrawTool;
 
         stratEditingState.teamLoadoutsChanged = newArrayOfSize(5, () => false);
+
+        stratEditingState.frameCount += 1;
 
         requestAnimationFrame(onUpdate);
       }

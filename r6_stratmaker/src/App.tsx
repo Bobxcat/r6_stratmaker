@@ -971,6 +971,7 @@ class StratEditingLoadout {
 enum StratEditingMode {
   Singleplayer,
   Lobby,
+  ViewOnly,
 }
 
 class StratEditingState {
@@ -1771,8 +1772,19 @@ function App() {
     if (msg.helloResponse) {
       setCurrPage(Page.LoginPage);
     } else if (msg.loginResponse) {
-      websocket?.sendProto(protos.Client2Server.create({ getStratList: {} }));
+      // This is received on a login finished
+      await websocket?.sendProto(protos.Client2Server.create({ getStratList: {} }));
       setCurrPage(Page.StratListPage);
+
+      // If we have a URL hash, attempt loading that (otherwise, we'll just stay in the strat list page)
+      if (window.location.hash.length > 0) {
+        let stratId = window.location.hash.slice(1);
+        stratEditingState.stratId = stratId;
+        stratEditingState.mode = StratEditingMode.ViewOnly;
+        updateStratEditingStateDisplay();
+        // If the hash is invalid, we simply won't get a response from the server and we won't get pulled into the strat editing state
+        await websocket?.sendProto(protos.Client2Server.create({ getStratInfo: { stratId } }));
+      }
     } else if (msg.getStratListResponse) {
       var newStratList: Array<StratMetadata> = [];
       msg.getStratListResponse.strats.forEach((strat) => {
@@ -1786,6 +1798,7 @@ function App() {
       mapList = msg.getMapListResponse.maps;
     } else if (msg.getStratInfoResponse) {
       const state: protos.StratState = msg.getStratInfoResponse.state!;
+      stratEditingState.map = msg.getStratInfoResponse.map;
       updateStratEditingStateFromProto(state);
       setCurrPage(Page.StratEditorPage);
     } else if (msg.getLobbyListResponse) {
@@ -2931,8 +2944,18 @@ function App() {
                   setCurrPage(Page.InLobbySelectStratPage);
                   break;
                 }
+                case StratEditingMode.ViewOnly: {
+                  stratEditingState.reset();
+                  updateStratEditingStateDisplay();
+                  websocket?.sendProto(protos.Client2Server.create({ getStratList: {} }));
+                  setCurrPage(Page.StratListPage);
+                }
               }
             }}>Back to Strat list</button>
+
+            <button style={{ width: "15vw", margin: "0.25vw" }} onClick={(_) => {
+              navigator.clipboard.writeText(`${window.location.host}/#${stratEditingState.stratId}`);
+            }}>Copy Strat Link</button>
 
             {stratEditingStateDisplay.mode == StratEditingMode.Singleplayer && (
               <button

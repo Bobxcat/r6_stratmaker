@@ -193,6 +193,7 @@ export interface GetStratInfo {
 
 export interface GetStratInfoResponse {
   state: StratState | undefined;
+  map: string;
 }
 
 /** SaveStrat */
@@ -3576,13 +3577,16 @@ export const GetStratInfo: MessageFns<GetStratInfo> = {
 };
 
 function createBaseGetStratInfoResponse(): GetStratInfoResponse {
-  return { state: undefined };
+  return { state: undefined, map: "" };
 }
 
 export const GetStratInfoResponse: MessageFns<GetStratInfoResponse> = {
   encode(message: GetStratInfoResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.state !== undefined) {
       StratState.encode(message.state, writer.uint32(10).fork()).join();
+    }
+    if (message.map !== "") {
+      writer.uint32(18).string(message.map);
     }
     return writer;
   },
@@ -3608,6 +3612,14 @@ export const GetStratInfoResponse: MessageFns<GetStratInfoResponse> = {
             message.state = StratState.decode(reader, reader.uint32());
             continue;
           }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.map = reader.string();
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -3621,13 +3633,19 @@ export const GetStratInfoResponse: MessageFns<GetStratInfoResponse> = {
   },
 
   fromJSON(object: any): GetStratInfoResponse {
-    return { state: isSet(object.state) ? StratState.fromJSON(object.state) : undefined };
+    return {
+      state: isSet(object.state) ? StratState.fromJSON(object.state) : undefined,
+      map: isSet(object.map) ? globalThis.String(object.map) : "",
+    };
   },
 
   toJSON(message: GetStratInfoResponse): unknown {
     const obj: any = {};
     if (message.state !== undefined) {
       obj.state = StratState.toJSON(message.state);
+    }
+    if (message.map !== "") {
+      obj.map = message.map;
     }
     return obj;
   },
@@ -3640,6 +3658,7 @@ export const GetStratInfoResponse: MessageFns<GetStratInfoResponse> = {
     message.state = (object.state !== undefined && object.state !== null)
       ? StratState.fromPartial(object.state)
       : undefined;
+    message.map = object.map ?? "";
     return message;
   },
 };

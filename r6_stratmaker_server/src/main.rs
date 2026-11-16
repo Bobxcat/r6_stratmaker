@@ -466,6 +466,7 @@ async fn handle_generic_message(
                 return Ok(None);
             };
 
+            let map = strat.map.clone();
             let strat_state = strat.to_proto();
 
             cl_state
@@ -473,6 +474,7 @@ async fn handle_generic_message(
                 .send_proto(S2CInner::GetStratInfoResponse(
                     primary::GetStratInfoResponse {
                         state: MessageField::some(strat_state),
+                        map,
                         special_fields: SpecialFields::new(),
                     },
                 ))

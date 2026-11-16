@@ -1557,6 +1557,37 @@ function setCookie(key: string, value: string, expireDays: number) {
   document.cookie = key + "=" + value + ";" + expires + ";path=/";
 }
 
+// Source - https://stackoverflow.com/a/65996386
+// Posted by Simon Dehaut, modified by community. See post 'Timeline' for change history
+// Retrieved 2026-11-16, License - CC BY-SA 4.0
+/** CAN RETURN AN EXCEPTION */
+async function copyToClipboard(text: string) {
+  // Navigator clipboard api needs a secure context (https)
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+  } else {
+    // Use the 'out of viewport hidden text area' trick
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+
+    // Move textarea out of the viewport so it's not visible
+    textArea.style.position = "absolute";
+    textArea.style.left = "-999999px";
+
+    document.body.prepend(textArea);
+    textArea.select();
+
+    try {
+      document.execCommand('copy');
+    } catch (error) {
+      console.error(error);
+    } finally {
+      textArea.remove();
+    }
+  }
+}
+
+
 /** `snake_case` -> `Capital Case` */
 function snakeCaseToCapitalCase(snake: string): string {
   let outStr = "";
@@ -2958,7 +2989,13 @@ function App() {
             }}>Back to Strat list</button>
 
             <button style={{ width: "15vw", margin: "0.25vw" }} onClick={(_) => {
-              navigator.clipboard.writeText(`${window.location.host}/#${stratEditingState.stratId}`);
+              let text = `${window.location.host}/#${stratEditingState.stratId}`;
+              try {
+                copyToClipboard(text);
+              } catch (e) {
+                println(`Failed to copy to clipboard: ${e}`);
+                prompt(text);
+              }
             }}>Copy Strat Link</button>
 
             {stratEditingStateDisplay.mode == StratEditingMode.Singleplayer && (

@@ -1600,7 +1600,8 @@ function App() {
   const [operatorsIndexReactive, setOperatorsIndexReactive] = useState<OperatorsIndex>(new OperatorsIndex());
 
   enum ConnectionState {
-    WaitingForIP = "Waiting for IP Address (or Connection Failed)",
+    WaitingForIP = "Enter Server Address",
+    WaitingForIPConnectionFailed = "Connection Failed, Enter Another Address",
     Connecting = "Connecting to Server...",
     Connected = "Connected"
   }
@@ -1941,14 +1942,16 @@ function App() {
   function connectToServerPageComponent() {
     async function connectToServer(ipAddr: string) {
       let ws = await WebSocket.connect(`ws://${ipAddr}:8080`);
-      websocket = ws;
-
-      ws.addListener((msg) => {
-        handleNetworkMessage(msg);
-      });
-      await websocket?.sendProto(protos.Client2Server.create({ hello: {} }));
-
-      setConnectionState(ConnectionState.Connected);
+      if (ws) {
+        websocket = ws;
+        websocket.addListener((msg) => {
+          handleNetworkMessage(msg);
+        });
+        await websocket?.sendProto(protos.Client2Server.create({ hello: {} }));
+        setConnectionState(ConnectionState.Connected);
+      } else {
+        setConnectionState(ConnectionState.WaitingForIPConnectionFailed);
+      }
     }
 
     return (<Fragment key="connectToServerPage">
@@ -1958,8 +1961,10 @@ function App() {
         onSubmit={(e) => {
           e.preventDefault();
           const ipAddrInput = document.getElementById("select-server-ip-address")! as HTMLInputElement;
-          connectToServer(ipAddrInput.value);
-          setConnectionState(ConnectionState.Connecting);
+          if (connectionState != ConnectionState.Connecting) {
+            connectToServer(ipAddrInput.value);
+            setConnectionState(ConnectionState.Connecting);
+          }
         }}>
         <input
           id="select-server-ip-address"

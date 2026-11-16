@@ -9,18 +9,25 @@ export class WS {
 
     private constructor() { }
 
-    static async connect(url: string): Promise<WS> {
+    static async connect(url: string): Promise<WS | undefined> {
         let ws = new WS();
-        if (isTauri()) {
-            ws.backendTauri = await WSTauri.connect(url);
-        } else {
-            ws.backendWeb = new WebSocket(url);
+        try {
+            if (isTauri()) {
+                ws.backendTauri = await WSTauri.connect(url);
+                // FIXME: Detect failed tauri websocket connection
+            } else {
+                ws.backendWeb = new WebSocket(url);
 
-            while (ws.backendWeb!.readyState == ws.backendWeb!.CONNECTING) {
-                await new Promise(resolve => setTimeout(resolve, 10));
+                while (ws.backendWeb!.readyState == ws.backendWeb!.CONNECTING) {
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
+
+                if (ws.backendWeb!.readyState != WebSocket.OPEN) {
+                    return undefined;
+                }
             }
-
-            console.log(`READY STATE: ${ws.backendWeb?.readyState}`);
+        } catch (_) {
+            return undefined;
         }
 
         return ws;

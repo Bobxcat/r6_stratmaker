@@ -1695,6 +1695,8 @@ function App() {
 
     canvasPxPerSVGPixel = canvasWidth / stratEditingState.mapSVGViewboxWidth;
     if (Math.abs(prevCanvasWidth - canvasWidth) > 0.1) {
+      // FIXME: It seems like this `println` statement makes the canvas width changes more reliable? Might be a fluke
+      println(`Canvas Width Changed: ${canvasWidth} <- ${prevCanvasWidth}`);
       prevCanvasWidth = canvasWidth;
       setStratEditingCanvasWidth(canvasWidth);
       setStratEditingCanvasHeight(canvasHeight);
@@ -2342,10 +2344,7 @@ function App() {
         onUpdateRegisterNonPassiveListeners();
 
         stratEditingState.canvasScalesChanged = recalculateStratEditingCanvasSize();
-        if (stratEditingState.frameCount % 60 == 0) {
-          stratEditingState.canvasScalesChanged = true;
-          redrawFreeDrawCanvasQueued = true;
-        }
+        if (stratEditingState.frameCount % 60 == 0) { /* Periodically do things */ }
         for (const [_, canvasId] of Object.entries(canvasIds)) {
           updateCanvasScale(canvasId);
         }

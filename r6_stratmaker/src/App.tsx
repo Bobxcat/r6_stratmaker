@@ -1851,11 +1851,11 @@ function App() {
       });
     } else if (msg.updateLobbyStratList) {
       let strats = msg.updateLobbyStratList.strats;
+      let stratList = strats.map((strat) =>
+        new StratMetadata(strat.authorName, strat.stratId, strat.stratName, strat.map)
+      );
+      stratList.sort((a, b) => a.cmp(b));
       setLobbyState(state => {
-        let stratList = strats.map((strat) =>
-          new StratMetadata(strat.authorName, strat.stratId, strat.stratName, strat.map)
-        );
-        stratList.sort((a, b) => a.cmp(b));
         return {
           ...state,
           stratList,
@@ -2149,8 +2149,8 @@ function App() {
     return (<>
       <div className="col" style={{ border: "2px solid #0f0f0f", borderRadius: "8px" }}>
         <p>Lobby members: </p>
-        {lobbyState.members.map((memberName) => <>
-          <p>{memberName}</p>
+        {lobbyState.members.map((member) => <>
+          <p>{member}</p>
         </>)}
       </div>
       {stratEditingState.mode == StratEditingMode.Lobby &&
@@ -2185,525 +2185,552 @@ function App() {
     </>)
   }
 
-  function stratEditorPageComponent() {
 
-    /**
-     * 
-     * @param carets A positive number indicates pointing upwards, a negative number indicates pointing downwards
-     */
-    function drawCaretToCanvas(canvasId: string, carets: number, pos: Vec2) {
-      carets = Math.trunc(carets);
-      if (carets == 0) {
-        return;
+  /**
+   * 
+   * @param carets A positive number indicates pointing upwards, a negative number indicates pointing downwards
+   */
+  function drawCaretToCanvas(canvasId: string, carets: number, pos: Vec2) {
+    carets = Math.trunc(carets);
+    if (carets == 0) {
+      return;
+    }
+
+    const caretDown = carets < 0;
+    const numCarets = Math.abs(carets);
+
+    const canvas = document.getElementById(canvasId);
+    if (canvas == null) {
+      return;
+    }
+
+    const ctx = (canvas as HTMLCanvasElement).getContext("2d");
+    if (ctx == null) {
+      return;
+    }
+
+    const length = 0.4 * canvasPxPerSVGPixel * stratEditingState.mapSVGPixelsPerMeter;
+    const lineWidth = 0.15 * canvasPxPerSVGPixel * stratEditingState.mapSVGPixelsPerMeter;
+    const spacing = 0.2 * canvasPxPerSVGPixel * stratEditingState.mapSVGPixelsPerMeter;
+
+    function drawSingleCaret(ctx: CanvasRenderingContext2D, isDown: boolean, pos: Vec2) {
+      // Since -y is "up", we rotate in the positive direction to point downwards
+      let offsetRight = new Vec2(1, 0).rotated(0.4).scaled(length);
+      if (isDown) {
+        offsetRight = new Vec2(offsetRight.x, -offsetRight.y);
+      }
+      let offsetLeft = new Vec2(-offsetRight.x, offsetRight.y);
+
+      let ptLeft = offsetRight.add(pos);
+      let ptRight = offsetLeft.add(pos);
+
+      ctx.beginPath();
+      ctx.strokeStyle = "blue";
+      ctx.lineWidth = lineWidth;
+
+      ctx.moveTo(ptLeft.x, ptLeft.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.lineTo(ptRight.x, ptRight.y);
+
+      ctx.stroke();
+      ctx.closePath();
+    }
+
+    if (numCarets == 1) {
+      drawSingleCaret(ctx, caretDown, pos);
+    } else {
+      const offsetMax = 0.5 * numCarets * spacing;
+
+      for (let caret = 0; caret < numCarets; caret += 1) {
+        const posY = pos.y + lerp(-offsetMax, offsetMax, caret / (numCarets - 1));
+        drawSingleCaret(ctx, caretDown, new Vec2(pos.x, posY));
+      }
+    }
+  }
+
+  function drawElementToCanvas(canvasId: string, elem: DrawElement, floor: number) {
+    const canvas = document.getElementById(canvasId);
+    if (canvas == null) {
+      return;
+    }
+
+    const ctx = (canvas as HTMLCanvasElement).getContext("2d");
+    if (ctx == null) {
+      return;
+    }
+
+    if (stratEditingState.selectedFloor != floor) {
+      ctx.globalAlpha = 0.3;
+    }
+    let elemClone = elem.clone();
+    elemClone.drawToCtx(ctx);
+    ctx.globalAlpha = 1.0;
+
+    const aabb = elemClone.boundingBox();
+    const caretPt = new Vec2(aabb.minPt.x - 0.25 * canvasPxPerSVGPixel, (aabb.minPt.y + aabb.maxPt.y) / 2);
+    drawCaretToCanvas(canvasId, floor - stratEditingState.selectedFloor, caretPt);
+  }
+
+  function redrawFreeDrawCanvas(canvasId: string) {
+    const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
+    if (!canvas) {
+      return;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const phase = stratEditingState.getPhasesRef().get(stratEditingState.selectedPhase);
+
+    if (!phase) {
+      return;
+    }
+
+    let floorPriorityOrdering = [];
+    for (let i = 0; i < stratEditingState.mapFloors.length; i += 1) {
+      if (i != stratEditingState.selectedFloor) {
+        floorPriorityOrdering.push(i);
+      }
+    }
+
+    for (let floorIdx = 0; floorIdx < stratEditingState.mapFloors.length; floorIdx += 1) {
+      const phaseFloor = phase.floors[floorIdx];
+      if (phaseFloor) {
+        phaseFloor.drawPaths.forEach((path) => {
+          drawElementToCanvas(canvasId, path, floorIdx);
+        });
+        phaseFloor.arrows.forEach((arrow) => {
+          drawElementToCanvas(canvasId, arrow, floorIdx);
+        });
+        phaseFloor.icons.forEach((icon) => {
+          drawElementToCanvas(canvasId, icon, floorIdx);
+        });
+      }
+    }
+  }
+
+  /** Returns the normalized mouse position on the canvas */
+  function logicalMousePosForCanvas(canvasId: string, clientX: number, clientY: number): Vec2 {
+    const canvas = document.getElementById(canvasId)! as HTMLCanvasElement;
+    const rect = canvas.getBoundingClientRect();
+    const scale = 1 / canvasPxPerSVGPixel;
+    return new Vec2(((clientX - rect.left) * scale), ((clientY - rect.top) * scale));
+  }
+
+  function updateCanvasScale(canvasId: string) {
+    const ctx = (document.getElementById(canvasId) as HTMLCanvasElement)?.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+
+    let prevScale = stratEditingState.prevCanvasScales.get(canvasId);
+    if (!prevScale) {
+      stratEditingState.prevCanvasScales.set(canvasId, 1);
+      prevScale = 1;
+    }
+    const newScale = canvasPxPerSVGPixel;
+    if (Math.abs(newScale - prevScale) > 0.001) {
+      ctx.scale(newScale / prevScale, newScale / prevScale);
+      stratEditingState.prevCanvasScales.set(canvasId, newScale);
+      return;
+    } else {
+      return;
+    }
+  }
+
+  function touchEventLogicalPos(e: any): Vec2 | undefined {
+    // https://gist.github.com/phedkvist/f8081fbcc84a3e70099a88ac82af38d0
+    // If exactly 1 finger is touched
+    if (e.touches && e.touches.length == 1) {
+      let touch = e.touches[0];
+
+      let touchX = touch.clientX;
+      let touchY = touch.clientY;
+      return logicalMousePosForCanvas(canvasIds.inputGathering, touchX, touchY);
+    } else {
+      return undefined;
+    }
+  }
+
+  function onUpdateRegisterNonPassiveListeners() {
+    const cv = document.getElementById(canvasIds.inputGathering);
+    if (cv && !inputCanvasPassiveListenersRegistered) {
+      inputCanvasPassiveListenersRegistered = true;
+      // We use non-anonymous functions so that they have the same identity every time they're passed to `addEventListener`
+      // AFAIK this is not defined behavior, but should work
+      function onTouchStart(e: TouchEvent) {
+        e.preventDefault();
+        inputCanvasState.mouseClicked = true;
+        inputCanvasState.mousePos = touchEventLogicalPos(e) ?? inputCanvasState.mousePos;
+      }
+      function onTouchEnd(e: TouchEvent) {
+        e.preventDefault();
+        inputCanvasState.mouseClicked = false;
+        inputCanvasState.mousePos = touchEventLogicalPos(e) ?? inputCanvasState.mousePos;
+      }
+      function onTouchMove(e: TouchEvent) {
+        e.preventDefault();
+        inputCanvasState.mousePos = touchEventLogicalPos(e) ?? inputCanvasState.mousePos;
       }
 
-      const caretDown = carets < 0;
-      const numCarets = Math.abs(carets);
+      cv.addEventListener("touchstart", onTouchStart, { passive: false });
+      cv.addEventListener("touchend", onTouchEnd, { passive: false });
+      cv.addEventListener("touchmove", onTouchMove, { passive: false });
+    }
+  }
+  function onUpdate() {
+    // Register non-passive listeners
+    onUpdateRegisterNonPassiveListeners();
 
-      const canvas = document.getElementById(canvasId);
-      if (canvas == null) {
-        return;
-      }
+    stratEditingState.canvasScalesChanged = recalculateStratEditingCanvasSize();
+    if (stratEditingState.frameCount % 60 == 0) { /* Periodically do things */ }
+    for (const [_, canvasId] of Object.entries(canvasIds)) {
+      updateCanvasScale(canvasId);
+    }
 
-      const ctx = (canvas as HTMLCanvasElement).getContext("2d");
-      if (ctx == null) {
-        return;
-      }
+    if (document.getElementById(canvasIds.freeDraw) && redrawFreeDrawCanvasQueued) {
+      redrawFreeDrawCanvasQueued = false;
+      redrawFreeDrawCanvas(canvasIds.freeDraw);
+    }
 
-      const length = 0.4 * canvasPxPerSVGPixel * stratEditingState.mapSVGPixelsPerMeter;
-      const lineWidth = 0.15 * canvasPxPerSVGPixel * stratEditingState.mapSVGPixelsPerMeter;
-      const spacing = 0.2 * canvasPxPerSVGPixel * stratEditingState.mapSVGPixelsPerMeter;
+    const phase = stratEditingState.selectedPhase;
+    const floor = stratEditingState.selectedFloor;
+    if (!stratEditingState.currentPhaseFloorIsValid()) {
+      return;
+    }
 
-      function drawSingleCaret(ctx: CanvasRenderingContext2D, isDown: boolean, pos: Vec2) {
-        // Since -y is "up", we rotate in the positive direction to point downwards
-        let offsetRight = new Vec2(1, 0).rotated(0.4).scaled(length);
-        if (isDown) {
-          offsetRight = new Vec2(offsetRight.x, -offsetRight.y);
+    const placementPreviewCanvas = document.getElementById(canvasIds.placementPreview) as HTMLCanvasElement;
+    if (!placementPreviewCanvas) {
+      return;
+    }
+    const placementPreviewCtx = placementPreviewCanvas.getContext("2d");
+    if (!placementPreviewCtx) {
+      return;
+    }
+    placementPreviewCtx.clearRect(0, 0, placementPreviewCanvas.width, placementPreviewCanvas.height);
+
+
+    if (stratEditingState.prevSelectedDrawTool != stratEditingState.selectedDrawTool) {
+      // A common pattern is:
+      // 1. set new draw tool
+      // 2. set some part of state for new draw tool
+      // Thus, we should only clear the state of the previous draw tool
+      switch (stratEditingState.prevSelectedDrawTool) {
+        case DrawTool.FreeDraw: {
+          stratEditingState.toolStates.freeDraw = new FreeDrawToolState();
+          break;
         }
-        let offsetLeft = new Vec2(-offsetRight.x, offsetRight.y);
-
-        let ptLeft = offsetRight.add(pos);
-        let ptRight = offsetLeft.add(pos);
-
-        ctx.beginPath();
-        ctx.strokeStyle = "blue";
-        ctx.lineWidth = lineWidth;
-
-        ctx.moveTo(ptLeft.x, ptLeft.y);
-        ctx.lineTo(pos.x, pos.y);
-        ctx.lineTo(ptRight.x, ptRight.y);
-
-        ctx.stroke();
-        ctx.closePath();
-      }
-
-      if (numCarets == 1) {
-        drawSingleCaret(ctx, caretDown, pos);
-      } else {
-        const offsetMax = 0.5 * numCarets * spacing;
-
-        for (let caret = 0; caret < numCarets; caret += 1) {
-          const posY = pos.y + lerp(-offsetMax, offsetMax, caret / (numCarets - 1));
-          drawSingleCaret(ctx, caretDown, new Vec2(pos.x, posY));
+        case DrawTool.Arrow: {
+          stratEditingState.toolStates.arrow = new ArrowToolState();
+          break;
+        }
+        case DrawTool.PlaceIcon: {
+          stratEditingState.toolStates.placeIcon = new PlaceIconToolState();
+          break;
+        }
+        case DrawTool.SelectAndEdit: {
+          stratEditingState.toolStates.selectAndEdit = new SelectAndEditToolState();
+          break;
         }
       }
     }
 
-    function drawElementToCanvas(canvasId: string, elem: DrawElement, floor: number) {
-      const canvas = document.getElementById(canvasId);
-      if (canvas == null) {
-        return;
-      }
+    switch (stratEditingState.selectedDrawTool) {
+      case DrawTool.FreeDraw: {
+        const toolState = stratEditingState.toolStates.freeDraw;
 
-      const ctx = (canvas as HTMLCanvasElement).getContext("2d");
-      if (ctx == null) {
-        return;
-      }
+        if (inputCanvasState.mouseClicked) {
+          const prevColor = stratEditingState.getDrawElementRef(phase, floor, toolState.currentPath!)?.asDrawPath()?.color;
 
-      if (stratEditingState.selectedFloor != floor) {
-        ctx.globalAlpha = 0.3;
-      }
-      let elemClone = elem.clone();
-      elemClone.drawToCtx(ctx);
-      ctx.globalAlpha = 1.0;
-
-      const aabb = elemClone.boundingBox();
-      const caretPt = new Vec2(aabb.minPt.x - 0.25 * canvasPxPerSVGPixel, (aabb.minPt.y + aabb.maxPt.y) / 2);
-      drawCaretToCanvas(canvasId, floor - stratEditingState.selectedFloor, caretPt);
-    }
-
-    function redrawFreeDrawCanvas(canvasId: string) {
-      const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
-      if (!canvas) {
-        return;
-      }
-
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        return;
-      }
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      const phase = stratEditingState.getPhasesRef().get(stratEditingState.selectedPhase);
-
-      if (!phase) {
-        return;
-      }
-
-      let floorPriorityOrdering = [];
-      for (let i = 0; i < stratEditingState.mapFloors.length; i += 1) {
-        if (i != stratEditingState.selectedFloor) {
-          floorPriorityOrdering.push(i);
-        }
-      }
-
-      for (let floorIdx = 0; floorIdx < stratEditingState.mapFloors.length; floorIdx += 1) {
-        const phaseFloor = phase.floors[floorIdx];
-        if (phaseFloor) {
-          phaseFloor.drawPaths.forEach((path) => {
-            drawElementToCanvas(canvasId, path, floorIdx);
-          });
-          phaseFloor.arrows.forEach((arrow) => {
-            drawElementToCanvas(canvasId, arrow, floorIdx);
-          });
-          phaseFloor.icons.forEach((icon) => {
-            drawElementToCanvas(canvasId, icon, floorIdx);
-          });
-        }
-      }
-    }
-
-    /** Returns the normalized mouse position on the canvas */
-    function logicalMousePosForCanvas(canvasId: string, clientX: number, clientY: number): Vec2 {
-      const canvas = document.getElementById(canvasId)! as HTMLCanvasElement;
-      const rect = canvas.getBoundingClientRect();
-      const scale = 1 / canvasPxPerSVGPixel;
-      return new Vec2(((clientX - rect.left) * scale), ((clientY - rect.top) * scale));
-    }
-
-    function updateCanvasScale(canvasId: string) {
-      const ctx = (document.getElementById(canvasId) as HTMLCanvasElement)?.getContext("2d");
-      if (!ctx) {
-        return;
-      }
-
-      let prevScale = stratEditingState.prevCanvasScales.get(canvasId);
-      if (!prevScale) {
-        stratEditingState.prevCanvasScales.set(canvasId, 1);
-        prevScale = 1;
-      }
-      const newScale = canvasPxPerSVGPixel;
-      if (Math.abs(newScale - prevScale) > 0.001) {
-        ctx.scale(newScale / prevScale, newScale / prevScale);
-        stratEditingState.prevCanvasScales.set(canvasId, newScale);
-        return;
-      } else {
-        return;
-      }
-    }
-
-    function inputGatheringCanvas() {
-      function onUpdateRegisterNonPassiveListeners() {
-        const cv = document.getElementById(canvasIds.inputGathering);
-        if (cv && !inputCanvasPassiveListenersRegistered) {
-          inputCanvasPassiveListenersRegistered = true;
-          // We use non-anonymous functions so that they have the same identity every time they're passed to `addEventListener`
-          // AFAIK this is not defined behavior, but should work
-          function onTouchStart(e: TouchEvent) {
-            e.preventDefault();
-            inputCanvasState.mouseClicked = true;
-            inputCanvasState.mousePos = touchEventLogicalPos(e) ?? inputCanvasState.mousePos;
-          }
-          function onTouchEnd(e: TouchEvent) {
-            e.preventDefault();
-            inputCanvasState.mouseClicked = false;
-            inputCanvasState.mousePos = touchEventLogicalPos(e) ?? inputCanvasState.mousePos;
-          }
-          function onTouchMove(e: TouchEvent) {
-            e.preventDefault();
-            inputCanvasState.mousePos = touchEventLogicalPos(e) ?? inputCanvasState.mousePos;
-          }
-
-          cv.addEventListener("touchstart", onTouchStart, { passive: false });
-          cv.addEventListener("touchend", onTouchEnd, { passive: false });
-          cv.addEventListener("touchmove", onTouchMove, { passive: false });
-        }
-      }
-      function onUpdate() {
-        // Register non-passive listeners
-        onUpdateRegisterNonPassiveListeners();
-
-        stratEditingState.canvasScalesChanged = recalculateStratEditingCanvasSize();
-        if (stratEditingState.frameCount % 60 == 0) { /* Periodically do things */ }
-        for (const [_, canvasId] of Object.entries(canvasIds)) {
-          updateCanvasScale(canvasId);
-        }
-
-        if (document.getElementById(canvasIds.freeDraw) && redrawFreeDrawCanvasQueued) {
-          redrawFreeDrawCanvasQueued = false;
-          redrawFreeDrawCanvas(canvasIds.freeDraw);
-        }
-
-        const phase = stratEditingState.selectedPhase;
-        const floor = stratEditingState.selectedFloor;
-        if (!stratEditingState.currentPhaseFloorIsValid()) {
-          return;
-        }
-
-        const placementPreviewCanvas = document.getElementById(canvasIds.placementPreview)! as HTMLCanvasElement;
-        const placementPreviewCtx = placementPreviewCanvas.getContext("2d")!;
-        placementPreviewCtx.clearRect(0, 0, placementPreviewCanvas.width, placementPreviewCanvas.height);
-
-
-        if (stratEditingState.prevSelectedDrawTool != stratEditingState.selectedDrawTool) {
-          // A common pattern is:
-          // 1. set new draw tool
-          // 2. set some part of state for new draw tool
-          // Thus, we should only clear the state of the previous draw tool
-          switch (stratEditingState.prevSelectedDrawTool) {
-            case DrawTool.FreeDraw: {
-              stratEditingState.toolStates.freeDraw = new FreeDrawToolState();
-              break;
-            }
-            case DrawTool.Arrow: {
-              stratEditingState.toolStates.arrow = new ArrowToolState();
-              break;
-            }
-            case DrawTool.PlaceIcon: {
-              stratEditingState.toolStates.placeIcon = new PlaceIconToolState();
-              break;
-            }
-            case DrawTool.SelectAndEdit: {
-              stratEditingState.toolStates.selectAndEdit = new SelectAndEditToolState();
-              break;
-            }
-          }
-        }
-
-        switch (stratEditingState.selectedDrawTool) {
-          case DrawTool.FreeDraw: {
-            const toolState = stratEditingState.toolStates.freeDraw;
-
-            if (inputCanvasState.mouseClicked) {
-              const prevColor = stratEditingState.getDrawElementRef(phase, floor, toolState.currentPath!)?.asDrawPath()?.color;
-
-              if (toolState.currentPath && prevColor! == stratEditingState.selectedDrawColor) {
-                // Continue existing path
-                if (inputCanvasState.mousePos.distance(inputCanvasState.prevMousePos) > 0.001) {
-                  const elem = stratEditingState.getDrawElementRef(phase, floor, toolState.currentPath!)?.asDrawPath();
-                  if (elem) {
-                    elem.points.push(inputCanvasState.mousePos.clone());
-                  }
-                }
-              } else {
-                // Create new path
-                var path = new DrawPath([inputCanvasState.mousePos.clone()], stratEditingState.selectedDrawColor);
-                const id = stratEditingState.pushDrawElement(phase, floor, path);
-                stratEditingState.pushPreviousDrawAction(stratEditingState.selectedPhase, {
-                  kind: DrawActionKind.PlaceDrawElement,
-                  data: path,
-                  floor: stratEditingState.selectedFloor,
-                  id,
-                });
-                toolState.currentPath = id;
-              }
-
-              // Draw path to canvas immediately, avoiding a rerender
-              if (inputCanvasState.prevMouseClicked) {
-                var path = new DrawPath([inputCanvasState.prevMousePos.clone(), inputCanvasState.mousePos.clone()], stratEditingState.selectedDrawColor);
-                drawElementToCanvas(canvasIds.freeDraw, path, stratEditingState.selectedFloor);
-              }
-            } else {
+          if (toolState.currentPath && prevColor! == stratEditingState.selectedDrawColor) {
+            // Continue existing path
+            if (inputCanvasState.mousePos.distance(inputCanvasState.prevMousePos) > 0.001) {
               const elem = stratEditingState.getDrawElementRef(phase, floor, toolState.currentPath!)?.asDrawPath();
               if (elem) {
-                stratEditingState.setDrawElement(phase, floor, toolState.currentPath!, elem);
+                elem.points.push(inputCanvasState.mousePos.clone());
               }
-              toolState.currentPath = undefined;
             }
-            break;
+          } else {
+            // Create new path
+            var path = new DrawPath([inputCanvasState.mousePos.clone()], stratEditingState.selectedDrawColor);
+            const id = stratEditingState.pushDrawElement(phase, floor, path);
+            stratEditingState.pushPreviousDrawAction(stratEditingState.selectedPhase, {
+              kind: DrawActionKind.PlaceDrawElement,
+              data: path,
+              floor: stratEditingState.selectedFloor,
+              id,
+            });
+            toolState.currentPath = id;
           }
-          case DrawTool.Arrow: {
-            const toolState = stratEditingState.toolStates.arrow;
 
-            if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
-              if (toolState.arrowHasBeenStarted) {
-                const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone(), stratEditingState.selectedDrawColor);
-                drawElementToCanvas(canvasIds.freeDraw, arrow, stratEditingState.selectedFloor);
-                const id = stratEditingState.pushDrawElement(phase, floor, arrow);
-                stratEditingState.pushPreviousDrawAction(stratEditingState.selectedPhase, {
-                  kind: DrawActionKind.PlaceDrawElement,
-                  data: arrow,
-                  floor: stratEditingState.selectedFloor,
-                  id,
-                });
-                toolState.arrowHasBeenStarted = false;
-              } else {
-                toolState.arrowStartPoint = inputCanvasState.mousePos.clone();
-                toolState.arrowHasBeenStarted = true;
-              }
-            }
-
-            if (toolState.arrowHasBeenStarted && !inputCanvasState.mouseClicked) {
-              const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone(), stratEditingState.selectedDrawColor);
-              drawElementToCanvas(canvasIds.placementPreview, arrow, stratEditingState.selectedFloor);
-            }
-            break;
+          // Draw path to canvas immediately, avoiding a rerender
+          if (inputCanvasState.prevMouseClicked) {
+            var path = new DrawPath([inputCanvasState.prevMousePos.clone(), inputCanvasState.mousePos.clone()], stratEditingState.selectedDrawColor);
+            drawElementToCanvas(canvasIds.freeDraw, path, stratEditingState.selectedFloor);
           }
-          case DrawTool.PlaceIcon: {
-            const toolState = stratEditingState.toolStates.placeIcon;
-
-            const icon = new IconPlacement(inputCanvasState.mousePos.clone(), toolState.selectedIcon);
-
-            if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
-              drawElementToCanvas(canvasIds.freeDraw, icon, stratEditingState.selectedFloor);
-              const id = stratEditingState.pushDrawElement(phase, floor, icon);
-              stratEditingState.pushPreviousDrawAction(stratEditingState.selectedPhase, {
-                kind: DrawActionKind.PlaceDrawElement,
-                data: icon,
-                floor: stratEditingState.selectedFloor,
-                id,
-              });
-            } else {
-              // Update cached icon
-              const iconChanged = !iconInfoEq(placeIconToolStateOffscreenCanvasCurrIcon, toolState.selectedIcon);
-              placeIconToolStateOffscreenCanvasCurrIcon = toolState.selectedIcon;
-              let loadoutChanged = false;
-              switch (toolState.selectedIcon.kind) {
-                case IconKind.TeamOperator:
-                case IconKind.TeamAbility:
-                case IconKind.TeamUtility: {
-                  loadoutChanged = stratEditingState.teamLoadoutsChanged[toolState.selectedIcon.teammateIndex];
-                  break;
-                }
-                case IconKind.FreeOperator:
-                case IconKind.FreeAbility:
-                case IconKind.FreeUtility:
-                case IconKind.ContextFree: {
-                  loadoutChanged = false;
-                  break;
-                }
-              }
-
-
-              if (iconChanged || stratEditingState.canvasScalesChanged || loadoutChanged) {
-                let canvas = placeIconToolStateOffscreenCanvas;
-                let ctx = canvas.getContext("2d")!;
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                icon.drawToCtxAtTopLeft(ctx, new Vec2(0, 0));
-                placeIconToolStateOffscreenCanvasPlacedPos = icon.boundingBox().size().scaled(0.5);
-              }
-
-              // Draw cached icon
-              let canvas = document.getElementById(canvasIds.placementPreview) as HTMLCanvasElement;
-              let ctx = canvas.getContext("2d")!;
-              ctx.drawImage(
-                placeIconToolStateOffscreenCanvas,
-                canvasPxPerSVGPixel * (inputCanvasState.mousePos.x - placeIconToolStateOffscreenCanvasPlacedPos.x),
-                canvasPxPerSVGPixel * (inputCanvasState.mousePos.y - placeIconToolStateOffscreenCanvasPlacedPos.y),
-              );
-            }
-            break;
+        } else {
+          const elem = stratEditingState.getDrawElementRef(phase, floor, toolState.currentPath!)?.asDrawPath();
+          if (elem) {
+            stratEditingState.setDrawElement(phase, floor, toolState.currentPath!, elem);
           }
-          case DrawTool.SelectAndEdit: {
-            const toolState = stratEditingState.toolStates.selectAndEdit;
-            const phase = stratEditingState.selectedPhase;
-            const phaseRawRef = stratEditingState.getPhasesRef().get(stratEditingState.selectedPhase)!;
+          toolState.currentPath = undefined;
+        }
+        break;
+      }
+      case DrawTool.Arrow: {
+        const toolState = stratEditingState.toolStates.arrow;
 
-            const prevSelected = toolState.selected?.clone();
-
-            // Clear invalid selected item
-            if (toolState.selected) {
-              switch (toolState.selected.kind) {
-                case DrawElementKind.DrawPath: {
-                  const path = phaseRawRef.floors[toolState.selected.floor].drawPaths.get(toolState.selected.id);
-                  if (!path) {
-                    toolState.selected = undefined;
-                  }
-                  break;
-                }
-                case DrawElementKind.Arrow: {
-                  const arrow = phaseRawRef.floors[toolState.selected.floor].arrows.get(toolState.selected.id);
-                  if (!arrow) {
-                    toolState.selected = undefined;
-                  }
-                  break;
-                }
-                case DrawElementKind.Icon: {
-                  const icon = phaseRawRef.floors[toolState.selected.floor].icons.get(toolState.selected.id);
-                  if (!icon) {
-                    toolState.selected = undefined;
-                  }
-                  break;
-                }
-              }
-            }
-
-            // Update selection
-            if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
-              function pickFloor(floor: number): AnyDrawElementId | undefined {
-                for (const id of phaseRawRef.floors[floor].allDrawElements().slice().reverse()) {
-                  const item = phaseRawRef.floors[floor].getDrawElement(id);
-                  if (item?.isHovered(inputCanvasState.mousePos)) {
-                    return new AnyDrawElementId(item.asEnum().kind, floor, id);
-                  }
-                }
-                return undefined;
-              }
-
-              // Prioritize picking current floor, then prioritize higher floors
-              const floorPriorityOrdering = [stratEditingState.selectedFloor];
-              for (let floorIdx = stratEditingState.mapFloors.length - 1; floorIdx >= 0; floorIdx -= 1) {
-                if (floorIdx != stratEditingState.selectedFloor) {
-                  floorPriorityOrdering.push(floorIdx);
-                }
-              }
-
-              let itemPicked: AnyDrawElementId | undefined = undefined;
-              for (let floor of floorPriorityOrdering) {
-                const picked = pickFloor(floor);
-                if (picked) {
-                  itemPicked = picked;
-                  break;
-                }
-              }
-
-              toolState.selected = itemPicked;
-            }
-
-            const selectionChanged = (() => {
-              if ((prevSelected === undefined) != (toolState.selected === undefined)) {
-                // Only 1 is defined
-                return true;
-              } else if ((prevSelected !== undefined) && (toolState.selected !== undefined)) {
-                // Both are defined
-                return !prevSelected.equals(toolState.selected);
-              } else {
-                // Both are undefined
-                return false;
-              }
-            })();
-
-            if (toolState.selected && toolState.selected.getRaw(phaseRawRef)) {
-              // Draw border around selection
-              const boundingBox: Aabb = toolState.selected.getRaw(phaseRawRef)!.boundingBox();
-
-              placementPreviewCtx.beginPath();
-
-              placementPreviewCtx.strokeStyle = "black";
-              placementPreviewCtx.lineWidth = 2;
-              placementPreviewCtx.setLineDash([5, 10]);
-
-              placementPreviewCtx.moveTo(boundingBox.minPt.x, boundingBox.minPt.y);
-              placementPreviewCtx.lineTo(boundingBox.minPt.x, boundingBox.maxPt.y);
-              placementPreviewCtx.lineTo(boundingBox.maxPt.x, boundingBox.maxPt.y);
-              placementPreviewCtx.lineTo(boundingBox.maxPt.x, boundingBox.minPt.y);
-              placementPreviewCtx.lineTo(boundingBox.minPt.x, boundingBox.minPt.y);
-
-              placementPreviewCtx.stroke();
-              placementPreviewCtx.closePath();
-              placementPreviewCtx.setLineDash([]);
-
-              // Enter selection dragging mode
-              if (!selectionChanged && inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
-                toolState.isDragging = true;
-              } else if (!inputCanvasState.mouseClicked) {
-                if (toolState.isDragging && !toolState.currDragTotalDelta.approxEq(new Vec2(0, 0))) {
-                  stratEditingState.pushPreviousDrawAction(phase, {
-                    kind: DrawActionKind.MoveDrawElement,
-                    delta: toolState.currDragTotalDelta.clone(),
-                    floor: toolState.selected.floor,
-                    id: toolState.selected.id,
-                  });
-                  // Notify server of dragging
-                  stratEditingState.setDrawElement(phase, toolState.selected.floor, toolState.selected.id, toolState.selected.getRaw(phaseRawRef)!);
-                  redrawFreeDrawCanvas(canvasIds.freeDraw);
-                }
-
-                toolState.currDragTotalDelta = new Vec2(0, 0);
-                toolState.isDragging = false;
-              }
-
-              // Drag the selection
-              if (toolState.isDragging) {
-                const posDelta = inputCanvasState.mousePos.sub(inputCanvasState.prevMousePos);
-                const drawElem = toolState.selected.getRaw(phaseRawRef)!;
-                drawElem.mapPoints((pt) => pt.add(posDelta));
-                toolState.currDragTotalDelta = toolState.currDragTotalDelta.add(posDelta);
-              }
-
-              // Delete the selection
-              if (toolState.isDeleteQueued) {
-                stratEditingState.pushPreviousDrawAction(phase, {
-                  kind: DrawActionKind.DeleteDrawElement,
-                  data: toolState.selected.getRaw(phaseRawRef)!,
-                  floor: toolState.selected.floor,
-                  id: toolState.selected.id,
-                });
-                stratEditingState.deleteDrawElement(phase, toolState.selected.floor, toolState.selected.id);
-                toolState.selected = undefined;
-                redrawFreeDrawCanvas(canvasIds.freeDraw);
-              }
-            }
-
-            toolState.isDeleteQueued = false;
-            break;
+        if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
+          if (toolState.arrowHasBeenStarted) {
+            const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone(), stratEditingState.selectedDrawColor);
+            drawElementToCanvas(canvasIds.freeDraw, arrow, stratEditingState.selectedFloor);
+            const id = stratEditingState.pushDrawElement(phase, floor, arrow);
+            stratEditingState.pushPreviousDrawAction(stratEditingState.selectedPhase, {
+              kind: DrawActionKind.PlaceDrawElement,
+              data: arrow,
+              floor: stratEditingState.selectedFloor,
+              id,
+            });
+            toolState.arrowHasBeenStarted = false;
+          } else {
+            toolState.arrowStartPoint = inputCanvasState.mousePos.clone();
+            toolState.arrowHasBeenStarted = true;
           }
         }
 
-        inputCanvasState.prevMouseClicked = inputCanvasState.mouseClicked;
-        inputCanvasState.prevMousePos = inputCanvasState.mousePos;
-
-        stratEditingState.prevSelectedDrawTool = stratEditingState.selectedDrawTool;
-
-        stratEditingState.teamLoadoutsChanged = newArrayOfSize(5, () => false);
-
-        stratEditingState.frameCount += 1;
-
-        requestAnimationFrame(onUpdate);
+        if (toolState.arrowHasBeenStarted && !inputCanvasState.mouseClicked) {
+          const arrow = new Arrow(toolState.arrowStartPoint.clone(), inputCanvasState.mousePos.clone(), stratEditingState.selectedDrawColor);
+          drawElementToCanvas(canvasIds.placementPreview, arrow, stratEditingState.selectedFloor);
+        }
+        break;
       }
-      requestAnimationFrame(onUpdate);
+      case DrawTool.PlaceIcon: {
+        const toolState = stratEditingState.toolStates.placeIcon;
 
+        const icon = new IconPlacement(inputCanvasState.mousePos.clone(), toolState.selectedIcon);
+
+        if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
+          drawElementToCanvas(canvasIds.freeDraw, icon, stratEditingState.selectedFloor);
+          const id = stratEditingState.pushDrawElement(phase, floor, icon);
+          stratEditingState.pushPreviousDrawAction(stratEditingState.selectedPhase, {
+            kind: DrawActionKind.PlaceDrawElement,
+            data: icon,
+            floor: stratEditingState.selectedFloor,
+            id,
+          });
+        } else {
+          // Update cached icon
+          const iconChanged = !iconInfoEq(placeIconToolStateOffscreenCanvasCurrIcon, toolState.selectedIcon);
+          placeIconToolStateOffscreenCanvasCurrIcon = toolState.selectedIcon;
+          let loadoutChanged = false;
+          switch (toolState.selectedIcon.kind) {
+            case IconKind.TeamOperator:
+            case IconKind.TeamAbility:
+            case IconKind.TeamUtility: {
+              loadoutChanged = stratEditingState.teamLoadoutsChanged[toolState.selectedIcon.teammateIndex];
+              break;
+            }
+            case IconKind.FreeOperator:
+            case IconKind.FreeAbility:
+            case IconKind.FreeUtility:
+            case IconKind.ContextFree: {
+              loadoutChanged = false;
+              break;
+            }
+          }
+
+
+          if (iconChanged || stratEditingState.canvasScalesChanged || loadoutChanged) {
+            let canvas = placeIconToolStateOffscreenCanvas;
+            let ctx = canvas.getContext("2d")!;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            icon.drawToCtxAtTopLeft(ctx, new Vec2(0, 0));
+            placeIconToolStateOffscreenCanvasPlacedPos = icon.boundingBox().size().scaled(0.5);
+          }
+
+          // Draw cached icon
+          let canvas = document.getElementById(canvasIds.placementPreview) as HTMLCanvasElement;
+          let ctx = canvas.getContext("2d")!;
+          ctx.drawImage(
+            placeIconToolStateOffscreenCanvas,
+            canvasPxPerSVGPixel * (inputCanvasState.mousePos.x - placeIconToolStateOffscreenCanvasPlacedPos.x),
+            canvasPxPerSVGPixel * (inputCanvasState.mousePos.y - placeIconToolStateOffscreenCanvasPlacedPos.y),
+          );
+        }
+        break;
+      }
+      case DrawTool.SelectAndEdit: {
+        const toolState = stratEditingState.toolStates.selectAndEdit;
+        const phase = stratEditingState.selectedPhase;
+        const phaseRawRef = stratEditingState.getPhasesRef().get(stratEditingState.selectedPhase)!;
+
+        const prevSelected = toolState.selected?.clone();
+
+        // Clear invalid selected item
+        if (toolState.selected) {
+          switch (toolState.selected.kind) {
+            case DrawElementKind.DrawPath: {
+              const path = phaseRawRef.floors[toolState.selected.floor].drawPaths.get(toolState.selected.id);
+              if (!path) {
+                toolState.selected = undefined;
+              }
+              break;
+            }
+            case DrawElementKind.Arrow: {
+              const arrow = phaseRawRef.floors[toolState.selected.floor].arrows.get(toolState.selected.id);
+              if (!arrow) {
+                toolState.selected = undefined;
+              }
+              break;
+            }
+            case DrawElementKind.Icon: {
+              const icon = phaseRawRef.floors[toolState.selected.floor].icons.get(toolState.selected.id);
+              if (!icon) {
+                toolState.selected = undefined;
+              }
+              break;
+            }
+          }
+        }
+
+        // Update selection
+        if (inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
+          function pickFloor(floor: number): AnyDrawElementId | undefined {
+            for (const id of phaseRawRef.floors[floor].allDrawElements().slice().reverse()) {
+              const item = phaseRawRef.floors[floor].getDrawElement(id);
+              if (item?.isHovered(inputCanvasState.mousePos)) {
+                return new AnyDrawElementId(item.asEnum().kind, floor, id);
+              }
+            }
+            return undefined;
+          }
+
+          // Prioritize picking current floor, then prioritize higher floors
+          const floorPriorityOrdering = [stratEditingState.selectedFloor];
+          for (let floorIdx = stratEditingState.mapFloors.length - 1; floorIdx >= 0; floorIdx -= 1) {
+            if (floorIdx != stratEditingState.selectedFloor) {
+              floorPriorityOrdering.push(floorIdx);
+            }
+          }
+
+          let itemPicked: AnyDrawElementId | undefined = undefined;
+          for (let floor of floorPriorityOrdering) {
+            const picked = pickFloor(floor);
+            if (picked) {
+              itemPicked = picked;
+              break;
+            }
+          }
+
+          toolState.selected = itemPicked;
+        }
+
+        const selectionChanged = (() => {
+          if ((prevSelected === undefined) != (toolState.selected === undefined)) {
+            // Only 1 is defined
+            return true;
+          } else if ((prevSelected !== undefined) && (toolState.selected !== undefined)) {
+            // Both are defined
+            return !prevSelected.equals(toolState.selected);
+          } else {
+            // Both are undefined
+            return false;
+          }
+        })();
+
+        if (toolState.selected && toolState.selected.getRaw(phaseRawRef)) {
+          // Draw border around selection
+          const boundingBox: Aabb = toolState.selected.getRaw(phaseRawRef)!.boundingBox();
+
+          placementPreviewCtx.beginPath();
+
+          placementPreviewCtx.strokeStyle = "black";
+          placementPreviewCtx.lineWidth = 2;
+          placementPreviewCtx.setLineDash([5, 10]);
+
+          placementPreviewCtx.moveTo(boundingBox.minPt.x, boundingBox.minPt.y);
+          placementPreviewCtx.lineTo(boundingBox.minPt.x, boundingBox.maxPt.y);
+          placementPreviewCtx.lineTo(boundingBox.maxPt.x, boundingBox.maxPt.y);
+          placementPreviewCtx.lineTo(boundingBox.maxPt.x, boundingBox.minPt.y);
+          placementPreviewCtx.lineTo(boundingBox.minPt.x, boundingBox.minPt.y);
+
+          placementPreviewCtx.stroke();
+          placementPreviewCtx.closePath();
+          placementPreviewCtx.setLineDash([]);
+
+          // Enter selection dragging mode
+          if (!selectionChanged && inputCanvasState.mouseClicked && !inputCanvasState.prevMouseClicked) {
+            toolState.isDragging = true;
+          } else if (!inputCanvasState.mouseClicked) {
+            if (toolState.isDragging && !toolState.currDragTotalDelta.approxEq(new Vec2(0, 0))) {
+              stratEditingState.pushPreviousDrawAction(phase, {
+                kind: DrawActionKind.MoveDrawElement,
+                delta: toolState.currDragTotalDelta.clone(),
+                floor: toolState.selected.floor,
+                id: toolState.selected.id,
+              });
+              // Notify server of dragging
+              stratEditingState.setDrawElement(phase, toolState.selected.floor, toolState.selected.id, toolState.selected.getRaw(phaseRawRef)!);
+              redrawFreeDrawCanvas(canvasIds.freeDraw);
+            }
+
+            toolState.currDragTotalDelta = new Vec2(0, 0);
+            toolState.isDragging = false;
+          }
+
+          // Drag the selection
+          if (toolState.isDragging) {
+            const posDelta = inputCanvasState.mousePos.sub(inputCanvasState.prevMousePos);
+            const drawElem = toolState.selected.getRaw(phaseRawRef)!;
+            drawElem.mapPoints((pt) => pt.add(posDelta));
+            toolState.currDragTotalDelta = toolState.currDragTotalDelta.add(posDelta);
+          }
+
+          // Delete the selection
+          if (toolState.isDeleteQueued) {
+            stratEditingState.pushPreviousDrawAction(phase, {
+              kind: DrawActionKind.DeleteDrawElement,
+              data: toolState.selected.getRaw(phaseRawRef)!,
+              floor: toolState.selected.floor,
+              id: toolState.selected.id,
+            });
+            stratEditingState.deleteDrawElement(phase, toolState.selected.floor, toolState.selected.id);
+            toolState.selected = undefined;
+            redrawFreeDrawCanvas(canvasIds.freeDraw);
+          }
+        }
+
+        toolState.isDeleteQueued = false;
+        break;
+      }
+    }
+
+    inputCanvasState.prevMouseClicked = inputCanvasState.mouseClicked;
+    inputCanvasState.prevMousePos = inputCanvasState.mousePos;
+
+    stratEditingState.prevSelectedDrawTool = stratEditingState.selectedDrawTool;
+
+    stratEditingState.teamLoadoutsChanged = newArrayOfSize(5, () => false);
+
+    stratEditingState.frameCount += 1;
+  }
+
+  /** Wraps onUpdate and calls for it to run repeatedly */
+  function onUpdateOuter() {
+    onUpdate();
+    requestAnimationFrame(onUpdateOuter);
+  }
+  useEffect(() => {
+    requestAnimationFrame(onUpdateOuter);
+  }, []);
+
+
+  function stratEditorPageComponent() {
+    function inputGatheringCanvas() {
       function triggerUndo() {
         const previousDrawActionsList = stratEditingState.getPreviousDrawActionsRef(stratEditingState.selectedPhase);
         if (!previousDrawActionsList) {
@@ -2803,20 +2830,6 @@ function App() {
         }
       };
 
-      function touchEventLogicalPos(e: any): Vec2 | undefined {
-        // https://gist.github.com/phedkvist/f8081fbcc84a3e70099a88ac82af38d0
-        // If exactly 1 finger is touched
-        if (e.touches && e.touches.length == 1) {
-          let touch = e.touches[0];
-
-          let touchX = touch.clientX;
-          let touchY = touch.clientY;
-          return logicalMousePosForCanvas(canvasIds.inputGathering, touchX, touchY);
-        } else {
-          return undefined;
-        }
-      }
-
       return (<>
         <canvas id={canvasIds.inputGathering}
           style={{ gridColumn: 1, gridRow: 1, zIndex: 100, touchAction: "none" }}
@@ -2900,30 +2913,50 @@ function App() {
                 className="row"
                 {...provided.draggableProps}
               >
-                {/* Drag Handle */}
-                <div {...provided.dragHandleProps} style={{ alignContent: "center", fontSize: "1.2vw" }}>☰</div>
+                <div
+                  className="row"
+                  style={{
+                    // FIXME: This is just copied from the `input, button` styling in the CSS, so editing one would require editing both
+                    borderRadius: "0.5vw",
+                    border: "0.1vw solid transparent",
 
-                {/* Button */}
-                <button onClick={(e) => {
-                  e.preventDefault();
-                  stratEditingState.selectedPhase = stratEditingState.getPhaseOrderRef()[phaseIdx];
+                    color: "light-dark(#0f0f0f, #ffffff)",
+                    backgroundColor: "light-dark(#ffffff, #0f0f0f98)",
 
-                  stratEditingState.toolStates.arrow = new ArrowToolState();
-                  stratEditingState.toolStates.freeDraw = new FreeDrawToolState();
-                  // Don't clear icon placement state
-                  stratEditingState.toolStates.selectAndEdit = new SelectAndEditToolState();
-                  redrawFreeDrawCanvas(canvasIds.freeDraw);
-                  updateStratEditingStateDisplay();
-                }}
-                >{stratEditingState.getPhasesRef().get(phase)?.phaseName}</button>
+                    transition: "border-color 0.25s",
+                    boxShadow: "0 2px 2px rgba(0, 0, 0, 0.2)"
+                  }}>
+
+
+                  {/* Drag Handle */}
+                  <div {...provided.dragHandleProps} style={{ alignContent: "center", fontSize: "1.2vw" }}>☰</div>
+
+                  {/* Button */}
+                  <button onClick={(e) => {
+                    e.preventDefault();
+                    stratEditingState.selectedPhase = stratEditingState.getPhaseOrderRef()[phaseIdx];
+
+                    stratEditingState.toolStates.arrow = new ArrowToolState();
+                    stratEditingState.toolStates.freeDraw = new FreeDrawToolState();
+                    // Don't clear icon placement state
+                    stratEditingState.toolStates.selectAndEdit = new SelectAndEditToolState();
+                    redrawFreeDrawCanvas(canvasIds.freeDraw);
+                    updateStratEditingStateDisplay();
+                  }}
+                    style={{
+                      backgroundColor: "#ffffff00"
+                    }}
+                  >{stratEditingState.getPhasesRef().get(phase)?.phaseName}</button>
+                </div>
               </div>
-            )}
-          </Draggable>
+            )
+            }
+          </Draggable >
         );
       }
 
       function ListInner() {
-        return (<>
+        return (<div className="row" style={{ gap: "0.25vw" }}>
           {stratEditingStateDisplay.getPhaseOrderRef().map((phase, i) =>
             ListElem(phase, i)
           )}
@@ -2940,7 +2973,7 @@ function App() {
               updateStratEditingStateDisplay();
             }
           }}>Delete this phase</button>
-        </>);
+        </div>);
       }
 
       return (<>
@@ -2960,9 +2993,9 @@ function App() {
     return (
       <>
         {/* Menuing buttons */}
-        <div className="row">
-          <div className="col">
-            <button style={{ width: "15vw", margin: "0.25vw" }} onClick={(_) => {
+        <div className="col">
+          <div className="row">
+            <button style={{ width: "10vw", margin: "0.25vw" }} onClick={(_) => {
               switch (stratEditingState.mode) {
                 case StratEditingMode.Singleplayer: {
                   saveProgress().then((() => {
@@ -2988,7 +3021,7 @@ function App() {
               }
             }}>Back to Strat list</button>
 
-            <button style={{ width: "15vw", margin: "0.25vw" }} onClick={(_) => {
+            <button style={{ width: "10vw", margin: "0.25vw" }} onClick={(_) => {
               let text = `${window.location.host}/#${stratEditingState.stratId}`;
               try {
                 copyToClipboard(text);
@@ -3000,25 +3033,14 @@ function App() {
 
             {stratEditingStateDisplay.mode == StratEditingMode.Singleplayer && (
               <button
-                style={{ width: "15vw", margin: "0.25vw" }}
+                style={{ width: "10vw", margin: "0.25vw" }}
                 onClick={(_) => {
                   saveProgress()
                 }}>Save Progress</button>
             )}
 
-            {/* Lobby members display */}
-            {stratEditingStateDisplay.mode == StratEditingMode.Lobby && (
-              <div style={{ width: "15vw", margin: "0.25vw" }}>
-                <p>Lobby Members</p>
-                <>
-                  {lobbyState.members.forEach((member) =>
-                    <p>{member}</p>
-                  )}
-                </>
-              </div>)}
-
             {stratEditingStateDisplay.mode == StratEditingMode.Singleplayer && (
-              <button style={{ width: "15vw", margin: "0.25vw" }} onClick={(_) => {
+              <button style={{ width: "10vw", margin: "0.25vw" }} onClick={(_) => {
                 if (window.confirm(`Are you sure you want to delete strat \"${stratEditingState.stratName}\"?`)) {
                   if (window.confirm(`Are you really really sure you want to delete strat \"${stratEditingState.stratName}\"?`)) {
                     websocket?.sendProto(protos.Client2Server.create({ deleteStrat: { stratId: stratEditingState.stratId } })).then(() => {
@@ -3032,29 +3054,42 @@ function App() {
               }}
               >Delete Strat</button>)}
           </div>
+
+          <div className="row">
+            {/* Lobby members display */}
+            {stratEditingStateDisplay.mode == StratEditingMode.Lobby && (
+              <div className="col" style={{ border: "2px solid #0f0f0f", borderRadius: "8px" }}>
+                <p>Lobby members: </p>
+                {lobbyState.members.map((member) => <>
+                  <p>{member}</p>
+                </>)}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Edit strat name */}
-        <div className="row" style={{ margin: "0.25vw" }}>
+        {/* Edit strat & phase name */}
+        <div className="row" style={{ margin: "0.25vw", gap: "0.5vw" }}>
           <p>Title: </p>
           <input
             value={stratEditingStateDisplay.stratName}
             onChange={(e) => {
               stratEditingState.stratName = e.target.value;
               updateStratEditingStateDisplay();
-            }} />
-        </div>
+            }}
+          />
 
-        {/* Edit current phase name & select phase */}
-        <div className="row" style={{ margin: "0.25vw" }}>
           <p>Current Phase: </p>
           <input
             value={stratEditingStateDisplay.getPhasesRef().get(stratEditingStateDisplay.selectedPhase)?.phaseName}
             onChange={(e) => {
               stratEditingState.setPhaseName(stratEditingState.selectedPhase, e.target.value);
               updateStratEditingStateDisplay();
-            }} />
+            }}
+          />
         </div>
+
+        {/* Select phase */}
         {PhasesList()}
 
         {/* Team operator bar */}
@@ -3248,6 +3283,7 @@ function App() {
 
           {/* Toolbar */}
           <div className="col" id="tool-selector-bar" style={{ margin: "0.5vw" }}>
+            <p>{snakeCaseToCapitalCase(stratEditingState.map)}</p>
             <p>{DrawTool[stratEditingState.selectedDrawTool]}</p>
             <div style={{ border: "2px solid #0f0f0f", borderRadius: "0.5vw" }}>
               {tileListComponent(StratEditingState.freeDrawPalette, (color) => <>

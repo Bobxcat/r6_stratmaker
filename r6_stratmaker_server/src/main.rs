@@ -1153,15 +1153,14 @@ async fn main() -> anyhow::Result<()> {
             tokio::spawn(async move {
                 let peer_addr = format!("{:?}", stream.peer_addr());
                 context_println!(
-                    "[{:?}] TCP Connection established, attempting HTTP handshake",
-                    peer_addr
+                    "[{peer_addr}] TCP Connection established, attempting HTTP handshake"
                 );
                 let Ok((_request, ws_stream)) = ServerBuilder::new().accept(stream).await else {
-                    context_println!("[{:?}] HTTP handshake failed...", peer_addr);
+                    context_println!("[{peer_addr}] HTTP handshake failed...");
                     return;
                 };
 
-                context_println!("[{:?}] Client Accepted", peer_addr);
+                context_println!("[{peer_addr}] Client Accepted");
 
                 tokio::spawn(async move {
                     let client_handler_id = ClientId(Uuid::new_v4());

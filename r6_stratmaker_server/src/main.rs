@@ -1130,6 +1130,7 @@ async fn main() -> anyhow::Result<()> {
         "127.0.0.1:8080"
     };
     let listener = TcpListener::bind(addr).await?;
+
     let database = DatabaseHandle::initialize().await?;
 
     let shared_state = SharedState {
@@ -1145,23 +1146,31 @@ async fn main() -> anyhow::Result<()> {
 
     let accept_loop_handle = tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
-            context_println!("TCP Connection established, attempting HTTP handshake");
-            let Ok((_request, ws_stream)) = ServerBuilder::new().accept(stream).await else {
-                context_println!("HTTP handshake failed...");
-                continue;
-            };
-
-            context_println!("Client Accepted at {:?}", ws_stream.get_ref().peer_addr());
-
             let db_clone = database.clone();
             let state_clone = shared_state.clone();
-            tokio::spawn(async move {
-                let client_handler_id = ClientId(Uuid::new_v4());
-                let res =
-                    accept_client(client_handler_id, ws_stream, db_clone, state_clone.clone())
-                        .await;
 
-                res
+            // Upgrade the connection in a separate task so that if it takes a long time it doesn't prevent incoming connections
+            tokio::spawn(async move {
+                let peer_addr = format!("{:?}", stream.peer_addr());
+                context_println!(
+                    "[{:?}] TCP Connection established, attempting HTTP handshake",
+                    peer_addr
+                );
+                let Ok((_request, ws_stream)) = ServerBuilder::new().accept(stream).await else {
+                    context_println!("[{:?}] HTTP handshake failed...", peer_addr);
+                    return;
+                };
+
+                context_println!("[{:?}] Client Accepted", peer_addr);
+
+                tokio::spawn(async move {
+                    let client_handler_id = ClientId(Uuid::new_v4());
+                    let res =
+                        accept_client(client_handler_id, ws_stream, db_clone, state_clone.clone())
+                            .await;
+
+                    res
+                });
             });
         }
 

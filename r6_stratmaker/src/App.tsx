@@ -3021,15 +3021,16 @@ function App() {
               }
             }}>Back to Strat list</button>
 
-            <button style={{ width: "10vw", margin: "0.25vw" }} onClick={(_) => {
-              let text = `${window.location.host}/#${stratEditingState.stratId}`;
-              try {
-                copyToClipboard(text);
-              } catch (e) {
-                println(`Failed to copy to clipboard: ${e}`);
-                prompt(text);
-              }
-            }}>Copy Strat Link</button>
+            {(stratEditingState.stratId.length > 0) &&
+              (<button style={{ width: "10vw", margin: "0.25vw" }} onClick={(_) => {
+                let text = `${window.location.host}/#${stratEditingState.stratId}`;
+                try {
+                  copyToClipboard(text);
+                } catch (e) {
+                  println(`Failed to copy to clipboard: ${e}`);
+                  prompt(text);
+                }
+              }}>Copy Strat Link</button>)}
 
             {stratEditingStateDisplay.mode == StratEditingMode.Singleplayer && (
               <button

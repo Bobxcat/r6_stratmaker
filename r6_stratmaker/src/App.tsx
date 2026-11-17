@@ -1371,17 +1371,25 @@ class OperatorsIndex {
       loadOperator(op, false);
     }
 
+    let promises: Promise<void>[] = [];
     for (const op of ops.operators) {
       const opName = op[0];
       for (const util of op[1].utils) {
         if (!ops.utilityImgData.has(util)) {
-          ops.utilityImgData.set(util, await imgElemFromPath(ops.getUtilityIconPath(util)));
+          promises.push(imgElemFromPath(ops.getUtilityIconPath(util)).then((img) => {
+            ops.utilityImgData.set(util, img);
+          }));
         }
       }
-      ops.operatorImgData.set(opName, await imgElemFromPath(ops.getOperatorIconPath(opName)));
-      const abilityImg = await imgElemFromPath(ops.getOperatorAbilityIconPath(opName));
-      ops.abilityImgData.set(opName, abilityImg);
+
+      promises.push(imgElemFromPath(ops.getOperatorIconPath(opName)).then((img) => {
+        ops.operatorImgData.set(opName, img);
+      }));
+      promises.push(imgElemFromPath(ops.getOperatorAbilityIconPath(opName)).then((img) => {
+        ops.abilityImgData.set(opName, img);
+      }));
     }
+    await Promise.all(promises);
 
     println("ALL OPS FINISHED");
 

@@ -2421,7 +2421,6 @@ function App() {
     }
     placementPreviewCtx.clearRect(0, 0, placementPreviewCanvas.width, placementPreviewCanvas.height);
 
-
     if (stratEditingState.prevSelectedDrawTool != stratEditingState.selectedDrawTool) {
       // A common pattern is:
       // 1. set new draw tool
